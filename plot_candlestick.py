@@ -2,7 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
-import matplotlib.dates as mdates
 
 # Read the CSV file
 df = pd.read_csv('PEPPERSTONE_XAUUSD, 5.csv')
@@ -11,18 +10,20 @@ df = pd.read_csv('PEPPERSTONE_XAUUSD, 5.csv')
 df['time'] = pd.to_datetime(df['time'])
 
 # Sort by time to ensure proper order
-df = df.sort_values('time')
+df = df.sort_values('time').reset_index(drop=True)
+
+# Get only the last 200 candles
+df = df.tail(200).reset_index(drop=True)
 
 # Create figure and axis
 fig, ax = plt.subplots(figsize=(16, 8))
 
-# Calculate candle width (in days) based on the time difference
-time_diff = (df['time'].iloc[1] - df['time'].iloc[0]).total_seconds() / (24 * 3600)
-width = time_diff * 0.6  # 60% of the time interval for candle width
+# Set candle width (80% of index spacing)
+width = 0.8
 
-# Plot each candlestick
+# Plot each candlestick using index position instead of datetime
 for idx, row in df.iterrows():
-    time = row['time']
+    x_pos = idx  # Use index position for x-axis
     open_price = row['open']
     high_price = row['high']
     low_price = row['low']
@@ -41,11 +42,11 @@ for idx, row in df.iterrows():
         body_height = open_price - close_price
 
     # Draw the wicks (high-low line) in black
-    ax.plot([time, time], [low_price, high_price], color='black', linewidth=1, zorder=1)
+    ax.plot([x_pos, x_pos], [low_price, high_price], color='black', linewidth=1, zorder=1)
 
     # Draw the candle body
     rect = Rectangle(
-        (mdates.date2num(time) - width/2, body_bottom),
+        (x_pos - width/2, body_bottom),
         width,
         body_height,
         facecolor=color,
@@ -55,10 +56,13 @@ for idx, row in df.iterrows():
     )
     ax.add_patch(rect)
 
-# Format the x-axis
-ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-plt.xticks(rotation=45, ha='right')
+# Format the x-axis with datetime labels at intervals
+# Show date labels at regular intervals
+step = max(1, len(df) // 10)  # Show approximately 10 labels
+tick_positions = range(0, len(df), step)
+tick_labels = [df.loc[i, 'time'].strftime('%Y-%m-%d %H:%M') for i in tick_positions]
+ax.set_xticks(tick_positions)
+ax.set_xticklabels(tick_labels, rotation=45, ha='right')
 
 # Set labels and title
 ax.set_xlabel('Datetime', fontsize=12, fontweight='bold')
