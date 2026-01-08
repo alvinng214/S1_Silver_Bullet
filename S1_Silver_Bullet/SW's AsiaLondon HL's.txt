@@ -1,0 +1,930 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © steven_tyler22
+
+//@version=5
+indicator("SW's Asia/London H/L's", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// === User Inputs ===
+// Session Inputs
+asiaEnabled = input.bool(true, "Asia Session", inline="asiaTitle")
+asiaColor = input.color(#4a148c, "Line", inline="asia")
+asiaTextColor = input.color(color.white, "Text", inline="asia")
+showAsiaLabels = input.bool(true, "Show Labels", inline="asia")
+asiaLabelOpacity = input.int(50, "Label Opacity", minval=0, maxval=100, inline="asia")
+asiaLineOpacity = input.int(70, "Line Opacity (%)", minval=0, maxval=100, inline="asia")
+asiaLineThickness = input.int(2, "Line Thickness", minval=1, maxval=10, inline="asia")
+asiaShowStartVL   = input.bool(true,  "Vertical line", inline="asia")
+
+londonEnabled = input.bool(true, "London Session", inline="londonTitle")
+londonColor = input.color(#0c3299, "Line", inline="london")
+londonTextColor = input.color(color.white, "Text", inline="london")
+showLondonLabels = input.bool(true, "Show Labels", inline="london")
+londonLabelOpacity = input.int(50, "Label Opacity", minval=0, maxval=100, inline="london")
+londonLineOpacity = input.int(70, "Line Opacity (%)", minval=0, maxval=100, inline="london")
+londonLineThickness = input.int(2, "Line Thickness", minval=1, maxval=10, inline="london")
+londonShowStartVL = input.bool(true,  "Vertical line", inline="london")
+
+nyEnabled = input.bool(true, "New York Session", inline="nyTitle")
+nyColor = input.color(#fb7f1f, "Line", inline="ny")
+nyTextColor = input.color(color.white, "Text", inline="ny")
+showNYLabels = input.bool(true, "Show Labels", inline="ny")
+nyLabelOpacity = input.int(50, "Label Opacity", minval=0, maxval=100, inline="ny")
+nyLineOpacity = input.int(70, "Line Opacity (%)", minval=0, maxval=100, inline="ny")
+nyLineThickness = input.int(2, "Line Thickness", minval=1, maxval=10, inline="ny")
+nyShowStartVL     = input.bool(true,  "Vertical line", inline="ny")
+
+sydneyEnabled = input.bool(false, "Sydney Session", inline="sydneyTitle")
+sydneyColor = input.color(#00897B, "Line", inline="sydney")
+sydneyTextColor = input.color(color.white, "Text", inline="sydney")
+showSydneyLabels = input.bool(true, "Show Labels", inline="sydney")
+sydneyLabelOpacity = input.int(50, "Label Opacity", minval=0, maxval=100, inline="sydney")
+sydneyLineOpacity = input.int(70, "Line Opacity (%)", minval=0, maxval=100, inline="sydney")
+sydneyLineThickness = input.int(2, "Line Thickness", minval=1, maxval=10, inline="sydney")
+sydneyShowStartVL = input.bool(true,  "Vertical line", inline="sydney")
+
+// PDH/PDL Inputs
+pdhlShow = input.bool(true, "PDH/PDL Line", inline="pdhlTitle")
+pdhlColor = input.color(#00332a, "Line", inline="pdhl")
+pdhlTextColor = input.color(#ffffff, "Text", inline="pdhl")
+pdhlShowLabels = input.bool(true, "Show Labels", inline="pdhl")
+pdhlLabelOpacity = input.int(50, "Label Opacity", minval=0, maxval=100, inline="pdhl")
+pdhlLineOpacity = input.int(70, "Line Opacity (%)", minval=0, maxval=100, inline="pdhl")
+pdhlLineThickness = input.int(2, "Line Thickness", minval=1, maxval=10, inline="pdhl")
+pdhlShowStartVL = input.bool(true, "Vertical line", inline="pdhl")
+
+// New inputs for midpoint line
+pdhlMidShow = input.bool(false, "Show PDH/PDL Midpoint Line", inline="pdhMidTitle")
+pdhlMidColor = input.color(#801922, "Line", inline="pdhMid")
+pdhlMidTextColor = input.color(#ffffff, "Text", inline="pdhMid")
+pdhlMidLineStyle = input.string("dashed", "Line Style", options=["solid", "dashed", "dotted"], inline="pdhMid")
+pdhlMidLineOpacity = input.int(50, "Line Opacity", minval=0, maxval=100, inline="pdhMid")
+pdhlMidLineThickness = input.int(2, "Line Thickness", minval=1, maxval=10, inline="pdhMid")
+
+
+
+// Vertical Lines Inputs
+vertLinesShow = input.bool(true, "Show Vertical Lines", inline="vertLinesTitle")
+preMarketColor = input.color(#ffa726, "Pre-market Line Color", inline="vertLines")
+marketOpenColor = input.color(#f57c00, "Market Open Line Color", inline="vertLines")
+marketCloseColor = input.color(#801922, "Market Close Line Color", inline="vertLines")
+vertLineThickness = input.int(2, "Vertical Line Thickness", minval=1, maxval=10, inline="vertLines")
+
+// === Custom Vertical Lines (4 user-defined) ===
+// Add these inputs after your existing "Vertical Lines Inputs" block.
+
+//// Line 1
+cv1Enabled   = input.bool(true, "Vertical Line 1", inline="cv1t")
+cv1Hour      = input.int(7, "Hr", minval=0, maxval=23, inline="cv1")
+cv1Minute    = input.int(0, "Min", minval=0, maxval=59, inline="cv1")
+cv1LabelTxt  = input.string("10 AM", "Label", inline="cv1x")
+cv1Color     = input.color(#22ab94, "Line Color", inline="cv1c")
+cv1Opacity   = input.int(70, "Opacity %", minval=0, maxval=100, inline="cv1c")
+cv1Thick     = input.int(2, "Thickness", minval=1, maxval=10, inline="cv1c")
+cv1TextColor = input.color(color.white, "Text", inline="cv1tx")
+
+//// Line 2
+cv2Enabled   = input.bool(true, "Vertical Line 2", inline="cv2t")
+cv2Hour      = input.int(8, "Hr", minval=0, maxval=23, inline="cv2")
+cv2Minute    = input.int(30, "Min", minval=0, maxval=59, inline="cv2")
+cv2LabelTxt  = input.string("End of\nTrading", "Label", inline="cv2x")
+cv2Color     = input.color(#aa0f1b, "Line Color", inline="cv2c")
+cv2Opacity   = input.int(70, "Opacity %", minval=0, maxval=100, inline="cv2c")
+cv2Thick     = input.int(2, "Thickness", minval=1, maxval=10, inline="cv2c")
+cv2TextColor = input.color(color.white, "Text", inline="cv2tx")
+
+//// Line 3
+cv3Enabled   = input.bool(false, "Vertical Line 3", inline="cv3t")
+cv3Hour      = input.int(0, "Hr", minval=0, maxval=23, inline="cv3")
+cv3Minute    = input.int(0, "Min", minval=0, maxval=59, inline="cv3")
+cv3LabelTxt  = input.string("L3", "Label", inline="cv3x")
+cv3Color     = input.color(color.new(color.aqua, 0), "Line Color", inline="cv3c")
+cv3Opacity   = input.int(70, "Opacity %", minval=0, maxval=100, inline="cv3c")
+cv3Thick     = input.int(2, "Thickness", minval=1, maxval=10, inline="cv3c")
+cv3TextColor = input.color(color.white, "Text", inline="cv3tx")
+
+//// Line 4
+cv4Enabled   = input.bool(false, "Vertical Line 4", inline="cv4t")
+cv4Hour      = input.int(0, "Hr", minval=0, maxval=23, inline="cv4")
+cv4Minute    = input.int(0, "Min", minval=0, maxval=59, inline="cv4")
+cv4LabelTxt  = input.string("L4", "Label", inline="cv4x")
+cv4Color     = input.color(color.new(color.orange, 0), "Line Color", inline="cv4c")
+cv4Opacity   = input.int(70, "Opacity %", minval=0, maxval=100, inline="cv4c")
+cv4Thick     = input.int(2, "Thickness", minval=1, maxval=10, inline="cv4c")
+cv4TextColor = input.color(color.white, "Text", inline="cv4tx")
+
+// --- Custom VL label offset (price units) ---
+cvLabelOffset = input.float(100.0, "Custom VL Label Offset (price units)", step=0.25)
+
+
+// Timezone offset for LA time
+timezoneOffset = input.int(0, "Timezone Offset from LA (hours)", minval=-12, maxval=14)
+
+// Session times (hardcoded)
+asiaStartHour = 17
+asiaEndHour = 2
+londonStartHour = 0
+londonEndHour = 9
+nyStartHour = 5
+nyStartMinute = 30 // changed from 0 to 30 for 5:30am start
+nyEndHour = 14 // changed from 15 to 14 for 2pm end
+sydneyStartHour = 15
+sydneyEndHour = 0
+
+sessionID = year * 10000 + month * 100 + dayofmonth
+
+// Runtime vars for sessions (highs/lows, lines, labels)
+// Start-bar for each session (needed in session blocks)
+var int asiaStartBar   = na
+var int londonStartBar = na
+var int nyStartBar     = na
+var int sydneyStartBar = na
+
+// Track bar index where each session’s extremes occur (used after freeze)
+var int asiaHighBar   = na
+var int asiaLowBar    = na
+var int londonHighBar = na
+var int londonLowBar  = na
+var int nyHighBar     = na
+var int nyLowBar      = na
+var int sydneyHighBar = na
+var int sydneyLowBar  = na
+
+// --- PD tracking vars (custom day) ---
+// Current day (being built now)
+var float sessionHigh    = na
+var float sessionLow     = na
+var int   sessionHighBar = na
+var int   sessionLowBar  = na
+
+// Frozen previous day (used to draw PDH/PDL)
+var float prevSessionHigh    = na
+var float prevSessionLow     = na
+var int   prevSessionHighBar = na
+var int   prevSessionLowBar  = na
+
+// Optional: PD start-pin handle (if you’re drawing the faded vertical pin)
+var line  pdStartVL = na
+
+
+var float asiaLiveHigh = na
+var float asiaLiveLow = na
+var float londonLiveHigh = na
+var float londonLiveLow = na
+var float nyLiveHigh = na
+var float nyLiveLow = na
+var float sydneyLiveHigh = na
+var float sydneyLiveLow = na
+
+var line asiaLiveHighLine = na
+var line asiaLiveLowLine = na
+var line londonLiveHighLine = na
+var line londonLiveLowLine = na
+var line nyLiveHighLine = na
+var line nyLiveLowLine = na
+var line sydneyLiveHighLine = na
+var line sydneyLiveLowLine = na
+
+var label asiaHighLabel = na
+var label asiaLowLabel = na
+var label londonHighLabel = na
+var label londonLowLabel = na
+var label nyHighLabel = na
+var label nyLowLabel = na
+var label sydneyHighLabel = na
+var label sydneyLowLabel = na
+
+// Start-bar vertical markers for each session
+var line asiaStartVL   = na
+var line londonStartVL = na
+var line nyStartVL     = na
+var line sydneyStartVL = na
+
+// Freeze flags
+var bool asiaFrozen = false
+var bool londonFrozen = false
+var bool nyFrozen = false
+var bool sydneyFrozen = false
+
+// Session helper function
+inSession(startH, endH) =>
+    isAsiaOrSydney = (startH == 17 and endH == 2) or (startH == 15 and endH == 0)
+    startDay = isAsiaOrSydney and hour < startH ? dayofmonth - 1 : dayofmonth
+    endDay = isAsiaOrSydney and hour < startH ? dayofmonth : (isAsiaOrSydney ? dayofmonth + 1 : startDay)
+    start = timestamp("America/Los_Angeles", year, month, startDay, startH + timezoneOffset, 0)
+    end_ = timestamp("America/Los_Angeles", year, month, endDay, endH + timezoneOffset, 0)
+    [start, end_, time >= start and time < end_]
+
+[asiaStartTime, _, asiaSession]   = inSession(asiaStartHour,   asiaEndHour)
+[londonStartTime, _, londonSession] = inSession(londonStartHour, londonEndHour)
+
+// NY uses 5:30 AM PT → 2:00 PM PT (minute precision)
+nyStartTime = timestamp("America/Los_Angeles", year, month, dayofmonth, nyStartHour + timezoneOffset, nyStartMinute)
+nyEndTime   = timestamp("America/Los_Angeles", year, month, dayofmonth, nyEndHour   + timezoneOffset, 0)
+nySession   = time >= nyStartTime and time < nyEndTime
+
+[sydneyStartTime, _, sydneySession] = inSession(sydneyStartHour, sydneyEndHour)
+
+
+// Freeze logic: freeze previous session when next starts
+asiaFrozen := asiaFrozen or (londonSession)
+londonFrozen := londonFrozen or (nySession)
+nyFrozen := nyFrozen or (sydneySession)
+
+// === Freeze previous session lines at next session start
+// Freeze when the *next* session starts (rising edge of the next session)
+asiaJustFroze   = londonSession and not londonSession[1]
+londonJustFroze = nySession     and not nySession[1]
+nyJustFroze     = sydneySession and not sydneySession[1]
+sydneyJustFroze = asiaSession   and not asiaSession[1]  // only if you want to chain Sydney->Asia
+
+asiaFrozen   := asiaFrozen   or asiaJustFroze
+londonFrozen := londonFrozen or londonJustFroze
+nyFrozen     := nyFrozen     or nyJustFroze
+sydneyFrozen := sydneyFrozen or sydneyJustFroze
+
+
+// === On freeze: rebuild lines so x1 is the bar that actually set the extreme ===
+if asiaJustFroze
+    ahBar = na(asiaHighBar) ? asiaStartBar : asiaHighBar
+    alBar = na(asiaLowBar)  ? asiaStartBar : asiaLowBar
+    // Rebuild high
+    if not na(asiaLiveHighLine)
+        line.delete(asiaLiveHighLine)
+    asiaLiveHighLine := line.new(ahBar, asiaLiveHigh, bar_index, asiaLiveHigh,
+                                 xloc=xloc.bar_index, extend=extend.right,
+                                 color=color.new(asiaColor, 150 - asiaLineOpacity), width=asiaLineThickness)
+    // Rebuild low
+    if not na(asiaLiveLowLine)
+        line.delete(asiaLiveLowLine)
+    asiaLiveLowLine := line.new(alBar, asiaLiveLow, bar_index, asiaLiveLow, xloc=xloc.bar_index, extend=extend.right, color=color.new(asiaColor, 100 - asiaLineOpacity), width=asiaLineThickness)
+
+if londonJustFroze
+    lhBar = na(londonHighBar) ? londonStartBar : londonHighBar
+    llBar = na(londonLowBar)  ? londonStartBar : londonLowBar
+    if not na(londonLiveHighLine)
+        line.delete(londonLiveHighLine)
+    londonLiveHighLine := line.new(lhBar, londonLiveHigh, bar_index, londonLiveHigh,
+                                   xloc=xloc.bar_index, extend=extend.right,
+                                   color=color.new(londonColor, 100 - londonLineOpacity), width=londonLineThickness)
+    if not na(londonLiveLowLine)
+        line.delete(londonLiveLowLine)
+    londonLiveLowLine := line.new(llBar, londonLiveLow, bar_index, londonLiveLow,
+                                  xloc=xloc.bar_index, extend=extend.right,
+                                  color=color.new(londonColor, 100 - londonLineOpacity), width=londonLineThickness)
+
+if nyJustFroze
+    nhBar = na(nyHighBar) ? nyStartBar : nyHighBar
+    nlBar = na(nyLowBar)  ? nyStartBar : nyLowBar
+    if not na(nyLiveHighLine)
+        line.delete(nyLiveHighLine)
+    nyLiveHighLine := line.new(nhBar, nyLiveHigh, bar_index, nyLiveHigh,
+                               xloc=xloc.bar_index, extend=extend.right,
+                               color=color.new(nyColor, 100 - nyLineOpacity), width=nyLineThickness)
+    if not na(nyLiveLowLine)
+        line.delete(nyLiveLowLine)
+    nyLiveLowLine := line.new(nlBar, nyLiveLow, bar_index, nyLiveLow,
+                              xloc=xloc.bar_index, extend=extend.right,
+                              color=color.new(nyColor, 100 - nyLineOpacity), width=nyLineThickness)
+
+if sydneyJustFroze
+    shBar = na(sydneyHighBar) ? sydneyStartBar : sydneyHighBar
+    slBar = na(sydneyLowBar)  ? sydneyStartBar : sydneyLowBar
+    if not na(sydneyLiveHighLine)
+        line.delete(sydneyLiveHighLine)
+    sydneyLiveHighLine := line.new(shBar, sydneyLiveHigh, bar_index, sydneyLiveHigh,
+                                   xloc=xloc.bar_index, extend=extend.right,
+                                   color=color.new(sydneyColor, 100 - sydneyLineOpacity), width=sydneyLineThickness)
+    if not na(sydneyLiveLowLine)
+        line.delete(sydneyLiveLowLine)
+    sydneyLiveLowLine := line.new(slBar, sydneyLiveLow, bar_index, sydneyLiveLow,
+                                  xloc=xloc.bar_index, extend=extend.right,
+                                  color=color.new(sydneyColor, 100 - sydneyLineOpacity), width=sydneyLineThickness)
+
+// === Asia: draw short vertical start marker (session range) on freeze ===
+if asiaJustFroze and asiaShowStartVL
+    if not na(asiaStartVL)
+        line.delete(asiaStartVL)
+    // faded version of session color; segment only (no extend)
+    asiaStartVL := line.new(asiaStartBar, asiaLiveLow, asiaStartBar, asiaLiveHigh, xloc=xloc.bar_index, extend=extend.none, color=color.new(asiaColor, 65), width=asiaLineThickness)
+
+// === London ===
+if londonJustFroze and londonShowStartVL
+    if not na(londonStartVL)
+        line.delete(londonStartVL)
+    londonStartVL := line.new(londonStartBar, londonLiveLow, londonStartBar, londonLiveHigh,
+                              xloc=xloc.bar_index, extend=extend.none,
+                              color=color.new(londonColor, 65), width=londonLineThickness)
+
+// === New York ===
+if nyJustFroze and nyShowStartVL
+    if not na(nyStartVL)
+        line.delete(nyStartVL)
+    nyStartVL := line.new(nyStartBar, nyLiveLow, nyStartBar, nyLiveHigh,
+                          xloc=xloc.bar_index, extend=extend.none,
+                          color=color.new(nyColor, 65), width=nyLineThickness)
+
+// === Sydney ===
+if sydneyJustFroze and sydneyShowStartVL
+    if not na(sydneyStartVL)
+        line.delete(sydneyStartVL)
+    sydneyStartVL := line.new(sydneyStartBar, sydneyLiveLow, sydneyStartBar, sydneyLiveHigh,
+                              xloc=xloc.bar_index, extend=extend.none,
+                              color=color.new(sydneyColor, 65), width=sydneyLineThickness)
+
+// === While frozen, keep extending right at the frozen level (no change to left edge) ===
+if asiaFrozen and not na(asiaLiveHighLine) and not na(asiaLiveLowLine)
+    line.set_xy2(asiaLiveHighLine, bar_index, asiaLiveHigh)
+    line.set_xy2(asiaLiveLowLine,  bar_index, asiaLiveLow)
+    if showAsiaLabels
+        label.set_xy(asiaHighLabel, bar_index + 20, asiaLiveHigh)
+        label.set_xy(asiaLowLabel,  bar_index + 20, asiaLiveLow)
+
+if londonFrozen and not na(londonLiveHighLine) and not na(londonLiveLowLine)
+    line.set_xy2(londonLiveHighLine, bar_index, londonLiveHigh)
+    line.set_xy2(londonLiveLowLine,  bar_index, londonLiveLow)
+    if showLondonLabels
+        label.set_xy(londonHighLabel, bar_index + 20, londonLiveHigh)
+        label.set_xy(londonLowLabel,  bar_index + 20, londonLiveLow)
+
+if nyFrozen and not na(nyLiveHighLine) and not na(nyLiveLowLine)
+    line.set_xy2(nyLiveHighLine, bar_index, nyLiveHigh)
+    line.set_xy2(nyLiveLowLine,  bar_index, nyLiveLow)
+    if showNYLabels
+        label.set_xy(nyHighLabel, bar_index + 20, nyLiveHigh)
+        label.set_xy(nyLowLabel,  bar_index + 20, nyLiveLow)
+
+if sydneyFrozen and not na(sydneyLiveHighLine) and not na(sydneyLiveLowLine)
+    line.set_xy2(sydneyLiveHighLine, bar_index, sydneyLiveHigh)
+    line.set_xy2(sydneyLiveLowLine,  bar_index, sydneyLiveLow)
+    if showSydneyLabels
+        label.set_xy(sydneyHighLabel, bar_index + 20, sydneyLiveHigh)
+        label.set_xy(sydneyLowLabel,  bar_index + 20, sydneyLiveLow)
+
+
+// === Asia Session ===
+if asiaEnabled and asiaSession
+    if time == asiaStartTime
+        asiaLiveHigh := high
+        asiaLiveLow := low
+        asiaStartBar := bar_index
+        asiaHighBar  := bar_index    // we added these earlier
+        asiaLowBar   := bar_index
+
+        if not na(asiaLiveHighLine)
+            line.delete(asiaLiveHighLine)
+        if not na(asiaLiveLowLine)
+            line.delete(asiaLiveLowLine)
+        if not na(asiaHighLabel)
+            label.delete(asiaHighLabel)
+        if not na(asiaLowLabel)
+            label.delete(asiaLowLabel)
+        asiaLiveHighLine := line.new(asiaStartBar, asiaLiveHigh, bar_index, asiaLiveHigh, extend=extend.right, color=color.new(asiaColor, 100 - asiaLineOpacity), width=asiaLineThickness)
+        asiaLiveLowLine := line.new(asiaStartBar, asiaLiveLow, bar_index, asiaLiveLow, extend=extend.right, color=color.new(asiaColor, 100 - asiaLineOpacity), width=asiaLineThickness)
+        if showAsiaLabels
+            asiaHighLabel := label.new(bar_index + 20, asiaLiveHigh, "Asia High", style=label.style_label_center, textcolor=asiaTextColor, color=color.new(asiaColor, 100 - asiaLabelOpacity))
+            asiaLowLabel := label.new(bar_index + 20, asiaLiveLow, "Asia Low", style=label.style_label_center, textcolor=asiaTextColor, color=color.new(asiaColor, 100 - asiaLabelOpacity))
+    else
+        if not asiaFrozen
+            // keep tracking extremes *until* London starts
+            if high > asiaLiveHigh
+                asiaLiveHigh := high
+                asiaHighBar  := bar_index
+            if low < asiaLiveLow
+                asiaLiveLow := low
+                asiaLowBar  := bar_index
+
+            // ONLY move the live line while not frozen
+            line.set_xy1(asiaLiveHighLine, asiaStartBar, asiaLiveHigh)
+            line.set_xy2(asiaLiveHighLine, bar_index,    asiaLiveHigh)
+            line.set_xy1(asiaLiveLowLine,  asiaStartBar, asiaLiveLow)
+            line.set_xy2(asiaLiveLowLine,  bar_index,    asiaLiveLow)
+
+            if showAsiaLabels
+                label.set_xy(asiaHighLabel, bar_index + 20, asiaLiveHigh)
+                label.set_xy(asiaLowLabel,  bar_index + 20, asiaLiveLow)
+        // <- when asiaFrozen = true, do nothing here.
+
+
+
+
+// === London Session ===
+if londonEnabled and londonSession
+    if time == londonStartTime
+        londonLiveHigh := high
+        londonLiveLow := low
+        londonStartBar := bar_index
+
+        londonHighBar  := bar_index
+        londonLowBar   := bar_index
+
+        if not na(londonLiveHighLine)
+            line.delete(londonLiveHighLine)
+        if not na(londonLiveLowLine)
+            line.delete(londonLiveLowLine)
+        if not na(londonHighLabel)
+            label.delete(londonHighLabel)
+        if not na(londonLowLabel)
+            label.delete(londonLowLabel)
+        londonLiveHighLine := line.new(londonStartBar, londonLiveHigh, bar_index, londonLiveHigh, extend=extend.right, color=color.new(londonColor, 100 - londonLineOpacity), width=londonLineThickness)
+        londonLiveLowLine := line.new(londonStartBar, londonLiveLow, bar_index, londonLiveLow, extend=extend.right, color=color.new(londonColor, 100 - londonLineOpacity), width=londonLineThickness)
+        if showLondonLabels
+            londonHighLabel := label.new(bar_index + 20, londonLiveHigh, "London High", style=label.style_label_center, textcolor=londonTextColor, color=color.new(londonColor, 100 - londonLabelOpacity))
+            londonLowLabel := label.new(bar_index + 20, londonLiveLow, "London Low", style=label.style_label_center, textcolor=londonTextColor, color=color.new(londonColor, 100 - londonLabelOpacity))
+    else
+        if not londonFrozen
+            // keep tracking extremes until NY starts
+            if high > londonLiveHigh
+                londonLiveHigh := high
+                londonHighBar  := bar_index
+            if low < londonLiveLow
+                londonLiveLow := low
+                londonLowBar  := bar_index
+
+            // move the live lines only while NOT frozen
+            line.set_xy1(londonLiveHighLine, londonStartBar, londonLiveHigh)
+            line.set_xy2(londonLiveHighLine, bar_index,      londonLiveHigh)
+            line.set_xy1(londonLiveLowLine,  londonStartBar, londonLiveLow)
+            line.set_xy2(londonLiveLowLine,  bar_index,      londonLiveLow)
+
+            if showLondonLabels
+                label.set_xy(londonHighLabel, bar_index + 20, londonLiveHigh)
+                label.set_xy(londonLowLabel,  bar_index + 20, londonLiveLow)
+
+
+// === New York Session ===
+if nyEnabled and nySession
+    if time == nyStartTime
+        nyLiveHigh := high
+        nyLiveLow := low
+        nyStartBar := bar_index
+
+        nyHighBar  := bar_index
+        nyLowBar   := bar_index
+
+        if not na(nyLiveHighLine)
+            line.delete(nyLiveHighLine)
+        if not na(nyLiveLowLine)
+            line.delete(nyLiveLowLine)
+        if not na(nyHighLabel)
+            label.delete(nyHighLabel)
+        if not na(nyLowLabel)
+            label.delete(nyLowLabel)
+        nyLiveHighLine := line.new(nyStartBar, nyLiveHigh, bar_index, nyLiveHigh, extend=extend.right, color=color.new(nyColor, 100 - nyLineOpacity), width=nyLineThickness)
+        nyLiveLowLine := line.new(nyStartBar, nyLiveLow, bar_index, nyLiveLow, extend=extend.right, color=color.new(nyColor, 100 - nyLineOpacity), width=nyLineThickness)
+        if showNYLabels
+            nyHighLabel := label.new(bar_index + 20, nyLiveHigh, "NY High", style=label.style_label_center, textcolor=nyTextColor, color=color.new(nyColor, 100 - nyLabelOpacity))
+            nyLowLabel := label.new(bar_index + 20, nyLiveLow, "NY Low", style=label.style_label_center, textcolor=nyTextColor, color=color.new(nyColor, 100 - nyLabelOpacity))
+    else
+        if not nyFrozen
+            // keep tracking extremes until Sydney starts
+            if high > nyLiveHigh
+                nyLiveHigh := high
+                nyHighBar  := bar_index
+            if low < nyLiveLow
+                nyLiveLow := low
+                nyLowBar  := bar_index
+
+            // move the live lines only while NOT frozen
+            line.set_xy1(nyLiveHighLine, nyStartBar, nyLiveHigh)
+            line.set_xy2(nyLiveHighLine, bar_index,  nyLiveHigh)
+            line.set_xy1(nyLiveLowLine,  nyStartBar, nyLiveLow)
+            line.set_xy2(nyLiveLowLine,  bar_index,  nyLiveLow)
+
+            if showNYLabels
+                label.set_xy(nyHighLabel, bar_index + 20, nyLiveHigh)
+                label.set_xy(nyLowLabel,  bar_index + 20, nyLiveLow)
+
+
+// === Sydney Session ===
+if sydneyEnabled and sydneySession
+    if time == sydneyStartTime
+        sydneyLiveHigh := high
+        sydneyLiveLow := low
+        sydneyStartBar := bar_index
+
+        sydneyHighBar  := bar_index
+        sydneyLowBar   := bar_index
+
+        if not na(sydneyLiveHighLine)
+            line.delete(sydneyLiveHighLine)
+        if not na(sydneyLiveLowLine)
+            line.delete(sydneyLiveLowLine)
+        if not na(sydneyHighLabel)
+            label.delete(sydneyHighLabel)
+        if not na(sydneyLowLabel)
+            label.delete(sydneyLowLabel)
+        sydneyLiveHighLine := line.new(sydneyStartBar, sydneyLiveHigh, bar_index, sydneyLiveHigh, extend=extend.right, color=color.new(sydneyColor, 100 - sydneyLineOpacity), width=sydneyLineThickness)
+        sydneyLiveLowLine := line.new(sydneyStartBar, sydneyLiveLow, bar_index, sydneyLiveLow, extend=extend.right, color=color.new(sydneyColor, 100 - sydneyLineOpacity), width=sydneyLineThickness)
+        if showSydneyLabels
+            sydneyHighLabel := label.new(bar_index + 20, sydneyLiveHigh, "Sydney High", style=label.style_label_center, textcolor=sydneyTextColor, color=color.new(sydneyColor, 100 - sydneyLabelOpacity))
+            sydneyLowLabel := label.new(bar_index + 20, sydneyLiveLow, "Sydney Low", style=label.style_label_center, textcolor=sydneyTextColor, color=color.new(sydneyColor, 100 - sydneyLabelOpacity))
+    else
+        if not sydneyFrozen
+            // keep tracking extremes until Asia starts
+            if high > sydneyLiveHigh
+                sydneyLiveHigh := high
+                sydneyHighBar  := bar_index
+            if low < sydneyLiveLow
+                sydneyLiveLow := low
+                sydneyLowBar  := bar_index
+
+            // move the live lines only while NOT frozen
+            line.set_xy1(sydneyLiveHighLine, sydneyStartBar, sydneyLiveHigh)
+            line.set_xy2(sydneyLiveHighLine, bar_index,      sydneyLiveHigh)
+            line.set_xy1(sydneyLiveLowLine,  sydneyStartBar, sydneyLiveLow)
+            line.set_xy2(sydneyLiveLowLine,  bar_index,      sydneyLiveLow)
+
+            if showSydneyLabels
+                label.set_xy(sydneyHighLabel, bar_index + 20, sydneyLiveHigh)
+                label.set_xy(sydneyLowLabel,  bar_index + 20, sydneyLiveLow)
+
+
+
+// === Reset freeze flags at each session start ===
+if asiaSession and time == asiaStartTime
+    asiaFrozen := false
+if londonSession and time == londonStartTime
+    londonFrozen := false
+if nySession and time == nyStartTime
+    nyFrozen := false
+if sydneySession and time == sydneyStartTime
+    sydneyFrozen := false
+
+// === Custom Previous Trading Day High / Low (3 PM to 2 PM LA Time) ===
+// Define session start/end in LA time for trading day
+sessStartHour = 15
+sessStartMinute = 0
+sessEndHour = 14
+sessEndMinute = 0
+
+// Calculate today's session start and end timestamps
+sessStartToday = timestamp("America/Los_Angeles", year, month, dayofmonth, sessStartHour + timezoneOffset, sessStartMinute)
+sessEndToday = timestamp("America/Los_Angeles", year, month, dayofmonth, sessEndHour + timezoneOffset, sessEndMinute)
+
+// Calculate session start (if time < sessStartToday, session started previous day)
+sessStart = time >= sessStartToday ? sessStartToday : sessStartToday - 24*60*60*1000
+sessEnd = sessEndToday
+
+
+newSessionStart = (time[1] < sessStart) and (time >= sessStart)
+if newSessionStart
+    // Freeze yesterday's values
+    prevSessionHigh    := sessionHigh
+    prevSessionLow     := sessionLow
+    prevSessionHighBar := sessionHighBar
+    prevSessionLowBar  := sessionLowBar
+    // Reset for the new day starting now
+    sessionHigh    := high
+    sessionLow     := low
+    sessionHighBar := bar_index
+    sessionLowBar  := bar_index
+else
+    if time >= sessStart and time < sessEnd
+        if na(sessionHigh) or high > sessionHigh
+            sessionHigh    := high
+            sessionHighBar := bar_index
+        if na(sessionLow) or low < sessionLow
+            sessionLow    := low
+            sessionLowBar := bar_index
+
+
+// Calculate future extension for lines (7 days ahead)
+daysForward = 7
+futureTime = time + daysForward * 24 * 60 * 60 * 1000
+
+// === Draw Previous Day High / Low (anchored at the bars that set them) ===
+var line prevSessionHighLine = na
+var line prevSessionLowLine  = na
+
+// Leftmost of the two PD extremes (earliest bar that set PDH/PDL)
+leftBar = na(prevSessionHighBar) and na(prevSessionLowBar) ? na :
+          na(prevSessionHighBar) ? prevSessionLowBar :
+          na(prevSessionLowBar)  ? prevSessionHighBar :
+          (prevSessionHighBar < prevSessionLowBar ? prevSessionHighBar : prevSessionLowBar)
+
+// PDH
+if pdhlShow and not na(prevSessionHigh)
+    lineColorHigh = color.new(pdhlColor, 100 - pdhlLineOpacity)
+    x1h = na(prevSessionHighBar) ? bar_index : prevSessionHighBar
+    if na(prevSessionHighLine)
+        prevSessionHighLine := line.new(x1=x1h, y1=prevSessionHigh, x2=bar_index, y2=prevSessionHigh, xloc=xloc.bar_index, extend=extend.right, color=lineColorHigh, width=pdhlLineThickness)
+    else
+        line.set_xy1(prevSessionHighLine, x1h, prevSessionHigh)
+        line.set_xy2(prevSessionHighLine, bar_index, prevSessionHigh)
+        line.set_color(prevSessionHighLine, lineColorHigh)
+        line.set_width(prevSessionHighLine, pdhlLineThickness)
+
+// PDL
+if pdhlShow and not na(prevSessionLow)
+    lineColorLow = color.new(pdhlColor, 100 - pdhlLineOpacity)
+    x1l = na(prevSessionLowBar) ? bar_index : prevSessionLowBar
+    if na(prevSessionLowLine)
+        prevSessionLowLine := line.new(x1=x1l, y1=prevSessionLow, x2=bar_index, y2=prevSessionLow,
+                                       xloc=xloc.bar_index, extend=extend.right,
+                                       color=lineColorLow, width=pdhlLineThickness)
+    else
+        line.set_xy1(prevSessionLowLine, x1l, prevSessionLow)
+        line.set_xy2(prevSessionLowLine, bar_index, prevSessionLow)
+        line.set_color(prevSessionLowLine, lineColorLow)
+        line.set_width(prevSessionLowLine, pdhlLineThickness)
+
+// === PD start pin at the start of the previous custom day (3:00pm LA) ===
+if pdhlShow and pdhlShowStartVL and not na(prevSessionHigh) and not na(prevSessionLow)
+    prevSessStart = sessStart - 24*60*60*1000  // yesterday's 3:00pm LA in ms
+    // rebuild each bar to avoid drift
+    if not na(pdStartVL)
+        line.delete(pdStartVL)
+    pdStartVL := line.new(x1=prevSessStart, y1=prevSessionLow,x2=prevSessStart, y2=prevSessionHigh,xloc=xloc.bar_time, extend=extend.none,color=color.new(pdhlColor, 65), width=pdhlLineThickness)
+else
+    if not na(pdStartVL)
+        line.delete(pdStartVL)
+        pdStartVL := na
+
+
+
+// === PD Mid (start at leftmost of PDH/PDL) ===
+var line  prevSessionMidLine  = na
+var label prevSessionMidLabel = na
+
+
+
+// Convert UI string to style
+lineStyle = switch pdhlMidLineStyle
+    "solid"  => line.style_solid
+    "dashed" => line.style_dashed
+    "dotted" => line.style_dotted
+    => line.style_dotted
+
+// Midpoint of PD range (guard against na)
+midValue = (not na(prevSessionHigh) and not na(prevSessionLow)) ? (prevSessionHigh + prevSessionLow) / 2 : na
+
+if pdhlMidShow and not na(prevSessionHigh) and not na(prevSessionLow)
+    lineColorMid = color.new(pdhlMidColor, 100 - pdhlMidLineOpacity)
+    x1m = na(leftBar) ? bar_index : leftBar
+    if na(prevSessionMidLine)
+        prevSessionMidLine := line.new(x1=x1m, y1=midValue, x2=bar_index, y2=midValue,
+                                       xloc=xloc.bar_index, extend=extend.right,
+                                       color=lineColorMid, width=pdhlMidLineThickness, style=lineStyle)
+    else
+        line.set_xy1(prevSessionMidLine, x1m, midValue)
+        line.set_xy2(prevSessionMidLine, bar_index, midValue)
+        line.set_color(prevSessionMidLine, lineColorMid)
+        line.set_width(prevSessionMidLine, pdhlMidLineThickness)
+        line.set_style(prevSessionMidLine, lineStyle)
+
+    if pdhlShowLabels
+        if na(prevSessionMidLabel)
+            prevSessionMidLabel := label.new(bar_index + 20, midValue, "PD Mid",
+                                             style=label.style_label_center,
+                                             color=color.new(pdhlMidColor, 100 - pdhlLabelOpacity),
+                                             textcolor=pdhlMidTextColor)
+        else
+            label.set_xy(prevSessionMidLabel, bar_index + 20, midValue)
+            label.set_textcolor(prevSessionMidLabel, pdhlMidTextColor)
+            label.set_color(prevSessionMidLabel, color.new(pdhlMidColor, 100 - pdhlLabelOpacity))
+else
+    if not na(prevSessionMidLine)
+        line.delete(prevSessionMidLine)
+        prevSessionMidLine := na
+    if not na(prevSessionMidLabel)
+        label.delete(prevSessionMidLabel)
+        prevSessionMidLabel := na
+
+
+
+
+// Label position far right (offset + 20 bars)
+var int lastVisibleBar = na
+if barstate.islast
+    lastVisibleBar := bar_index
+
+var label prevSessionHighLabel = na
+var label prevSessionLowLabel = na
+
+if pdhlShow and pdhlShowLabels and not na(prevSessionHigh)
+    if na(prevSessionHighLabel)
+        prevSessionHighLabel := label.new(lastVisibleBar + 20, prevSessionHigh, "PDH", style=label.style_label_center, color=color.new(pdhlColor, 100 - pdhlLabelOpacity), textcolor=pdhlTextColor)
+    else
+        label.set_xy(prevSessionHighLabel, lastVisibleBar + 20, prevSessionHigh)
+        label.set_textcolor(prevSessionHighLabel, pdhlTextColor)
+        label.set_color(prevSessionHighLabel, color.new(pdhlColor, 100 - pdhlLabelOpacity))
+        label.set_style(prevSessionHighLabel, label.style_label_center)
+
+if pdhlShow and pdhlShowLabels and not na(prevSessionLow)
+    if na(prevSessionLowLabel)
+        prevSessionLowLabel := label.new(lastVisibleBar + 20, prevSessionLow, "PDL", style=label.style_label_center, color=color.new(pdhlColor, 100 - pdhlLabelOpacity), textcolor=pdhlTextColor)
+    else
+        label.set_xy(prevSessionLowLabel, lastVisibleBar + 20, prevSessionLow)
+        label.set_textcolor(prevSessionLowLabel, pdhlTextColor)
+        label.set_color(prevSessionLowLabel, color.new(pdhlColor, 100 - pdhlLabelOpacity))
+        label.set_style(prevSessionLowLabel, label.style_label_center)
+
+if pdhlMidShow and pdhlShowLabels and not na(midValue)
+    if na(prevSessionMidLabel)
+        prevSessionMidLabel := label.new(lastVisibleBar + 20, midValue, "PD Mid", style=label.style_label_center, color=color.new(pdhlMidColor, 100 - pdhlMidLineOpacity), textcolor=pdhlMidColor)
+
+        label.set_xy(prevSessionMidLabel, lastVisibleBar + 20, midValue)
+        label.set_textcolor(prevSessionMidLabel, pdhlMidColor)
+        label.set_color(prevSessionMidLabel, color.new(pdhlMidColor, 100 - pdhlMidLineOpacity))
+        label.set_style(prevSessionMidLabel, label.style_label_center)
+
+
+// === Vertical Lines Drawing ===
+// Helper function to get timestamp with timezone offset
+getTimestamp(hour, minute) =>
+    timestamp("America/Los_Angeles", year, month, dayofmonth, hour + timezoneOffset, minute)
+
+// Draw vertical line helper function
+drawVerticalLine(line l, int hour, int minute, color col) =>
+    var line tempLine = l
+    ts = getTimestamp(hour, minute)
+    if na(tempLine)
+        tempLine := line.new(ts, 0, ts, 1000000, xloc=xloc.bar_time, extend=extend.both, color=col, width=vertLineThickness)
+    else
+        line.set_x1(tempLine, ts)
+        line.set_x2(tempLine, ts)
+        line.set_color(tempLine, col)
+    tempLine
+
+// Declare vertical line variables
+var line preMarketLine = na
+var line marketOpenLine = na
+var line marketCloseLine = na
+
+if vertLinesShow
+    preMarketLine := drawVerticalLine(preMarketLine, 5, 30, preMarketColor)
+    marketOpenLine := drawVerticalLine(marketOpenLine, 6, 30, marketOpenColor)
+    marketCloseLine := drawVerticalLine(marketCloseLine, 14, 0, marketCloseColor)
+else
+    if not na(preMarketLine)
+        line.delete(preMarketLine)
+        preMarketLine := na
+    if not na(marketOpenLine)
+        line.delete(marketOpenLine)
+        marketOpenLine := na
+    if not na(marketCloseLine)
+        line.delete(marketCloseLine)
+        marketCloseLine := na
+
+// === Custom Vertical Lines — logic (labels = bar high + cvLabelOffset) ===
+// Requires UI inputs: cv1/2/3/4Enabled, Hour/Minute, Color, Opacity, Thick, LabelTxt, TextColor
+// and cvLabelOffset (price units). Uses Los Angeles time + timezoneOffset.
+
+// Persistent handles (declare once)
+var line  cvLine1 = na
+var line  cvLine2 = na
+var line  cvLine3 = na
+var line  cvLine4 = na
+
+var label cvLbl1  = na
+var label cvLbl2  = na
+var label cvLbl3  = na
+var label cvLbl4  = na
+
+// Per-line anchor highs (captured once when each timestamp is reached)
+var float cv1AnchorHigh = na
+var float cv2AnchorHigh = na
+var float cv3AnchorHigh = na
+var float cv4AnchorHigh = na
+
+// Helper for timestamp (same base as rest of script)
+cv_ts(int h, int m) =>
+    timestamp("America/Los_Angeles", year, month, dayofmonth, h + timezoneOffset, m)
+
+// Build today's timestamps
+tsCv1 = cv_ts(cv1Hour, cv1Minute)
+tsCv2 = cv_ts(cv2Hour, cv2Minute)
+tsCv3 = cv_ts(cv3Hour, cv3Minute)
+tsCv4 = cv_ts(cv4Hour, cv4Minute)
+
+// ---- Line 1 ----
+if cv1Enabled
+    col1 = color.new(cv1Color, 100 - cv1Opacity)
+
+    // vertical line at time tsCv1
+    if na(cvLine1)
+        cvLine1 := line.new(tsCv1, 0, tsCv1, 10e6, xloc=xloc.bar_time, extend=extend.both, color=col1, width=cv1Thick)
+    else
+        line.set_x1(cvLine1, tsCv1)
+        line.set_x2(cvLine1, tsCv1)
+        line.set_color(cvLine1, col1)
+        line.set_width(cvLine1, cv1Thick)
+
+    // capture anchor high once when bar reaches/passes timestamp
+    cv1Mark = time[1] < tsCv1 and time >= tsCv1
+    if cv1Mark
+        cv1AnchorHigh := high
+    // label y = anchor high + offset (fallback to current high if not yet captured)
+    y1 = nz(cv1AnchorHigh, high) + cvLabelOffset
+
+    // create/update label
+    if na(cvLbl1)
+        cvLbl1 := label.new(x=tsCv1, y=y1, xloc=xloc.bar_time, yloc=yloc.price, text=cv1LabelTxt, style=label.style_label_center, textcolor=cv1TextColor, color=col1)
+    else
+        label.set_x(cvLbl1, tsCv1)
+        label.set_y(cvLbl1, y1)
+        label.set_text(cvLbl1, cv1LabelTxt)
+        label.set_color(cvLbl1, col1)
+        label.set_textcolor(cvLbl1, cv1TextColor)
+else
+    if not na(cvLine1)
+        line.delete(cvLine1), cvLine1 := na
+    if not na(cvLbl1)
+        label.delete(cvLbl1), cvLbl1 := na
+    cv1AnchorHigh := na
+
+// ---- Line 2 ----
+if cv2Enabled
+    col2 = color.new(cv2Color, 100 - cv2Opacity)
+
+    if na(cvLine2)
+        cvLine2 := line.new(tsCv2, 0, tsCv2, 10e6, xloc=xloc.bar_time, extend=extend.both, color=col2, width=cv2Thick)
+    else
+        line.set_x1(cvLine2, tsCv2)
+        line.set_x2(cvLine2, tsCv2)
+        line.set_color(cvLine2, col2)
+        line.set_width(cvLine2, cv2Thick)
+
+    cv2Mark = time[1] < tsCv2 and time >= tsCv2
+    if cv2Mark
+        cv2AnchorHigh := high
+    y2 = nz(cv2AnchorHigh, high) + cvLabelOffset
+
+    if na(cvLbl2)
+        cvLbl2 := label.new(x=tsCv2, y=y2, xloc=xloc.bar_time, yloc=yloc.price, text=cv2LabelTxt, style=label.style_label_center, textcolor=cv2TextColor, color=col2)
+    else
+        label.set_x(cvLbl2, tsCv2)
+        label.set_y(cvLbl2, y2)
+        label.set_text(cvLbl2, cv2LabelTxt)
+        label.set_color(cvLbl2, col2)
+        label.set_textcolor(cvLbl2, cv2TextColor)
+else
+    if not na(cvLine2)
+        line.delete(cvLine2), cvLine2 := na
+    if not na(cvLbl2)
+        label.delete(cvLbl2), cvLbl2 := na
+    cv2AnchorHigh := na
+
+// ---- Line 3 ----
+if cv3Enabled
+    col3 = color.new(cv3Color, 100 - cv3Opacity)
+
+    if na(cvLine3)
+        cvLine3 := line.new(tsCv3, 0, tsCv3, 10e6, xloc=xloc.bar_time, extend=extend.both, color=col3, width=cv3Thick)
+    else
+        line.set_x1(cvLine3, tsCv3)
+        line.set_x2(cvLine3, tsCv3)
+        line.set_color(cvLine3, col3)
+        line.set_width(cvLine3, cv3Thick)
+
+    cv3Mark = time[1] < tsCv3 and time >= tsCv3
+    if cv3Mark
+        cv3AnchorHigh := high
+    y3 = nz(cv3AnchorHigh, high) + cvLabelOffset
+
+    if na(cvLbl3)
+        cvLbl3 := label.new(x=tsCv3, y=y3, xloc=xloc.bar_time, yloc=yloc.price, text=cv3LabelTxt, style=label.style_label_center, textcolor=cv3TextColor, color=col3)
+    else
+        label.set_x(cvLbl3, tsCv3)
+        label.set_y(cvLbl3, y3)
+        label.set_text(cvLbl3, cv3LabelTxt)
+        label.set_color(cvLbl3, col3)
+        label.set_textcolor(cvLbl3, cv3TextColor)
+else
+    if not na(cvLine3)
+        line.delete(cvLine3), cvLine3 := na
+    if not na(cvLbl3)
+        label.delete(cvLbl3), cvLbl3 := na
+    cv3AnchorHigh := na
+
+// ---- Line 4 ----
+if cv4Enabled
+    col4 = color.new(cv4Color, 100 - cv4Opacity)
+
+    if na(cvLine4)
+        cvLine4 := line.new(tsCv4, 0, tsCv4, 10e6, xloc=xloc.bar_time, extend=extend.both, color=col4, width=cv4Thick)
+    else
+        line.set_x1(cvLine4, tsCv4)
+        line.set_x2(cvLine4, tsCv4)
+        line.set_color(cvLine4, col4)
+        line.set_width(cvLine4, cv4Thick)
+
+    cv4Mark = time[1] < tsCv4 and time >= tsCv4
+    if cv4Mark
+        cv4AnchorHigh := high
+    y4 = nz(cv4AnchorHigh, high) + cvLabelOffset
+
+    if na(cvLbl4)
+        cvLbl4 := label.new(x=tsCv4, y=y4, xloc=xloc.bar_time, yloc=yloc.price, text=cv4LabelTxt, style=label.style_label_center, textcolor=cv4TextColor, color=col4)
+    else
+        label.set_x(cvLbl4, tsCv4)
+        label.set_y(cvLbl4, y4)
+        label.set_text(cvLbl4, cv4LabelTxt)
+        label.set_color(cvLbl4, col4)
+        label.set_textcolor(cvLbl4, cv4TextColor)
+else
+    if not na(cvLine4)
+        line.delete(cvLine4), cvLine4 := na
+    if not na(cvLbl4)
+        label.delete(cvLbl4), cvLbl4 := na
+    cv4AnchorHigh := na

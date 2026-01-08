@@ -1,0 +1,431 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © u_20bf
+
+//@version=6
+
+// Constants for title management
+const string TITLE_BASE = "Monday Range (Lines)"
+const string TITLE_SHORT = "Monday Range 📏"
+const bool IS_DEV = false
+const bool IS_PRIV = false
+
+string title_long = TITLE_BASE + (IS_PRIV ? " 🔒🔒 PRIV" : "") + (IS_DEV ? " 🚧🚧 DEV" : "")
+string title_short = TITLE_SHORT + (IS_PRIV ? " 🔒🔒 PRIV" : "") + (IS_DEV ? " 🚧🚧 DEV" : "")
+
+indicator(title_long, title_short, overlay=true, max_lines_count = 500, max_labels_count = 500)
+// ------------------------------ Changelog ---------------------------
+// * updated to Pinescript v6
+// * refactor to display past Monday ranges
+// * add custom range levels
+// * optimized Monday storage and processing
+// * added line extension options
+// * added per line styling
+// * added Monday Open & Close to dynamic levels
+// * added breakout/reclaim alerts and labels
+// * automatic detection of week opening day & remove opening day setting
+
+// ---------------------------------------- Types & Constants --------------------------------------------------
+const string line_settings_group_title = "Monday High, Low, Open & Close levels"
+const string custom_line_settings_group_title = "Custom levels"
+const string label_settings_group_title = "Labels"
+const string extension_settings_group_title = "Line Extension"
+const color transparent = #ffffff00
+const int max_mondays_array_size = 52
+const string end_of_week = "End of Week"
+const string current_bar = "Current Bar"
+const string fixed_bars_label = "Fixed Bars"
+const string custom_level_tooltip = "Range multiplier from Monday Low. Examples: 0.0=Low, 0.5=Mid, 1.0=High, 1.5=50% above High, -0.5=50% below Low"
+
+type Monday
+    int wkStart
+    int wkEnd
+    float o
+    float h
+    float l
+    float c
+
+method price_range(Monday _monday) =>
+    _monday.h - _monday.l
+
+type RangeEvent
+    int bar_time
+    float price
+    int week_key
+
+type LevelConfig
+    bool enabled
+    string txt
+    float value
+    color col
+    string line_style
+    int line_width
+
+
+// ------------------------------ Functions ---------------------------
+get_line_type(_type) =>
+    switch _type
+        "Solid" => line.style_solid
+        "Dotted" => line.style_dotted
+        "Dashed" => line.style_dashed
+
+get_size(_size) =>
+    switch _size
+        "Auto" => size.auto
+        "Tiny" => size.tiny
+        "Small" => size.small
+        "Normal" => size.normal
+        "Large" => size.large
+        "Huge" => size.huge
+
+get_label_style(_style) =>
+    switch _style
+        "Label Down" => label.style_label_down
+        "Label Up" => label.style_label_up
+        "Label Left" => label.style_label_left
+        "Label Right" => label.style_label_right
+        "Triangle Down" => label.style_triangledown
+        "Triangle Up" => label.style_triangleup
+
+get_extension_end(monday, extension_type, fixed_bars) =>
+    switch extension_type
+        end_of_week => monday.wkEnd
+        current_bar => time
+        fixed_bars_label => monday.wkStart + (fixed_bars * timeframe.in_seconds("D") * 1000)
+
+draw_level(monday, level_config, monday_range, extension_end, text_colour, label_size) =>
+    if level_config.enabled
+        level_price = monday.l + (monday_range * level_config.value)
+        if level_config.txt != ""
+            label.new(x = extension_end, y = level_price, text = level_config.txt, xloc = xloc.bar_time, 
+                     textcolor = text_colour, size = label_size, style = label.style_label_left, color = transparent)
+        line.new(x1 = monday.wkStart, x2 = extension_end, y1 = level_price, y2 = level_price, xloc = xloc.bar_time, color = level_config.col, width = level_config.line_width, style = level_config.line_style)
+
+// ------------------------------ Inputs ---------------------------
+
+max_mondays = input.int(4, "Number of weeks of ranges to display", minval = 1, maxval = max_mondays_array_size)
+
+// Extension Settings
+extension_type = input.string(end_of_week, "Line extension", options = [end_of_week, current_bar, fixed_bars_label], group = extension_settings_group_title, tooltip = "Choose how far to extend the range lines")
+fixed_bars_count = input.int(5, "Fixed daily bars count", minval = 1, maxval = 50, group = extension_settings_group_title, active = extension_type == fixed_bars_label)
+
+
+// Monday OHLC dynamic levels
+use_mh = input.bool(true, "", inline = "MH", group = line_settings_group_title)
+mh_text = input.string("MH", "", inline = "MH", group = line_settings_group_title)
+mh_colour = input.color(color.new(#007FFF, 0), "", inline = "MH", group = line_settings_group_title)
+mh_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "MH", group = line_settings_group_title))
+mh_line_width = input.int(1, "", inline = "MH", group = line_settings_group_title)
+
+use_ml = input.bool(true, "", inline = "ML", group = line_settings_group_title)
+ml_text = input.string("ML", "", inline = "ML", group = line_settings_group_title)
+ml_colour = input.color(color.new(#007FFF, 0), "", inline = "ML", group = line_settings_group_title)
+ml_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "ML", group = line_settings_group_title))
+ml_line_width = input.int(1, "", inline = "ML", group = line_settings_group_title)
+
+use_mo = input.bool(false, "", inline = "MO", group = line_settings_group_title)
+mo_text = input.string("MO", "", inline = "MO", group = line_settings_group_title)
+mo_colour = input.color(color.new(#007FFF, 0), "", inline = "MO", group = line_settings_group_title)
+mo_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "MO", group = line_settings_group_title))
+mo_line_width = input.int(1, "", inline = "MO", group = line_settings_group_title)
+
+use_mc = input.bool(false, "", inline = "MC", group = line_settings_group_title)
+mc_text = input.string("MC", "", inline = "MC", group = line_settings_group_title)
+mc_colour = input.color(color.new(#007FFF, 0), "", inline = "MC", group = line_settings_group_title)
+mc_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "MC", group = line_settings_group_title))
+mc_line_width = input.int(1, "", inline = "MC", group = line_settings_group_title)
+
+
+// Custom Levels
+use_hz_1 = input.bool(true, "#1 Enabled", inline = "HZ1", group = custom_line_settings_group_title)
+hz1_label_text = input.string("EQ", "", inline = "HZ1", group = custom_line_settings_group_title)
+hz1_level_value = input.float(0.5, "", step = 0.01, inline = "HZ1", group = custom_line_settings_group_title, tooltip = custom_level_tooltip)
+hz1_colour = input.color(color.new(#007FFF, 0), "Line style", inline = "HZ1_2", group = custom_line_settings_group_title)
+hz1_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "HZ1_2", group = custom_line_settings_group_title))
+hz1_line_width = input.int(1, "", inline = "HZ1_2", group = custom_line_settings_group_title)
+
+use_hz_2 = input.bool(false, "#2 Enabled", inline = "HZ2", group = custom_line_settings_group_title)
+hz2_label_text = input.string("", "", inline = "HZ2", group = custom_line_settings_group_title)
+hz2_level_value = input.float(0, "", step = 0.01, inline = "HZ2", group = custom_line_settings_group_title, tooltip = custom_level_tooltip)
+hz2_colour = input.color(color.new(#007FFF, 0), "Line style", inline = "HZ2_2", group = custom_line_settings_group_title)
+hz2_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "HZ2_2", group = custom_line_settings_group_title))
+hz2_line_width = input.int(1, "", inline = "HZ2_2", group = custom_line_settings_group_title)
+
+use_hz_3 = input.bool(false, "#3 Enabled", inline = "HZ3", group = custom_line_settings_group_title)
+hz3_label_text = input.string("", "", inline = "HZ3", group = custom_line_settings_group_title)
+hz3_level_value = input.float(0, "", step = 0.01, inline = "HZ3", group = custom_line_settings_group_title, tooltip = custom_level_tooltip)
+hz3_colour = input.color(color.new(#007FFF, 0), "Line style", inline = "HZ3_2", group = custom_line_settings_group_title)
+hz3_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "HZ3_2", group = custom_line_settings_group_title))
+hz3_line_width = input.int(1, "", inline = "HZ3_2", group = custom_line_settings_group_title)
+
+use_hz_4 = input.bool(false, "#4 Enabled", inline = "HZ4", group = custom_line_settings_group_title)
+hz4_label_text = input.string("", "", inline = "HZ4", group = custom_line_settings_group_title)
+hz4_level_value = input.float(0, "", step = 0.01, inline = "HZ4", group = custom_line_settings_group_title, tooltip = custom_level_tooltip)
+hz4_colour = input.color(color.new(#007FFF, 0), "Line style", inline = "HZ4_2", group = custom_line_settings_group_title)
+hz4_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "HZ4_2", group = custom_line_settings_group_title))
+hz4_line_width = input.int(1, "", inline = "HZ4_2", group = custom_line_settings_group_title)
+
+use_hz_5 = input.bool(false, "#5 Enabled", inline = "HZ5", group = custom_line_settings_group_title)
+hz5_label_text = input.string("", "", inline = "HZ5", group = custom_line_settings_group_title)
+hz5_level_value = input.float(0, "", step = 0.01, inline = "HZ5", group = custom_line_settings_group_title, tooltip = custom_level_tooltip)
+hz5_colour = input.color(color.new(#007FFF, 0), "Line style", inline = "HZ5_2", group = custom_line_settings_group_title)
+hz5_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "HZ5_2", group = custom_line_settings_group_title))
+hz5_line_width = input.int(1, "", inline = "HZ5_2", group = custom_line_settings_group_title)
+
+use_hz_6 = input.bool(false, "#6 Enabled", inline = "HZ6", group = custom_line_settings_group_title)
+hz6_label_text = input.string("", "", inline = "HZ6", group = custom_line_settings_group_title)
+hz6_level_value = input.float(0, "", step = 0.01, inline = "HZ6", group = custom_line_settings_group_title, tooltip = custom_level_tooltip)
+hz6_colour = input.color(color.new(#007FFF, 0), "Line style", inline = "HZ6_2", group = custom_line_settings_group_title)
+hz6_line_style = get_line_type(input.string(defval = "Solid", title = "", 
+                                         options = ["Solid", "Dotted", "Dashed"], 
+                                         inline = "HZ6_2", group = custom_line_settings_group_title))
+hz6_line_width = input.int(1, "", inline = "HZ6_2", group = custom_line_settings_group_title)
+
+// Label Settings
+text_colour = input.color(color.gray, "Text Colour", tooltip = "The colour of all labels", group = label_settings_group_title)
+label_size = get_size(input.string("Small", "Label Size",
+                                 options = ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"],
+                                 tooltip = "The size of all labels", group = label_settings_group_title))
+
+// Alert Settings
+const string alert_settings_group_title = "Alerts"
+enable_alerts = input.bool(true, "Enable alerts", group = alert_settings_group_title, tooltip = "Enable alert conditions for Monday range triggers")
+show_breakout_labels = input.bool(false, "Show breakout markers on chart", group = alert_settings_group_title, tooltip = "Display visual markers when price breaks Monday high/low")
+high_break_color = input.color(#D4A574, "High break", group = alert_settings_group_title, inline = "HB")
+high_break_style = input.string("Label Down", "", options = ["Label Down", "Label Up", "Triangle Down", "Triangle Up"], group = alert_settings_group_title, inline = "HB")
+high_break_label_size = get_size(input.string("Small", "", options = ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group = alert_settings_group_title, inline = "HB"))
+low_break_color = input.color(#3498DB, "Low break ", group = alert_settings_group_title, inline = "LB")
+low_break_style = input.string("Label Up", "", options = ["Label Down", "Label Up", "Triangle Down", "Triangle Up"], group = alert_settings_group_title, inline = "LB")
+low_break_label_size = get_size(input.string("Small", "", options = ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group = alert_settings_group_title, inline = "LB"))
+
+show_reclaim_labels = input.bool(false, "Show reclaim markers on chart", group = alert_settings_group_title, tooltip = "Display visual markers when price reclaims back into Monday range")
+high_reclaim_color = input.color(#9B59B6, "High reclaim", group = alert_settings_group_title, inline = "HR")
+high_reclaim_style = input.string("Label Down", "", options = ["Label Down", "Label Up", "Triangle Down", "Triangle Up"], group = alert_settings_group_title, inline = "HR")
+high_reclaim_label_size = get_size(input.string("Small", "", options = ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group = alert_settings_group_title, inline = "HR"))
+low_reclaim_color = input.color(#2ECC71, "Low reclaim", group = alert_settings_group_title, inline = "LR")
+low_reclaim_style = input.string("Label Up", "", options = ["Label Down", "Label Up", "Triangle Down", "Triangle Up"], group = alert_settings_group_title, inline = "LR")
+low_reclaim_label_size = get_size(input.string("Small", "", options = ["Auto", "Tiny", "Small", "Normal", "Large", "Huge"], group = alert_settings_group_title, inline = "LR"))
+
+// ------------------------------ Calculations ---------------------------
+var can_show_monday_range = not timeframe.isweekly and not timeframe.ismonthly
+var mondays_map = map.new<int, Monday>() // Monday storage lookup
+var mondays_order = array.new<int>() // Keep order of Monday timestamps for iteration
+var high_breakouts = array.new<RangeEvent>() // Store all high breakouts
+var low_breakouts = array.new<RangeEvent>() // Store all low breakouts
+var high_reclaims = array.new<RangeEvent>() // Store all high reclaims (price went above then closed back below)
+var low_reclaims = array.new<RangeEvent>() // Store all low reclaims (price went below then closed back above)
+var high_touched = map.new<int, bool>() // Track if Monday high has been touched/breached
+var low_touched = map.new<int, bool>() // Track if Monday low has been touched/breached
+
+// Fetch data
+[wk_start, wk_end] = request.security(syminfo.tickerid, "W", [time, time_close], lookahead = barmerge.lookahead_on)
+[monday_open, monday_high, monday_low, monday_close] = request.security(syminfo.tickerid, "D", [open, high, low, close], lookahead = barmerge.lookahead_on)
+
+// Detect new week
+new_week = ta.change(time('W'))
+
+// Store opening day data when a new week starts
+if bool(new_week) and can_show_monday_range
+    if not map.contains(mondays_map, wk_start)
+        // Remove oldest entries when we exceed max size
+        while array.size(mondays_order) >= max_mondays_array_size
+            oldest_key = array.pop(mondays_order)
+            map.remove(mondays_map, oldest_key)
+
+        // Add new opening day data (includes Sunday gaps if present)
+        map.put(mondays_map, wk_start, Monday.new(wk_start, wk_end, monday_open, monday_high, monday_low, monday_close))
+        array.unshift(mondays_order, wk_start)
+
+// ------------------------------ Display ---------------------------
+if barstate.islast and can_show_monday_range and array.size(mondays_order) > 0
+    var level_configs = array.new<LevelConfig>()
+    if array.size(level_configs) == 0
+        array.push(level_configs, LevelConfig.new(use_hz_1, hz1_label_text, hz1_level_value, hz1_colour, hz1_line_style, hz1_line_width))
+        array.push(level_configs, LevelConfig.new(use_hz_2, hz2_label_text, hz2_level_value, hz2_colour, hz2_line_style, hz2_line_width))
+        array.push(level_configs, LevelConfig.new(use_hz_3, hz3_label_text, hz3_level_value, hz3_colour, hz3_line_style, hz3_line_width))
+        array.push(level_configs, LevelConfig.new(use_hz_4, hz4_label_text, hz4_level_value, hz4_colour, hz4_line_style, hz4_line_width))
+        array.push(level_configs, LevelConfig.new(use_hz_5, hz5_label_text, hz5_level_value, hz5_colour, hz5_line_style, hz5_line_width))
+        array.push(level_configs, LevelConfig.new(use_hz_6, hz6_label_text, hz6_level_value, hz6_colour, hz6_line_style, hz6_line_width))
+
+    // Process only the number of Mondays specified by user
+    end_index = math.min(max_mondays, array.size(mondays_order))
+
+    for i = 0 to end_index - 1
+        wk_key = array.get(mondays_order, i)
+        monday = map.get(mondays_map, wk_key)
+        
+        if na(monday)
+            continue
+            
+        monday_range = monday.price_range()
+        extension_end = get_extension_end(monday, extension_type, fixed_bars_count)
+        
+        // Draw Monday High
+        if use_mh
+            if mh_text != ""
+                label.new(x = extension_end, y = monday.h, text = mh_text, xloc = xloc.bar_time, 
+                         textcolor = text_colour, size = label_size, style = label.style_label_left, color = transparent)
+            line.new(x1 = monday.wkStart, x2 = extension_end, y1 = monday.h, y2 = monday.h, xloc = xloc.bar_time, color = mh_colour, width = mh_line_width, style = mh_line_style)
+        
+        // Draw Monday Low
+        if use_ml
+            if ml_text != ""
+                label.new(x = extension_end, y = monday.l, text = ml_text, xloc = xloc.bar_time, 
+                         textcolor = text_colour, size = label_size, style = label.style_label_left, color = transparent)
+            line.new(x1 = monday.wkStart, x2 = extension_end, y1 = monday.l, y2 = monday.l, xloc = xloc.bar_time, color = ml_colour, width = ml_line_width, style = ml_line_style)
+
+        // Draw Monday Open
+        if use_mo
+            if mo_text != ""
+                label.new(x = extension_end, y = monday.o, text = mo_text, xloc = xloc.bar_time, 
+                         textcolor = text_colour, size = label_size, style = label.style_label_left, color = transparent)
+            line.new(x1 = monday.wkStart, x2 = extension_end, y1 = monday.o, y2 = monday.o, xloc = xloc.bar_time, color = mo_colour, width = mo_line_width, style = mo_line_style)
+
+        // Draw Monday Close
+        if use_mc
+            if mc_text != ""
+                label.new(x = extension_end, y = monday.c, text = mc_text, xloc = xloc.bar_time, 
+                         textcolor = text_colour, size = label_size, style = label.style_label_left, color = transparent)
+            line.new(x1 = monday.wkStart, x2 = extension_end, y1 = monday.c, y2 = monday.c, xloc = xloc.bar_time, color = mc_colour, width = mc_line_width, style = mc_line_style)
+        
+        // Draw custom levels
+        for level_config in level_configs
+            draw_level(monday, level_config, monday_range, extension_end, text_colour, label_size)
+
+        // Draw breakout markers for this Monday range (only if within displayed ranges)
+        if show_breakout_labels
+            // Calculate offset as a percentage of the Monday range
+            label_offset = monday_range * 0.05  // 5% of the Monday range
+            high_style = get_label_style(high_break_style)
+            low_style = get_label_style(low_break_style)
+
+            // Draw high break labels for this week
+            if array.size(high_breakouts) > 0
+                for j = 0 to array.size(high_breakouts) - 1
+                    breakout = array.get(high_breakouts, j)
+                    if breakout.week_key == wk_key
+                        label.new(x=breakout.bar_time, y=breakout.price + label_offset, text="",
+                                 xloc=xloc.bar_time, yloc=yloc.price, style=high_style,
+                                 color=high_break_color, textcolor=color.white, size=high_break_label_size,
+                                 tooltip = "Monday High Break")
+
+            // Draw low break labels for this week
+            if array.size(low_breakouts) > 0
+                for j = 0 to array.size(low_breakouts) - 1
+                    breakout = array.get(low_breakouts, j)
+                    if breakout.week_key == wk_key
+                        label.new(x=breakout.bar_time, y=breakout.price - label_offset, text="",
+                                 xloc=xloc.bar_time, yloc=yloc.price, style=low_style,
+                                 color=low_break_color, textcolor=color.white, size=low_break_label_size,
+                                 tooltip = "Monday Low Break")
+
+        // Draw reclaim markers for this Monday range (only if within displayed ranges)
+        if show_reclaim_labels
+            // Calculate offset as a percentage of the Monday range
+            label_offset = monday_range * 0.05  // 5% of the Monday range
+            high_reclaim_style_val = get_label_style(high_reclaim_style)
+            low_reclaim_style_val = get_label_style(low_reclaim_style)
+
+            // Draw high reclaim labels for this week
+            if array.size(high_reclaims) > 0
+                for j = 0 to array.size(high_reclaims) - 1
+                    reclaim = array.get(high_reclaims, j)
+                    if reclaim.week_key == wk_key
+                        label.new(x=reclaim.bar_time, y=reclaim.price + label_offset, text="",
+                                 xloc=xloc.bar_time, yloc=yloc.price, style=high_reclaim_style_val,
+                                 color=high_reclaim_color, textcolor=color.white, size=high_reclaim_label_size,
+                                 tooltip = "Monday High Reclaim")
+
+            // Draw low reclaim labels for this week
+            if array.size(low_reclaims) > 0
+                for j = 0 to array.size(low_reclaims) - 1
+                    reclaim = array.get(low_reclaims, j)
+                    if reclaim.week_key == wk_key
+                        label.new(x=reclaim.bar_time, y=reclaim.price - label_offset, text="",
+                                 xloc=xloc.bar_time, yloc=yloc.price, style=low_reclaim_style_val,
+                                 color=low_reclaim_color, textcolor=color.white, size=low_reclaim_label_size,
+                                 tooltip = "Monday Low Reclaim")
+
+// ------------------------------ Alerts ---------------------------
+// Detect and store breakouts and reclaims for the current week's Monday range
+bool high_break = false
+bool low_break = false
+bool high_reclaim = false
+bool low_reclaim = false
+
+if enable_alerts and can_show_monday_range and map.contains(mondays_map, wk_start)
+    monday = map.get(mondays_map, wk_start)
+
+    if not na(monday)
+        // Only check if current bar is within this Monday's week
+        // BUT not during Monday itself - wait until Monday is complete
+        if time >= monday.wkStart and time <= monday.wkEnd
+            // Calculate when the opening day (Monday) ends
+            // Add 1 day in milliseconds to get past Monday
+            one_day_ms = 24 * 60 * 60 * 1000
+            opening_day_end = monday.wkStart + one_day_ms
+
+            // Only trigger alerts after Monday has completed
+            if time >= opening_day_end
+                // Track if high or low has been touched (high/low goes beyond range)
+                if high > monday.h or close > monday.h
+                    map.put(high_touched, monday.wkStart, true)
+
+                if low < monday.l or close < monday.l
+                    map.put(low_touched, monday.wkStart, true)
+
+                // Check for Monday High break (close above high)
+                if ta.crossover(close, monday.h)
+                    array.push(high_breakouts, RangeEvent.new(time, high, monday.wkStart))
+                    high_break := true
+
+                // Check for Monday Low break (close below low)
+                if ta.crossunder(close, monday.l)
+                    array.push(low_breakouts, RangeEvent.new(time, low, monday.wkStart))
+                    low_break := true
+
+                // Check for High Reclaim (price went above, now closes back below)
+                high_was_touched = map.get(high_touched, monday.wkStart)
+                if high_was_touched and close < monday.h
+                    array.push(high_reclaims, RangeEvent.new(time, high, monday.wkStart))
+                    high_reclaim := true
+                    map.put(high_touched, monday.wkStart, false)  // Reset after reclaim
+
+                // Check for Low Reclaim (price went below, now closes back above)
+                low_was_touched = map.get(low_touched, monday.wkStart)
+                if low_was_touched and close > monday.l
+                    array.push(low_reclaims, RangeEvent.new(time, low, monday.wkStart))
+                    low_reclaim := true
+                    map.put(low_touched, monday.wkStart, false)  // Reset after reclaim
+
+// Alert conditions - Breakouts
+alertcondition(high_break, title="Monday High Break", message="Price broke above Monday High: {{close}}")
+alertcondition(low_break, title="Monday Low Break", message="Price broke below Monday Low: {{close}}")
+alertcondition(high_break or low_break, title="Monday Range Break (High or Low)", message="Price broke Monday Range")
+
+// Alert conditions - Reclaims
+alertcondition(high_reclaim, title="Monday High Reclaim", message="Price closed back below Monday High: {{close}}")
+alertcondition(low_reclaim, title="Monday Low Reclaim", message="Price closed back above Monday Low: {{close}}")
+alertcondition(high_reclaim or low_reclaim, title="Monday Range Reclaim (High or Low)", message="Price closed back into Monday Range")
+
+// Alert condition - Any Setup (break or reclaim)
+alertcondition(high_break or low_break or high_reclaim or low_reclaim, title="Monday Range Setup (Any)", message="Monday Range event triggered - check chart for breakout or reclaim at {{close}}")
+
+// end

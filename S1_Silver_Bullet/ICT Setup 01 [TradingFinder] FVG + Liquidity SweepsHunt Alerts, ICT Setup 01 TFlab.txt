@@ -1,0 +1,387 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TFlab
+
+//@version=5
+indicator("ICT Setup 01 [TradingFinder] FVG + Liquidity Sweeps/Hunt Alerts", "ICT Setup 01 TFlab", overlay = true, max_bars_back = 5000, max_labels_count = 500, max_lines_count = 500)
+
+//import Library
+    //Alert Sender Library
+import TFlab/AlertSenderLibrary_TradingFinder/1 as AlertSender
+
+//input
+    //Multiplier Factor - Y length
+MATR = input.float(1 , 'FVG Detector Multiplier Factor',minval = 1 ,tooltip = 'By raising this coefficient, FVGs are identified, which the' +  
+ 'market has moved more and faster at the moment of their formation.', group = 'FVGs Setting' )
+    //Validity Period   - X length
+ValLenFVG = input.int(15, 'FVG Validity Period',minval = 2,tooltip ='You can determine the validity period of each FVG based on the number of candles.'  , group = 'FVGs Setting')
+    //FVG in the cheap or expensive or indifferent Zone
+DisANDPre = input.bool(false, 'Level in Low Risk Zone', group = 'Discount & Premium', tooltip = 'By turning on this feature, demand FVGs are formed in the discount area' +
+ 'and supply FVGs are formed in the premium area.')
+    //Hunt inside or outside the Zone
+IssSigM = input.string('Hunt', 'Issuing Signals Method', ['Hunt', 'Sweeps'], group = 'Signal' , tooltip = 'If you want the price to never go out of the zone, put it on the "Hunt" mode,'+
+ 'and if you want to receive the hunts that are formed outside the range as a signal, put it on the "Sweeps" mode.')
+    //The number of reactions allowed in a range
+NSA = input.int(3, 'The number of signals allowed from a Zone',minval = 1, tooltip = 'The number of times a signal is issued from a particular FVG.', group = 'Signal')
+    //Receiving a signal after several reactions in a range.
+SaH = input.bool(false, 'Signal after Hunts/Sweeps', group = 'Signal', tooltip = 'By activating this signal feature, a signal will be issued based on the number of hunts you specify.')
+    //The number of reactions to receive a signal
+HMH = input.int(2, 'How Many Hunts/Sweeps?',minval = 1, group = 'Signal', tooltip = 'The number of hunts to confirm and issue a signal')
+    //Show or hide Setups
+SALS = input.bool(false, 'Show All Long Setup' ,group = 'Show or Hide')
+SASS = input.bool(false, 'Show All Short Setup',group = 'Show or Hide')
+    //Aler
+Alert = input.string('On', 'Alert', ['On', 'Off'], 'If you turn on the Alert, you can receive alerts and notifications after setting the "Alert".', group = 'Alert')
+AlertName = input.string('ICT Setup 01 Alerts [TradingFinder]', 'Alert Name', group = 'Alert')
+Frequncy = input.string('Once Per Bar' , 'Message Frequency' , ['All', 'Once Per Bar' , 'Per Bar Close'], 'The triggering frequency. Possible values are: All'+ 
+ ' (all function calls trigger the alert), Once Per Bar (the first function call during the bar triggers the alert), ' +  
+ ' Per Bar Close (the function call triggers the alert only when it occurs during the last script iteration of the real-time bar,' +  
+ ' when it closes). The default is alert.freq_once_per_bar.)', group = 'Alert')
+UTC = input.string('UTC' , 'Show Alert time by Time Zone', group = 'Alert')
+MessageBull = input.text_area('Long Signal Position Based on ICT Setup 01 [FVG Hunts]' , 'Long Position Message' , group = 'Alert') 
+MessageBear = input.text_area('Short Signal Position Based on ICT Setup 01 [FVG Hunts]', 'Short Position Message',group = 'Alert')
+
+
+
+
+
+ATR = ta.atr(55)
+Body     = (close - open)
+FullBody =  math.abs(Body) / (high - low) 
+
+
+
+//Bullish Fair Value Gap
+var bool     BullFVG        = false
+var float    BuFVGDistal    = 0.0
+var float    BuFVGProximal  = 0.0
+var int      BuFVGPoint    = 0
+var line     BuDistalLine   = na
+var line     BuProximalLine = na
+var linefill BuLineFill     = na
+var label BuFVGLabel        = na
+
+//Bearish Fair Value Gap
+var bool     BearFVG        = false
+var float    BeFVGDistal    = 0.0
+var float    BeFVGProximal  = 0.0
+var int      BeFVGPoint    = 0
+var line     BeDistalLine   = na
+var line     BeProximalLine = na
+var linefill BeLineFill     = na
+var label BeFVGLabel        = na
+//Discount and Premium
+
+    //Bull
+var float BuPremium      = 0.0 
+var float BuDiscount     = 0.0
+var float BuEquilibrium  = 0.0
+var line BuPremiumLine      = na 
+var line BuDiscountLine     = na
+var line BuEquilibriumLine  = na
+var linefill BuPremFill = na
+var linefill BuDisFill  = na
+var label BuPremLabel   = na
+var label BuDisLabel    = na
+var label BuEquiLabel   = na
+
+    //Bear
+var float BePremium      = 0.0 
+var float BeDiscount     = 0.0
+var float BeEquilibrium  = 0.0
+var line BePremiumLine      = na 
+var line BeDiscountLine     = na
+var line BeEquilibriumLine  = na
+var linefill BePremFill = na
+var linefill BeDisFill  = na
+var label BePremLabel   = na
+var label BeDisLabel    = na
+var label BeEquiLabel   = na
+
+
+//Signal
+    //Bull
+var float BuLineSignal = 0.0
+
+    //Bear
+var float BeLineSignal = 0.0
+
+
+
+//First Levels Detector
+if (high - low[2]) > (MATR * ATR) //and FullBody > 0.65 and FullBody[1] > 0.55 and FullBody[2] > 0.5
+    if (low > high[2]) and (low[2] < low[1]) and (high[1] < high) and //Body > 0 and Body[1] > 0 and Body[2] > 0 and
+     (high + low[2]) / 2 >= high[2]
+        BuFVGDistal   := high[2]
+        BuFVGProximal := low
+        BuFVGPoint    := bar_index
+        BuDiscount    := low[2]
+        BuPremium     := high
+        BuEquilibrium := (high + low[2]) / 2
+        BullFVG       := true
+    else
+        BullFVG       := false
+else
+    BullFVG           := false
+
+
+if (high[2] - low) > (MATR * ATR) //and FullBody > 0.65 and FullBody[1] > 0.55 and FullBody[2] > 0.5
+    if low[2] > high and (high[2] > high[1]) and (low[1] > low) and //Body < 0 and Body[1] < 0 and Body[2] < 0 and
+     (low + high[2]) / 2 <= low[2]
+        BeFVGDistal   := low[2]
+        BeFVGProximal := high
+        BeFVGPoint    := bar_index 
+        BeDiscount    := low
+        BePremium     := high[2]
+        BeEquilibrium := (low + high[2]) / 2
+        BearFVG       := true
+    else
+        BearFVG       := false
+else
+    BearFVG           := false
+
+
+
+//Refine Level and Zone Confirmation
+
+// Refine = input.bool(true, 'Refine FVG')
+var float DistalLvLBu    = 0.0
+var float ProximalLvLBu  = 0.0
+
+var float DistalLvLBe    = 0.0
+var float ProximalLvLBe  = 0.0
+
+
+//Second Set Level 
+    //in Discount & Premium Zone 
+if DisANDPre
+    if BullFVG
+        if BuEquilibrium >= BuFVGProximal
+            DistalLvLBu    := BuFVGDistal
+            ProximalLvLBu  := BuFVGProximal
+        else
+            DistalLvLBu    := BuFVGDistal
+            ProximalLvLBu  := BuEquilibrium
+
+    if BearFVG
+        if BeEquilibrium <= BeFVGProximal
+            DistalLvLBe    := BeFVGDistal
+            ProximalLvLBe  := BeFVGProximal
+        else 
+            DistalLvLBe    := BeFVGDistal
+            ProximalLvLBe  := BeEquilibrium   
+    //in Orginal Zone
+else if DisANDPre == false
+    if BullFVG
+        DistalLvLBu    := BuFVGDistal
+        ProximalLvLBu  := BuFVGProximal
+    if BearFVG        
+        DistalLvLBe    := BeFVGDistal
+        ProximalLvLBe  := BeFVGProximal
+
+
+
+
+
+
+//Refiner Level
+var bool ValidityBuFVG = true
+var bool ValidityBeFVG = true
+
+var float Low  = 0.0
+var float High = 0.0
+
+var int LSC = 0 //Long Signal Counter
+var int SSC = 0 //Short Signal Counter
+
+var bool LongSignal  = false
+var bool ShortSignal = false
+
+
+
+
+
+
+// if Refine
+if ValidityBuFVG //for Bullish FVG
+    if Body[1] > 0
+        if (IssSigM == 'Sweeps' ? open[1] < DistalLvLBu[1] : low[1] < DistalLvLBu[1]) or bar_index > BuFVGPoint + ValLenFVG or (SaH == false ? LSC > NSA - 1 : false)
+            ValidityBuFVG := false            
+        else if open[1] < ProximalLvLBu[1] and open[1] > DistalLvLBu[1]
+            ProximalLvLBu := open[1]
+            // Low := 0.0
+            // LSC := 0
+
+
+    if (Body[1] < 0) or (Body[1] == 0)
+        if (IssSigM == 'Sweeps' ? close[1] < DistalLvLBu[1] : low[1] < DistalLvLBu[1]) or bar_index > BuFVGPoint + ValLenFVG or (SaH == false ? LSC > NSA - 1 : false)
+            ValidityBuFVG := false            
+        else if close[1] < ProximalLvLBu[1] and close[1] > DistalLvLBu[1]
+            ProximalLvLBu := close[1]
+            // Low := 0.0
+            // LSC := 0
+
+
+
+if ValidityBeFVG //for Bearish FVG
+    if Body[1] > 0
+        if (IssSigM == 'Sweeps' ? close[1] > DistalLvLBe[1] : high[1] > DistalLvLBe[1]) or bar_index > BeFVGPoint + ValLenFVG or (SaH == false ? SSC > NSA - 1 : false)
+            ValidityBeFVG := false            
+        else if close[1] > ProximalLvLBe[1] and close[1] < DistalLvLBe[1]
+            ProximalLvLBe := close[1]
+            // High := 0.0
+            // SSC  := 0
+
+    if (Body[1] < 0) or (Body[1] == 0)
+        if (IssSigM == 'Sweeps' ? open[1] > DistalLvLBe[1] : high[1] > DistalLvLBe[1]) or bar_index > BeFVGPoint + ValLenFVG or (SaH == false ? SSC > NSA - 1 : false)
+            ValidityBeFVG := false
+        else if open[1] > ProximalLvLBe[1] and open[1] < DistalLvLBe[1]
+            ProximalLvLBe := open[1]
+            // High := 0.0
+            // SSC  := 0
+
+
+if BuFVGPoint[1] != BuFVGPoint
+    ValidityBuFVG := true
+    Low := 0.0
+    LSC  := 0
+    LongSignal := false
+
+if BeFVGPoint[1] != BeFVGPoint
+    ValidityBeFVG := true
+    High := 0.0
+    SSC  := 0
+    ShortSignal := false
+
+
+    //Long
+if ValidityBuFVG //and BeFVGPoint + 2 < bar_index
+    if Low == 0.0 and low[0] < ProximalLvLBu
+        Low := low[0]
+    if low[0] < Low and  Low > 0.0
+        Low := low[0]
+        if close >= ProximalLvLBu 
+            LSC := LSC + 1 
+            if (SaH ? LSC == HMH : true)
+                LongSignal := true
+        else 
+            LongSignal := false
+    else 
+        LongSignal := false
+else
+    Low := 0.0
+    LSC := 0
+    LongSignal := false
+
+    //Short
+
+if ValidityBeFVG //and BuFVGPoint + 2 < bar_index
+    if High == 0.0 and high[0] > ProximalLvLBe
+        High := high[0]
+    if high[0] > High and  High > 0.0 
+        High := high[0]
+        if close <= ProximalLvLBe  
+            SSC  := SSC + 1
+            if (SaH ? SSC == HMH : true)
+                ShortSignal := true
+        else
+            ShortSignal := false
+    else 
+        ShortSignal := false
+else 
+    High := 0.0
+    SSC  := 0
+    ShortSignal := false
+
+
+
+
+
+
+//Drawing FVG
+
+plotshape(LongSignal, color = #008304, location = location.belowbar, style = shape.triangleup, size = size.small)
+plotshape(ShortSignal, color = #d30000, location = location.abovebar, style = shape.triangledown, size = size.small)
+
+
+
+if BullFVG
+    BuDistalLine   := line.new(BuFVGPoint ,DistalLvLBu ,bar_index , DistalLvLBu, color = #080808ba ,  style = line.style_dashed )
+    BuProximalLine := line.new(BuFVGPoint ,ProximalLvLBu ,bar_index , ProximalLvLBu, color = #080808ba ,  style = line.style_dashed )
+    BuLineFill     := linefill.new(BuDistalLine, BuProximalLine , color = #4caf4f4d)
+    BuFVGLabel     := label.new(BuFVGPoint + 1 , DistalLvLBu, 'FVG', style = label.style_label_down, color = #ffffff00 , textcolor = #000000, size = size.small )
+    if DisANDPre
+        BuDiscountLine     := line.new(BuFVGPoint + 12, BuDiscount, BuFVGPoint + 20, BuDiscount, color = #00000000)
+        BuPremiumLine      := line.new(BuFVGPoint + 12, BuPremium  , BuFVGPoint + 20, BuPremium, color = #00000000)
+        BuEquilibriumLine  := line.new(BuFVGPoint + 12, BuEquilibrium, BuFVGPoint + 20, BuEquilibrium, color = #00000000 )
+        BuDisFill      := linefill.new(BuDiscountLine, BuEquilibriumLine, #d3eeff6e )
+        BuPremFill     := linefill.new(BuPremiumLine , BuEquilibriumLine, #ffa5644b )
+        BuDisLabel     := label.new(BuFVGPoint + 16, BuDiscount ,  'Discount', style = label.style_label_center, color = #ffffff00 , textcolor = #000000, size = size.small)
+        BuPremLabel    := label.new(BuFVGPoint + 16, BuPremium   ,  'Premium', style = label.style_label_center, color = #ffffff00 , textcolor = #000000, size = size.small)
+        BuEquiLabel    := label.new(BuFVGPoint + 16, BuEquilibrium ,  'EQU', style = label.style_label_center, color = #ffffff00 , textcolor = #000000, size = size.small)
+
+if BullFVG == false and ValidityBuFVG and bar_index < BuFVGPoint + ValLenFVG
+    line.set_y1(BuProximalLine, ProximalLvLBu)
+    line.set_y2(BuProximalLine, ProximalLvLBu)
+
+if bar_index <= BuFVGPoint + ValLenFVG and ValidityBuFVG
+    line.set_x2(BuDistalLine, bar_index)
+    line.set_x2(BuProximalLine, bar_index)
+
+
+if BearFVG 
+    BeDistalLine   := line.new(BeFVGPoint ,DistalLvLBe ,bar_index , DistalLvLBe, color = #080808ba ,  style = line.style_dashed )
+    BeProximalLine := line.new(BeFVGPoint ,ProximalLvLBe ,bar_index , ProximalLvLBe, color = #080808ba ,  style = line.style_dashed )
+    BeLineFill     := linefill.new(BeDistalLine, BeProximalLine , color = #ff31314d)
+    BeFVGLabel     := label.new(BeFVGPoint + 1 , DistalLvLBe, 'FVG', style = label.style_label_up, color = #ffffff00 , textcolor = #000000, size = size.small )
+    if DisANDPre
+        BePremiumLine      := line.new(BeFVGPoint + 12, BePremium, BeFVGPoint + 20, BePremium, color = #00000000)
+        BeDiscountLine     := line.new(BeFVGPoint + 12, BeDiscount  , BeFVGPoint + 20, BeDiscount, color = #00000000)
+        BeEquilibriumLine  := line.new(BeFVGPoint + 12, BeEquilibrium, BeFVGPoint + 20, BeEquilibrium, color = #00000000 )
+        BeDisFill      := linefill.new(BeDiscountLine, BeEquilibriumLine, #d3eeff6e )
+        BePremFill     := linefill.new(BePremiumLine , BeEquilibriumLine, #ffa5644b )
+        BeDisLabel     := label.new(BeFVGPoint + 16, BeDiscount ,  'Discount', style = label.style_label_center, color = #ffffff00 , textcolor = #000000, size = size.small)
+        BePremLabel    := label.new(BeFVGPoint + 16, BePremium   ,  'Premium', style = label.style_label_center, color = #ffffff00 , textcolor = #000000, size = size.small)
+        BeEquiLabel    := label.new(BeFVGPoint + 16, BeEquilibrium ,  'EQU', style = label.style_label_center, color = #ffffff00 , textcolor = #000000, size = size.small)
+
+if BearFVG == false and ValidityBeFVG and bar_index < BeFVGPoint + ValLenFVG
+    line.set_y1(BeProximalLine, ProximalLvLBe)
+    line.set_y2(BeProximalLine, ProximalLvLBe)
+
+if bar_index <= BeFVGPoint + ValLenFVG and ValidityBeFVG
+    line.set_x2(BeDistalLine, bar_index)
+    line.set_x2(BeProximalLine, bar_index)
+
+
+
+if BullFVG and BullFVG != false and not SALS 
+    line.delete(BuDistalLine[1])   
+    line.delete(BuProximalLine[1]) 
+    linefill.delete(BuLineFill[1])     
+    label.delete(BuFVGLabel[1])    
+    line.delete(BuDiscountLine[1])     
+    line.delete(BuPremiumLine[1])      
+    line.delete(BuEquilibriumLine[1])
+    linefill.delete(BuDisFill[1])      
+    linefill.delete(BuPremFill[1])     
+    label.delete(BuDisLabel[1])    
+    label.delete(BuPremLabel[1])    
+    label.delete(BuEquiLabel[1])    
+
+if BearFVG and BearFVG != false and not SASS 
+    line.delete(BeDistalLine[1])    
+    line.delete(BeProximalLine[1]) 
+    linefill.delete(BeLineFill[1])     
+    label.delete(BeFVGLabel[1])    
+    line.delete(BeDiscountLine[1])     
+    line.delete(BePremiumLine[1])      
+    line.delete(BeEquilibriumLine[1])
+    linefill.delete(BeDisFill[1])      
+    linefill.delete(BePremFill[1])     
+    label.delete(BeDisLabel[1])    
+    label.delete(BePremLabel[1])    
+    label.delete(BeEquiLabel[1])
+
+//Alert
+
+AlertSender.AlertSender(LongSignal  , Alert, AlertName , 'Setup', '', 'Full' ,'Once Per Bar', 'UTC', 'Off', MessageBull, open, high, low, close,0,0,0,0,0)
+AlertSender.AlertSender(ShortSignal , Alert, AlertName , 'Setup', '', 'Full' ,'Once Per Bar', 'UTC', 'Off', MessageBear, open, high, low, close,0,0,0,0,0)

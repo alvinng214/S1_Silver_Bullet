@@ -1,0 +1,446 @@
+//@version=5
+indicator("Ighodalo Gold - CRT (Candles are ranges theory)", overlay=true, dynamic_requests=true, max_lines_count=500, max_labels_count=500)
+
+// Inputs
+lookback          = input.int(20, "Max Lookback Period", minval=1)
+enableAlerts      = input.bool(false, "Enable Alerts")
+enableLabels      = input.bool(true, "Enable Labels")
+labelLocation     = input.string("End", "Label Location", options=["Middle", "End"])
+enableOverlapping = input.bool(false, "Enable Overlapping CRTs")
+enableMidpoint    = input.bool(false, "Enable Midpoint")
+highStyleStr      = input.string("Solid", "High Line Style", options=["Solid", "Dashed", "Dotted"])
+highWidth         = input.int(1, "High Line Width")
+lowStyleStr       = input.string("Solid", "Low Line Style", options=["Solid", "Dashed", "Dotted"])
+lowWidth          = input.int(1, "Low Line Width")
+midStyleStr       = input.string("Dashed", "Mid Line Style", options=["Solid", "Dashed", "Dotted"])
+midWidth          = input.int(1, "Mid Line Width")
+
+// Turtle Soup signals
+enableTurtleSoup  = input.bool(true, "Enable Turtle Soup Signals")
+buyShapeStr       = input.string("Triangle Up", "Buy Signal Shape", options=["Arrow Up", "Arrow Down", "Triangle Up", "Triangle Down", "Diamond", "Square", "Circle", "Label Up", "Label Down", "X Cross", "Cross", "Flag"])
+sellShapeStr      = input.string("Triangle Down", "Sell Signal Shape", options=["Arrow Up", "Arrow Down", "Triangle Up", "Triangle Down", "Diamond", "Square", "Circle", "Label Up", "Label Down", "X Cross", "Cross", "Flag"])
+buyColor          = input.color(color.green, "Buy Signal Color")
+sellColor         = input.color(color.red,   "Sell Signal Color")
+signalSizeStr     = input.string("Large", "Signal Size", options=["Auto", "Huge", "Large", "Normal", "Small", "Tiny"])
+
+// ATR tolerance
+enableTolerance   = input.bool(true, "Enable Turtle Soup ATR Tolerance")
+atrLen            = input.int(14, "ATR Length", minval=1)
+atrMult           = input.float(0.1, "ATR Multiplier", step=0.0001)
+
+// CRT sets
+enable1    = input.bool(true,  "Enable CRT 1")
+tf1        = input.timeframe("60", "CRT Timeframe 1")
+highColor1 = input.color(color.black, "High Line Color 1")
+lowColor1  = input.color(color.black, "Low Line Color 1")
+midColor1  = input.color(color.gray,  "Mid Line Color 1")
+
+enable2    = input.bool(false, "Enable CRT 2")
+tf2        = input.timeframe("", "CRT Timeframe 2")
+highColor2 = input.color(color.black, "High Line Color 2")
+lowColor2  = input.color(color.black, "Low Line Color 2")
+midColor2  = input.color(color.gray,  "Mid Line Color 2")
+
+enable3    = input.bool(false, "Enable CRT 3")
+tf3        = input.timeframe("", "CRT Timeframe 3")
+highColor3 = input.color(color.black, "High Line Color 3")
+lowColor3  = input.color(color.black, "Low Line Color 3")
+midColor3  = input.color(color.gray,  "Mid Line Color 3")
+
+enable4    = input.bool(false, "Enable CRT 4")
+tf4        = input.timeframe("", "CRT Timeframe 4")
+highColor4 = input.color(color.black, "High Line Color 4")
+lowColor4  = input.color(color.black, "Low Line Color 4")
+midColor4  = input.color(color.gray,  "Mid Line Color 4")
+
+// Helpers
+line_style(string s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+getShape(s) =>
+    out = shape.triangleup
+    if s == "Arrow Up"
+        out := shape.arrowup
+    else if s == "Arrow Down"
+        out := shape.arrowdown
+    else if s == "Triangle Up"
+        out := shape.triangleup
+    else if s == "Triangle Down"
+        out := shape.triangledown
+    else if s == "Diamond"
+        out := shape.diamond
+    else if s == "Square"
+        out := shape.square
+    else if s == "Circle"
+        out := shape.circle
+    else if s == "Label Up"
+        out := shape.labelup
+    else if s == "Label Down"
+        out := shape.labeldown
+    else if s == "X Cross"
+        out := shape.xcross
+    else if s == "Cross"
+        out := shape.cross
+    else if s == "Flag"
+        out := shape.flag
+    out
+
+buy_shape  = getShape(buyShapeStr)
+sell_shape = getShape(sellShapeStr)
+
+array_contains(array<int> arr, int val) =>
+    if array.size(arr) == 0
+        false
+    else
+        found = false
+        for i = 0 to array.size(arr) - 1
+            if array.get(arr, i) == val
+                found := true
+                break
+        found
+
+crt_calc_all() =>
+    highs = array.new<float>()
+    lows  = array.new<float>()
+    times = array.new<int>()
+    for k = 1 to lookback
+        if na(high[k]) or na(low[k])
+            continue
+        potHigh = high[k]
+        potLow  = low[k]
+        within  = ta.highest(high, k) <= potHigh and ta.lowest(low, k) >= potLow
+        unique  = true
+        hh = ta.highest(high, k + 1)
+        ll = ta.lowest(low,  k + 1)
+        for i = 0 to k - 1
+            if high[i] == hh and low[i] == ll
+                unique := false
+                break
+        if within and unique
+            array.push(highs, potHigh)
+            array.push(lows,  potLow)
+            array.push(times, time[k])
+    [highs, lows, times]
+
+get_label_style(pos) =>
+    pos == "Middle" ? label.style_label_center : label.style_label_left
+
+get_label_x(pos, x1, x2) =>
+    pos == "Middle" ? int(math.avg(x1, x2)) : x2
+
+get_tf_label(string tf) =>
+    per = tf == "" ? timeframe.period : tf
+    out = per
+    if per == "1"
+        out := "1m"
+    else if per == "3"
+        out := "3m"
+    else if per == "5"
+        out := "5m"
+    else if per == "15"
+        out := "15m"
+    else if per == "30"
+        out := "30m"
+    else if per == "45"
+        out := "45m"
+    else if per == "60"
+        out := "H1"
+    else if per == "120"
+        out := "H2"
+    else if per == "180"
+        out := "H3"
+    else if per == "240"
+        out := "H4"
+    else if per == "360"
+        out := "H6"
+    else if per == "480"
+        out := "H8"
+    else if per == "720"
+        out := "H12"
+    else if per == "D"
+        out := "D1"
+    else if per == "W"
+        out := "W1"
+    else if per == "M"
+        out := "M1"
+    out
+
+// Types
+type CrtManager
+    string tf
+    string labelPrefix
+    color highColor
+    color lowColor
+    color midColor
+    array<float> crtHighs
+    array<float> crtLows
+    array<bool>  crtActives
+    array<bool>  buySignaled
+    array<bool>  sellSignaled
+    array<int>   detectedCrtTimes
+    array<line>  highLines
+    array<line>  lowLines
+    array<line>  midLines
+    array<label> highLabels
+    array<label> lowLabels
+    array<label> midLabels
+
+// Managers
+var array<CrtManager> managers = array.new<CrtManager>()
+
+if bar_index == 0
+    if enable1 and tf1 != ""
+        array.push(managers, CrtManager.new(tf1, get_tf_label(tf1), highColor1, lowColor1, midColor1, array.new<float>(), array.new<float>(), array.new<bool>(), array.new<bool>(), array.new<bool>(), array.new<int>(), array.new<line>(), array.new<line>(), array.new<line>(), array.new<label>(), array.new<label>(), array.new<label>()))
+    if enable2 and tf2 != ""
+        array.push(managers, CrtManager.new(tf2, get_tf_label(tf2), highColor2, lowColor2, midColor2, array.new<float>(), array.new<float>(), array.new<bool>(), array.new<bool>(), array.new<bool>(), array.new<int>(), array.new<line>(), array.new<line>(), array.new<line>(), array.new<label>(), array.new<label>(), array.new<label>()))
+    if enable3 and tf3 != ""
+        array.push(managers, CrtManager.new(tf3, get_tf_label(tf3), highColor3, lowColor3, midColor3, array.new<float>(), array.new<float>(), array.new<bool>(), array.new<bool>(), array.new<bool>(), array.new<int>(), array.new<line>(), array.new<line>(), array.new<line>(), array.new<label>(), array.new<label>(), array.new<label>()))
+    if enable4 and tf4 != ""
+        array.push(managers, CrtManager.new(tf4, get_tf_label(tf4), highColor4, lowColor4, midColor4, array.new<float>(), array.new<float>(), array.new<bool>(), array.new<bool>(), array.new<bool>(), array.new<int>(), array.new<line>(), array.new<line>(), array.new<line>(), array.new<label>(), array.new<label>(), array.new<label>()))
+
+// Drawing
+recreate_active_lines(CrtManager mgr, int index) =>
+    if index < array.size(mgr.crtHighs) and index < array.size(mgr.crtLows) and index < array.size(mgr.detectedCrtTimes)
+        pHigh = array.get(mgr.crtHighs, index)
+        pLow  = array.get(mgr.crtLows,  index)
+        c_time = array.get(mgr.detectedCrtTimes, index)
+
+        if array.size(mgr.highLines) > index
+            oldHighLine = array.get(mgr.highLines, index)
+            line.delete(oldHighLine)
+        if array.size(mgr.lowLines) > index
+            oldLowLine = array.get(mgr.lowLines, index)
+            line.delete(oldLowLine)
+        if enableMidpoint and array.size(mgr.midLines) > index
+            oldMidLine = array.get(mgr.midLines, index)
+            line.delete(oldMidLine)
+        if enableLabels and array.size(mgr.highLabels) > index
+            oldHighLabel = array.get(mgr.highLabels, index)
+            label.delete(oldHighLabel)
+        if enableLabels and array.size(mgr.lowLabels) > index
+            oldLowLabel = array.get(mgr.lowLabels, index)
+            label.delete(oldLowLabel)
+        if enableLabels and enableMidpoint and array.size(mgr.midLabels) > index
+            oldMidLabel = array.get(mgr.midLabels, index)
+            label.delete(oldMidLabel)
+
+        highLine_new = line.new(c_time, pHigh, time, pHigh, xloc=xloc.bar_time, color=mgr.highColor, style=line_style(highStyleStr), width=highWidth)
+        lowLine_new  = line.new(c_time, pLow,  time, pLow,  xloc=xloc.bar_time, color=mgr.lowColor,  style=line_style(lowStyleStr),  width=lowWidth)
+
+        while array.size(mgr.highLines) <= index
+            array.push(mgr.highLines, na)
+        while array.size(mgr.lowLines) <= index
+            array.push(mgr.lowLines, na)
+        array.set(mgr.highLines, index, highLine_new)
+        array.set(mgr.lowLines,  index, lowLine_new)
+
+        if enableMidpoint
+            pMid = (pHigh + pLow) / 2
+            midLine_new = line.new(c_time, pMid, time, pMid, xloc=xloc.bar_time, color=mgr.midColor, style=line_style(midStyleStr), width=midWidth)
+            while array.size(mgr.midLines) <= index
+                array.push(mgr.midLines, na)
+            array.set(mgr.midLines, index, midLine_new)
+
+        if enableLabels
+            x1 = c_time
+            x2 = time
+            lab_x = get_label_x(labelLocation, x1, x2)
+            label_style = get_label_style(labelLocation)
+            highLabel_new = label.new(lab_x, pHigh, mgr.labelPrefix + " CRTH", xloc=xloc.bar_time, yloc=yloc.price, style=label_style, color=na, textcolor=mgr.highColor)
+            lowLabel_new  = label.new(lab_x, pLow,  mgr.labelPrefix + " CRTL", xloc=xloc.bar_time, yloc=yloc.price, style=label_style, color=na, textcolor=mgr.lowColor)
+            while array.size(mgr.highLabels) <= index
+                array.push(mgr.highLabels, na)
+            while array.size(mgr.lowLabels) <= index
+                array.push(mgr.lowLabels, na)
+            array.set(mgr.highLabels, index, highLabel_new)
+            array.set(mgr.lowLabels,  index, lowLabel_new)
+            if enableMidpoint
+                pMid2 = (pHigh + pLow) / 2
+                midLabel_new = label.new(lab_x, pMid2, mgr.labelPrefix + " CRT 50%", xloc=xloc.bar_time, yloc=yloc.price, style=label_style, color=na, textcolor=mgr.midColor)
+                while array.size(mgr.midLabels) <= index
+                    array.push(mgr.midLabels, na)
+                array.set(mgr.midLabels, index, midLabel_new)
+
+// Detect CRTs only when selected timeframe bar closes
+for i = 0 to array.size(managers) - 1
+    mgr = array.get(managers, i)
+    hasActive = false
+    if array.size(mgr.crtActives) > 0
+        for k = 0 to array.size(mgr.crtActives) - 1
+            if array.get(mgr.crtActives, k)
+                hasActive := true
+                break
+    detectNew = enableOverlapping or not hasActive
+
+    if detectNew
+        hs = array.new<float>()
+        ls = array.new<float>()
+        ts = array.new<int>()
+        num = 0
+        if mgr.tf == ""
+            if bar_index >= lookback
+                [hs1, ls1, ts1] = crt_calc_all()
+                if not na(hs1) and not na(ls1) and not na(ts1)
+                    hs := hs1
+                    ls := ls1
+                    ts := ts1
+                    num := array.size(hs)
+                    num := math.min(num, array.size(ls))
+                    num := math.min(num, array.size(ts))
+        else
+            [hs1, ls1, ts1] = request.security(syminfo.tickerid, mgr.tf, crt_calc_all(), lookahead=barmerge.lookahead_off)
+            if not na(hs1) and not na(ls1) and not na(ts1)
+                hs := hs1
+                ls := ls1
+                ts := ts1
+                num := array.size(hs)
+                num := math.min(num, array.size(ls))
+                num := math.min(num, array.size(ts))
+
+        det_htf_closed = (mgr.tf == "" ? barstate.isconfirmed : request.security(syminfo.tickerid, mgr.tf, barstate.isconfirmed, lookahead=barmerge.lookahead_off))
+
+        if num > 0
+            if enableOverlapping
+                if det_htf_closed
+                    for m = 0 to num - 1
+                        c_time = array.get(ts, m)
+                        if not array_contains(mgr.detectedCrtTimes, c_time)
+                            pHigh = array.get(hs, m)
+                            pLow  = array.get(ls, m)
+                            array.push(mgr.detectedCrtTimes, c_time)
+                            array.push(mgr.crtHighs, pHigh)
+                            array.push(mgr.crtLows,  pLow)
+                            array.push(mgr.crtActives, true)
+                            array.push(mgr.buySignaled,  false)
+                            array.push(mgr.sellSignaled, false)
+                            recreate_active_lines(mgr, array.size(mgr.crtActives) - 1)
+            else
+                if det_htf_closed
+                    m = num - 1
+                    c_time = array.get(ts, m)
+                    if not array_contains(mgr.detectedCrtTimes, c_time)
+                        pHigh = array.get(hs, m)
+                        pLow  = array.get(ls, m)
+                        if not enableOverlapping
+                            if array.size(mgr.crtActives) > 0
+                                for k = 0 to array.size(mgr.crtActives) - 1
+                                    if array.get(mgr.crtActives, k)
+                                        array.set(mgr.crtActives, k, false)
+                        array.push(mgr.detectedCrtTimes, c_time)
+                        array.push(mgr.crtHighs, pHigh)
+                        array.push(mgr.crtLows,  pLow)
+                        array.push(mgr.crtActives, true)
+                        array.push(mgr.buySignaled,  false)
+                        array.push(mgr.sellSignaled, false)
+                        recreate_active_lines(mgr, array.size(mgr.crtActives) - 1)
+
+// Extend active lines each bar
+for i = 0 to array.size(managers) - 1
+    mgr = array.get(managers, i)
+    if array.size(mgr.crtActives) > 0
+        for k = 0 to array.size(mgr.crtActives) - 1
+            if array.get(mgr.crtActives, k)
+                recreate_active_lines(mgr, k)
+
+// Signals
+buy_signal = false
+sell_signal = false
+tol = enableTolerance ? ta.atr(atrLen) * atrMult : 0.0
+
+buy_tf1_fire = false
+sell_tf1_fire = false
+buy_tf2_fire = false
+sell_tf2_fire = false
+buy_tf3_fire = false
+sell_tf3_fire = false
+buy_tf4_fire = false
+sell_tf4_fire = false
+
+for i = 0 to array.size(managers) - 1
+    mgr = array.get(managers, i)
+    htf_close = mgr.tf == "" ? close : request.security(syminfo.tickerid, mgr.tf, close, lookahead=barmerge.lookahead_off)
+    htf_bar_closed = (mgr.tf == "" ? barstate.isconfirmed : request.security(syminfo.tickerid, mgr.tf, barstate.isconfirmed, lookahead=barmerge.lookahead_off))
+
+    if array.size(mgr.crtActives) > 0
+        j = array.size(mgr.crtActives) - 1
+        while j >= 0
+            if array.get(mgr.crtActives, j)
+                aHigh = array.get(mgr.crtHighs, j)
+                aLow  = array.get(mgr.crtLows,  j)
+                break_cond = htf_close > aHigh or htf_close < aLow
+
+                if break_cond
+                    array.set(mgr.crtActives, j, false)
+                    prev_end = time[1]
+                    if array.size(mgr.highLines) > j and array.size(mgr.lowLines) > j
+                        line.set_x2(array.get(mgr.highLines, j), prev_end)
+                        line.set_x2(array.get(mgr.lowLines,  j), prev_end)
+                        if enableMidpoint and array.size(mgr.midLines) > j
+                            line.set_x2(array.get(mgr.midLines, j), prev_end)
+                        if enableLabels and array.size(mgr.highLabels) > j and array.size(mgr.lowLabels) > j
+                            x1_prev = line.get_x1(array.get(mgr.highLines, j))
+                            lab_x   = get_label_x(labelLocation, x1_prev, prev_end)
+                            label.set_x(array.get(mgr.highLabels, j), lab_x)
+                            label.set_x(array.get(mgr.lowLabels,  j), lab_x)
+                            if enableMidpoint and array.size(mgr.midLabels) > j
+                                label.set_x(array.get(mgr.midLabels, j), lab_x)
+
+                if not array.get(mgr.buySignaled, j) and low <= (aLow + tol) and close > (aLow - tol)
+                    array.set(mgr.buySignaled, j, true)
+                    buy_signal := true
+                    if htf_bar_closed
+                        if i == 0
+                            buy_tf1_fire := true
+                        else if i == 1
+                            buy_tf2_fire := true
+                        else if i == 2
+                            buy_tf3_fire := true
+                        else if i == 3
+                            buy_tf4_fire := true
+                        if enableAlerts
+                            alert("Turtle Soup Buy Signal on " + mgr.labelPrefix + " CRT", alert.freq_once_per_bar)
+
+                if not array.get(mgr.sellSignaled, j) and high >= (aHigh - tol) and close < (aHigh + tol)
+                    array.set(mgr.sellSignaled, j, true)
+                    sell_signal := true
+                    if htf_bar_closed
+                        if i == 0
+                            sell_tf1_fire := true
+                        else if i == 1
+                            sell_tf2_fire := true
+                        else if i == 2
+                            sell_tf3_fire := true
+                        else if i == 3
+                            sell_tf4_fire := true
+                        if enableAlerts
+                            alert("Turtle Soup Sell Signal on " + mgr.labelPrefix + " CRT", alert.freq_once_per_bar)
+            j := j - 1
+
+// Alertconditions per TF
+alertcondition(buy_tf1_fire,  "CRT Turtle Soup BUY — tf1",  "BUY on tf1 bar close")
+alertcondition(sell_tf1_fire, "CRT Turtle Soup SELL — tf1", "SELL on tf1 bar close")
+alertcondition(buy_tf2_fire,  "CRT Turtle Soup BUY — tf2",  "BUY on tf2 bar close")
+alertcondition(sell_tf2_fire, "CRT Turtle Soup SELL — tf2", "SELL on tf2 bar close")
+alertcondition(buy_tf3_fire,  "CRT Turtle Soup BUY — tf3",  "BUY on tf3 bar close")
+alertcondition(sell_tf3_fire, "CRT Turtle Soup SELL — tf3", "SELL on tf3 bar close")
+alertcondition(buy_tf4_fire,  "CRT Turtle Soup BUY — tf4",  "BUY on tf4 bar close")
+alertcondition(sell_tf4_fire, "CRT Turtle Soup SELL — tf4", "SELL on tf4 bar close")
+
+// Plots
+plotshape(enableTurtleSoup and signalSizeStr == "Auto"   ? buy_signal  : na, "Turtle Soup Buy Auto",   style=buy_shape,  location=location.belowbar, color=buyColor,  size=size.auto)
+plotshape(enableTurtleSoup and signalSizeStr == "Auto"   ? sell_signal : na, "Turtle Soup Sell Auto",  style=sell_shape, location=location.abovebar, color=sellColor, size=size.auto)
+
+plotshape(enableTurtleSoup and signalSizeStr == "Huge"   ? buy_signal  : na, "Turtle Soup Buy Huge",   style=buy_shape,  location=location.belowbar, color=buyColor,  size=size.huge)
+plotshape(enableTurtleSoup and signalSizeStr == "Huge"   ? sell_signal : na, "Turtle Soup Sell Huge",  style=sell_shape, location=location.abovebar, color=sellColor, size=size.huge)
+
+plotshape(enableTurtleSoup and signalSizeStr == "Large"  ? buy_signal  : na, "Turtle Soup Buy Large",  style=buy_shape,  location=location.belowbar, color=buyColor,  size=size.large)
+plotshape(enableTurtleSoup and signalSizeStr == "Large"  ? sell_signal : na, "Turtle Soup Sell Large", style=sell_shape, location=location.abovebar, color=sellColor, size=size.large)
+
+plotshape(enableTurtleSoup and signalSizeStr == "Normal" ? buy_signal  : na, "Turtle Soup Buy Normal", style=buy_shape,  location=location.belowbar, color=buyColor,  size=size.normal)
+plotshape(enableTurtleSoup and signalSizeStr == "Normal" ? sell_signal : na, "Turtle Soup Sell Normal",style=sell_shape, location=location.abovebar, color=sellColor, size=size.normal)
+
+plotshape(enableTurtleSoup and signalSizeStr == "Small"  ? buy_signal  : na, "Turtle Soup Buy Small",  style=buy_shape,  location=location.belowbar, color=buyColor,  size=size.small)
+plotshape(enableTurtleSoup and signalSizeStr == "Small"  ? sell_signal : na, "Turtle Soup Sell Small", style=sell_shape, location=location.abovebar, color=sellColor, size=size.small)
+
+plotshape(enableTurtleSoup and signalSizeStr == "Tiny"   ? buy_signal  : na, "Turtle Soup Buy Tiny",   style=buy_shape,  location=location.belowbar, color=buyColor,  size=size.tiny)
+plotshape(enableTurtleSoup and signalSizeStr == "Tiny"   ? sell_signal : na, "Turtle Soup Sell Tiny",  style=sell_shape, location=location.abovebar, color=sellColor, size=size.tiny)

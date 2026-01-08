@@ -1,0 +1,565 @@
+// © goodia
+//@version=6
+indicator(
+     "MirPapa:ICT:HTF: FVG OB Threeple (EN)", 
+     overlay         = true, 
+     max_bars_back   = 5000, 
+     max_boxes_count = 500, 
+     max_labels_count= 500, 
+     max_lines_count = 500
+     )
+import goodia/MirPapa_Library_ICT/15 as lib
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// Common helper functions
+////////////////////////////////////////////////////////////////////////////////
+
+// @description Common helper to calculate box size
+// @param boxSize bool Box size option
+// @param open1 float 1 bar ago open
+// @param close1 float 1 bar ago close
+// @param high1 float 1 bar ago high
+// @param low1 float 1 bar ago low
+// @returns [float, float] [top, bottom] price
+calculateBoxSize(bool boxSize, float open1, float close1, float high1, float low1) =>
+    if boxSize
+        [math.max(open1, close1), math.min(open1, close1)]
+    else
+        [high1, low1]
+
+// @description Array cleanup helper (remove inactive boxes only)
+// @param boxes array<lib.BoxData> Box array
+// @param maxSize int Max size
+// @returns int Number of removed boxes
+cleanupBoxArray(array<lib.BoxData> boxes, int maxSize = 300) =>
+    _removedCount = 0
+    if array.size(boxes) > maxSize
+        // Remove inactive boxes first
+        for i = array.size(boxes) - 1 to 0 by 1
+            if array.size(boxes) <= maxSize
+                break
+            boxData = array.get(boxes, i)
+            if not boxData._isActive
+                array.remove(boxes, i)
+                _removedCount += 1
+    _removedCount
+
+// @description HTF data caching struct
+type HTFCache
+    string _timeframe
+    int _lastBarIndex
+    bool _isNewBar
+    int _barIndex
+    float _open
+    float _high
+    float _low
+    float _close
+    float _open1
+    float _close1
+    float _high1
+    float _low1
+    float _high2
+    float _low2
+    float _high3
+    float _low3
+
+// @description Update HTF cache
+// @param cache HTFCache cache object
+// @param tf string timeframe
+// @returns HTFCache Updated cache
+updateHTFCache(HTFCache cache, string tf) =>
+    _currentBarIndex = bar_index
+    _isNewBar = ta.change(time(tf)) != 0
+    
+    if na(cache) or cache._lastBarIndex != _currentBarIndex or _isNewBar
+        HTFCache.new(
+             tf,
+             _currentBarIndex,
+             _isNewBar,
+             int(lib.GetHTFrevised(tf)),
+             lib.GetHTFrevised(tf, "o"),
+             lib.GetHTFrevised(tf, "h"),
+             lib.GetHTFrevised(tf, "l"),
+             lib.GetHTFrevised(tf, "c"),
+             lib.GetHTFrevised(tf, "o1"),
+             lib.GetHTFrevised(tf, "c1"),
+             lib.GetHTFrevised(tf, "h1"),
+             lib.GetHTFrevised(tf, "l1"),
+             lib.GetHTFrevised(tf, "h2"),
+             lib.GetHTFrevised(tf, "l2"),
+             lib.GetHTFrevised(tf, "h3"),
+             lib.GetHTFrevised(tf, "l3")
+             )
+    else
+        cache
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// Main indicator logic
+////////////////////////////////////////////////////////////////////////////////
+
+// @group Common Inputs
+_gpBase      = "Common Inputs"
+_boxSize     = input.bool(false, "Box size: true=open/close, false=high/low", group = _gpBase)
+_colorClose  = input.color(color.new(color.gray, 90), "Box Close Color", group = _gpBase)
+_maxBoxes    = input.int(300, "Max box count", minval=100, maxval=500, group = _gpBase)
+_enableCleanup = input.bool(true, "Auto cleanup", group = _gpBase)
+_showDebugInfo = input.bool(false, "Show debug info", group = _gpBase)
+
+// FOB duplicate prevention settings
+gpFOBFilter = "FOB Duplicate Prevention"
+_highTFfobCooldown = input.int(3, "High TF FOB cooldown", minval=1, maxval=10, group = gpFOBFilter)
+_midTFfobCooldown = input.int(3, "Mid TF FOB cooldown", minval=1, maxval=10, group = gpFOBFilter)
+_currentTFfobCooldown = input.int(3, "Current TF FOB cooldown", minval=1, maxval=10, group = gpFOBFilter)
+
+// HTF cache variables
+var HTFCache highTFCache = na
+var HTFCache midTFCache = na
+
+// Track last FOB occurrence time/direction
+var int lastHighTFfobBar = na
+var bool lastHighTFfobBull = false
+var int lastMidTFfobBar = na
+var bool lastMidTFfobBull = false
+var int lastCurrentTFfobBar = na
+var bool lastCurrentTFfobBull = false
+
+// @description Constants used in Block calculations
+// @param _offsetFOB int      Number of bars to offset when converting HTF bar_index to LTF index.
+// @param _nameFOB string     Identifier passed to CreateBoxData for FOB logic.
+_offsetFOB = 2
+_nameFOB   = "fob"
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// Timeframe settings (mid/high mapping per chart)
+////////////////////////////////////////////////////////////////////////////////
+
+gpTimeSetting = "Timeframe Settings"
+
+_1m_mid = input.timeframe("5", "1m chart: mid TF", inline = "1m", group = gpTimeSetting)
+_1m_high = input.timeframe("15", "high", inline = "1m", group = gpTimeSetting)
+
+_5m_mid = input.timeframe("15", "5m chart: mid TF", inline = "5m", group = gpTimeSetting)
+_5m_high = input.timeframe("60", "high", inline = "5m", group = gpTimeSetting)
+
+_15m_mid = input.timeframe("60", "15m chart: mid TF", inline = "15m", group = gpTimeSetting)
+_15m_high = input.timeframe("240", "high", inline = "15m", group = gpTimeSetting)
+
+_30m_mid = input.timeframe("120", "30m chart: mid TF", inline = "30m", group = gpTimeSetting)
+_30m_high = input.timeframe("480", "high", inline = "30m", group = gpTimeSetting)
+
+_60m_mid = input.timeframe("240", "1h chart: mid TF", inline = "60m", group = gpTimeSetting)
+_60m_high = input.timeframe("1D", "high", inline = "60m", group = gpTimeSetting)
+
+_240m_mid = input.timeframe("1D", "4h chart: mid TF", inline = "240m", group = gpTimeSetting)
+_240m_high = input.timeframe("1W", "high", inline = "240m", group = gpTimeSetting)
+
+_1D_mid = input.timeframe("1W", "1D chart: mid TF", inline = "1D", group = gpTimeSetting)
+_1D_high = input.timeframe("1M", "high", inline = "1D", group = gpTimeSetting)
+
+_1W_mid = input.timeframe("1M", "1W chart: mid TF", inline = "1W", group = gpTimeSetting)
+_1W_high = input.timeframe("6M", "high", inline = "1W", group = gpTimeSetting)
+
+_1M_mid = input.timeframe("6M", "1M chart: mid TF", inline = "1M", group = gpTimeSetting)
+_1M_high = input.timeframe("12M", "high", inline = "1M", group = gpTimeSetting)
+
+// Auto-select settings for current chart timeframe
+_midTimeframe = switch timeframe.period
+    "1" => _1m_mid
+    "5" => _5m_mid
+    "15" => _15m_mid
+    "30" => _30m_mid
+    "60" => _60m_mid
+    "240" => _240m_mid
+    "1D" => _1D_mid
+    "1W" => _1W_mid
+    "1M" => _1M_mid
+    => "240"
+
+_highTimeframe = switch timeframe.period
+    "1" => _1m_high
+    "5" => _5m_high
+    "15" => _15m_high
+    "30" => _30m_high
+    "60" => _60m_high
+    "240" => _240m_high
+    "1D" => _1D_high
+    "1W" => _1W_high
+    "1M" => _1M_high
+    => "1D"
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// HighTF FOB Settings
+////////////////////////////////////////////////////////////////////////////////
+
+// @group HighTF FOB Setting
+_highTFgpFOBname    = "HighTF FOB Setting"
+_highTFuseFOBbox    = input.bool(true,  "HighTF FOB Box Enabled", group = _highTFgpFOBname)
+_highTFuseFOBline   = input.bool(false, "HighTF FOB Mid Line Enabled", group = _highTFgpFOBname)
+_highTFcntFOBClose  = input.int(1,     "HighTF FOB Close Count", minval=1, maxval=10, group = _highTFgpFOBname)
+
+_highTFclrFOBbull   = input.color(color.aqua,   "HighTF FOB Bull Color", group = _highTFgpFOBname)
+_highTFclrFOBbear   = input.color(color.orange, "HighTF FOB Bear Color", group = _highTFgpFOBname)
+_highTFclrFOBtransp = input.int(70,   "HighTF Box Transparency", minval=1, maxval=100, group = _highTFgpFOBname)
+_highTFclrFOBbullBD = color.new(_highTFclrFOBbull, _highTFclrFOBtransp)
+_highTFclrFOBbullBG = color.new(_highTFclrFOBbull, _highTFclrFOBtransp)
+_highTFclrFOBbearBG = color.new(_highTFclrFOBbear, _highTFclrFOBtransp)
+_highTFclrFOBbearBD = color.new(_highTFclrFOBbear, _highTFclrFOBtransp)
+
+// @description Detect new HighTF bar and check validity on current chart
+_highTF            = _highTimeframe
+_highTFiscompareBase = lib.IsChartTFcomparisonHTF(timeframe.period, _highTF)
+
+// HTF data caching for performance
+highTFCache := updateHTFCache(highTFCache, _highTF)
+
+_highTFbarIndex = highTFCache._barIndex
+_highTFopen     = highTFCache._open
+_highTFhigh     = highTFCache._high
+_highTFlow      = highTFCache._low
+_highTFclose    = highTFCache._close
+_highTFopen1    = highTFCache._open1
+_highTFclose1   = highTFCache._close1
+_highTFlow1     = highTFCache._low1
+_highTFlow2     = highTFCache._low2
+_highTFlow3     = highTFCache._low3
+_highTFhigh1    = highTFCache._high1
+_highTFhigh2    = highTFCache._high2
+_highTFhigh3    = highTFCache._high3
+_highTFisNewBar = highTFCache._isNewBar
+
+// @description Arrays to store active HighTF FOB BoxData
+var lib.BoxData[] _highTFFOBBullBoxes = array.new<lib.BoxData>()
+var lib.BoxData[] _highTFFOBBearBoxes = array.new<lib.BoxData>()
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// MidTF FOB Settings
+////////////////////////////////////////////////////////////////////////////////
+
+// @group MidTF FOB Setting
+_midTFgpFOBname    = "MidTF FOB Setting"
+_midTFuseFOBbox    = input.bool(true,  "MidTF FOB Box Enabled", group = _midTFgpFOBname)
+_midTFuseFOBline   = input.bool(false, "MidTF FOB Mid Line Enabled", group = _midTFgpFOBname)
+_midTFcntFOBClose  = input.int(1,     "MidTF FOB Close Count", minval=1, maxval=10, group = _midTFgpFOBname)
+
+_midTFclrFOBbull   = input.color(color.blue,   "MidTF FOB Bull Color", group = _midTFgpFOBname)
+_midTFclrFOBbear   = input.color(color.yellow, "MidTF FOB Bear Color", group = _midTFgpFOBname)
+_midTFclrFOBtransp = input.int(70,   "MidTF Box Transparency", minval=1, maxval=100, group = _midTFgpFOBname)
+_midTFclrFOBbullBD = color.new(_midTFclrFOBbull, _midTFclrFOBtransp)
+_midTFclrFOBbullBG = color.new(_midTFclrFOBbull, _midTFclrFOBtransp)
+_midTFclrFOBbearBG = color.new(_midTFclrFOBbear, _midTFclrFOBtransp)
+_midTFclrFOBbearBD = color.new(_midTFclrFOBbear, _midTFclrFOBtransp)
+
+// @description Detect new MidTF bar and check validity on current chart
+_midTF            = _midTimeframe
+_midTFiscompareBase = lib.IsChartTFcomparisonHTF(timeframe.period, _midTF)
+
+// HTF data caching for performance
+midTFCache := updateHTFCache(midTFCache, _midTF)
+
+_midTFbarIndex = midTFCache._barIndex
+_midTFopen     = midTFCache._open
+_midTFhigh     = midTFCache._high
+_midTFlow      = midTFCache._low
+_midTFclose    = midTFCache._close
+_midTFopen1    = midTFCache._open1
+_midTFclose1   = midTFCache._close1
+_midTFlow1     = midTFCache._low1
+_midTFlow2     = midTFCache._low2
+_midTFlow3     = midTFCache._low3
+_midTFhigh1    = midTFCache._high1
+_midTFhigh2    = midTFCache._high2
+_midTFhigh3    = midTFCache._high3
+_midTFisNewBar = midTFCache._isNewBar
+
+// @description Arrays to store active MidTF FOB BoxData
+var lib.BoxData[] _midTFFOBBullBoxes = array.new<lib.BoxData>()
+var lib.BoxData[] _midTFFOBBearBoxes = array.new<lib.BoxData>()
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// CurrentTF FOB Settings
+////////////////////////////////////////////////////////////////////////////////
+
+// @group CurrentTF FOB Setting
+// @param _currentTFuseFOBbox bool     Enable drawing of CurrentTF FOB boxes.
+// @param _currentTFuseFOBline bool    Enable drawing of midlines inside CurrentTF FOB boxes.
+// @param _currentTFcntFOBClose int    Number of closes beyond CurrentTF FOB before box is finalized.
+// @param _currentTFclrFOBbull color   Bullish FOB box color for CurrentTF.
+// @param _currentTFclrFOBbear color   Bearish FOB box color for CurrentTF.
+// @param _currentTFclrFOBtransp int   Transparency percentage for CurrentTF FOB box colors.
+var lib.BoxData[] _currentTFFOBBullBoxes = array.new<lib.BoxData>()
+var lib.BoxData[] _currentTFFOBBearBoxes = array.new<lib.BoxData>()
+
+_currentTFgpFOBname    = "CurrentTF FOB Setting"
+_currentTFuseFOBbox    = input.bool(true,  "CurrentTF FOB Box Enabled", group = _currentTFgpFOBname)
+_currentTFuseFOBline   = input.bool(false, "CurrentTF FOB Mid Line Enabled", group = _currentTFgpFOBname)
+_currentTFcntFOBClose  = input.int(1,     "CurrentTF FOB Close Count", minval=1, maxval=10, group = _currentTFgpFOBname)
+
+_currentTFclrFOBbull   = input.color(color.green, "CurrentTF FOB Bull Color", group = _currentTFgpFOBname)
+_currentTFclrFOBbear   = input.color(color.red,   "CurrentTF FOB Bear Color", group = _currentTFgpFOBname)
+_currentTFclrFOBtransp = input.int(80,   "CurrentTF Box Transparency", minval=1, maxval=100, group = _currentTFgpFOBname)
+_currentTFclrFOBbullBD = color.new(_currentTFclrFOBbull, _currentTFclrFOBtransp)
+_currentTFclrFOBbullBG = color.new(_currentTFclrFOBbull, _currentTFclrFOBtransp)
+_currentTFclrFOBbearBG = color.new(_currentTFclrFOBbear, _currentTFclrFOBtransp)
+_currentTFclrFOBbearBD = color.new(_currentTFclrFOBbear, _currentTFclrFOBtransp)
+
+// @description Detect new CurrentTF bar (always true for LTF) and validity (always true)
+// @param _currentTF string       The CurrentTF timeframe string (timeframe.period).
+// @param _currentTFisNewBar bool True when a new bar opens on current timeframe.
+// @param _currentTFiscompareBase bool Always true for current timeframe comparison.
+_currentTF         = timeframe.period
+_currentTFisNewBar = ta.change(time(_currentTF)) != 0
+_currentTFiscompareBase = true
+
+// @description Fetch CurrentTF OHLC and historical values directly from built-ins
+// @param _currentTFbarIndex int    CurrentTF bar_index (just use bar_index).
+// @param _currentTFopen float      CurrentTF open price.
+// @param _currentTFhigh float      CurrentTF high price.
+// @param _currentTFlow float       CurrentTF low price.
+// @param _currentTFclose float     CurrentTF close price.
+// @param _currentTFopen1 float     CurrentTF open 1 bar ago.
+// @param _currentTFclose1 float    CurrentTF close 1 bar ago.
+// @param _currentTFlow1 float      CurrentTF low 1 bar ago.
+// @param _currentTFlow2 float      CurrentTF low 2 bars ago.
+// @param _currentTFlow3 float      CurrentTF low 3 bars ago.
+// @param _currentTFhigh1 float     CurrentTF high 1 bar ago.
+// @param _currentTFhigh2 float     CurrentTF high 2 bars ago.
+// @param _currentTFhigh3 float     CurrentTF high 3 bars ago.
+_currentTFbarIndex = bar_index
+_currentTFopen     = open
+_currentTFhigh     = high
+_currentTFlow      = low
+_currentTFclose    = close
+_currentTFopen1    = open[1]
+_currentTFclose1   = close[1]
+_currentTFlow1     = low[1]
+_currentTFlow2     = low[2]
+_currentTFlow3     = low[3]
+//_currentTFlow4    = low[4]   // optional
+_currentTFhigh1    = high[1]
+_currentTFhigh2    = high[2]
+_currentTFhigh3    = high[3]
+//_currentTFhigh4   = high[4]  // optional
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// ① On every bar, update all created boxes (HighTF, MidTF, CurrentTF) - add barstate.isconfirmed
+////////////////////////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed
+    // Box processing optimization - only process enabled timeframes
+    if _highTFiscompareBase and _highTFuseFOBbox
+        lib.ProcessBoxDatas(_highTFFOBBullBoxes, _highTFuseFOBline, _highTFcntFOBClose, _colorClose)
+        lib.ProcessBoxDatas(_highTFFOBBearBoxes, _highTFuseFOBline, _highTFcntFOBClose, _colorClose)
+
+    if _midTFiscompareBase and _midTFuseFOBbox
+        lib.ProcessBoxDatas(_midTFFOBBullBoxes, _midTFuseFOBline, _midTFcntFOBClose, _colorClose)
+        lib.ProcessBoxDatas(_midTFFOBBearBoxes, _midTFuseFOBline, _midTFcntFOBClose, _colorClose)
+
+    if _currentTFiscompareBase and _currentTFuseFOBbox
+        lib.ProcessBoxDatas(_currentTFFOBBullBoxes, _currentTFuseFOBline, _currentTFcntFOBClose, _colorClose)
+        lib.ProcessBoxDatas(_currentTFFOBBearBoxes, _currentTFuseFOBline, _currentTFcntFOBClose, _colorClose)
+    
+    // Array cleanup (now every 20 bars)
+    if _enableCleanup and bar_index % 20 == 0
+        cleanupBoxArray(_highTFFOBBullBoxes, _maxBoxes)
+        cleanupBoxArray(_highTFFOBBearBoxes, _maxBoxes)
+        cleanupBoxArray(_midTFFOBBullBoxes, _maxBoxes)
+        cleanupBoxArray(_midTFFOBBearBoxes, _maxBoxes)
+        cleanupBoxArray(_currentTFFOBBullBoxes, _maxBoxes)
+        cleanupBoxArray(_currentTFFOBBearBoxes, _maxBoxes)
+
+// Debug info
+if _showDebugInfo and barstate.islast
+    _totalBoxes = array.size(_highTFFOBBullBoxes) + array.size(_highTFFOBBearBoxes) + 
+                  array.size(_midTFFOBBullBoxes) + array.size(_midTFFOBBearBoxes) + 
+                  array.size(_currentTFFOBBullBoxes) + array.size(_currentTFFOBBearBoxes)
+    
+    _debugText = "Box status\n" + 
+                 "High: " + str.tostring(array.size(_highTFFOBBullBoxes) + array.size(_highTFFOBBearBoxes)) + "\n" +
+                 "Mid: " + str.tostring(array.size(_midTFFOBBullBoxes) + array.size(_midTFFOBBearBoxes)) + "\n" +
+                 "Current: " + str.tostring(array.size(_currentTFFOBBullBoxes) + array.size(_currentTFFOBBearBoxes)) + "\n" +
+                 "Total: " + str.tostring(_totalBoxes) + "/" + str.tostring(_maxBoxes)
+    
+    var label debugLabel = na
+    if not na(debugLabel)
+        label.delete(debugLabel)
+    debugLabel := label.new(bar_index, high, _debugText, 
+                           xloc.bar_index, yloc.price, 
+                           color.new(color.blue, 80), 
+                           label.style_label_down, 
+                           color.white, size.small)
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// ② HighTF FOB Box create/close control - add barstate.isconfirmed and per-timeframe check
+////////////////////////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed and _highTFiscompareBase and _highTFuseFOBbox and _highTFbarIndex == 0
+    // do nothing on initial bar
+    na
+
+if barstate.isconfirmed and _highTFiscompareBase and _highTFuseFOBbox and _highTFbarIndex > _offsetFOB and _highTFisNewBar
+    // FOB cooldown check (same direction only)
+    _canCreateHighTFfobBull = na(lastHighTFfobBar) or not lastHighTFfobBull or (_highTFbarIndex - lastHighTFfobBar) >= _highTFfobCooldown
+    _canCreateHighTFfobBear = na(lastHighTFfobBar) or lastHighTFfobBull or (_highTFbarIndex - lastHighTFfobBar) >= _highTFfobCooldown
+    
+    // FVG OB condition: use library function (FOB = FVG OB)
+    _isFOBBull = _canCreateHighTFfobBull and lib.IsConditionState(_nameFOB, true, _highTFhigh2, _highTFlow)
+    _isFOBBear = _canCreateHighTFfobBear and lib.IsConditionState(_nameFOB, false, _highTFlow2, _highTFhigh)
+    if _isFOBBull
+        [_result, _data] = lib.CreateBoxData(
+             _nameFOB, 
+             true, 
+             _highTFuseFOBline,
+             _highTFlow2, 
+             _highTFhigh2, 
+             xloc.bar_index,
+             _highTFclrFOBbullBG, 
+             _highTFclrFOBbullBD, 
+             _offsetFOB, 
+             _highTF, 
+             _highTFbarIndex, 
+             0.0
+             )
+        if _result
+            array.push(_highTFFOBBullBoxes, _data)
+            lastHighTFfobBar := _highTFbarIndex
+            lastHighTFfobBull := true
+    if _isFOBBear
+        [_result, _data] = lib.CreateBoxData(
+             _nameFOB, 
+             false, 
+             _highTFuseFOBline,
+             _highTFlow2, 
+             _highTFhigh2, 
+             xloc.bar_index,
+             _highTFclrFOBbearBG, 
+             _highTFclrFOBbearBD, 
+             _offsetFOB, 
+             _highTF, 
+             _highTFbarIndex, 
+             0.0
+             )
+        if _result
+            array.push(_highTFFOBBearBoxes, _data)
+            lastHighTFfobBar := _highTFbarIndex
+            lastHighTFfobBull := false
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// ③ MidTF FOB Box create/close control - add barstate.isconfirmed and per-timeframe check
+////////////////////////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed and _midTFiscompareBase and _midTFuseFOBbox and _midTFbarIndex == 0
+    // do nothing on initial bar
+    na
+
+if barstate.isconfirmed and _midTFiscompareBase and _midTFuseFOBbox and _midTFbarIndex > _offsetFOB and _midTFisNewBar
+    // FOB cooldown check (same direction only)
+    _canCreateMidTFfobBull = na(lastMidTFfobBar) or not lastMidTFfobBull or (_midTFbarIndex - lastMidTFfobBar) >= _midTFfobCooldown
+    _canCreateMidTFfobBear = na(lastMidTFfobBar) or lastMidTFfobBull or (_midTFbarIndex - lastMidTFfobBar) >= _midTFfobCooldown
+    
+    // FOB condition: use library function
+    _isFOBBull = _canCreateMidTFfobBull and lib.IsConditionState(_nameFOB, true, _midTFhigh2, _midTFlow)
+    _isFOBBear = _canCreateMidTFfobBear and lib.IsConditionState(_nameFOB, false, _midTFlow2, _midTFhigh)
+    if _isFOBBull
+        [_result, _data] = lib.CreateBoxData(
+             _nameFOB, 
+             true, 
+             _midTFuseFOBline,
+             _midTFlow2, 
+             _midTFhigh2, 
+             xloc.bar_index,
+             _midTFclrFOBbullBG,
+             _midTFclrFOBbullBD,
+             _offsetFOB,
+             _midTF,
+             _midTFbarIndex,
+             0.0
+             )
+        if _result
+            array.push(_midTFFOBBullBoxes, _data)
+            lastMidTFfobBar := _midTFbarIndex
+            lastMidTFfobBull := true
+    if _isFOBBear
+        [_result, _data] = lib.CreateBoxData(
+             _nameFOB, 
+             false, 
+             _midTFuseFOBline,
+             _midTFlow2,
+             _midTFhigh2,
+             xloc.bar_index,
+             _midTFclrFOBbearBG,
+             _midTFclrFOBbearBD,
+             _offsetFOB,
+             _midTF,
+             _midTFbarIndex,
+             0.0
+             )
+        if _result
+            array.push(_midTFFOBBearBoxes, _data)
+            lastMidTFfobBar := _midTFbarIndex
+            lastMidTFfobBull := false
+
+////////////////////////////////////////////////////////////////////////////////
+// ────────────────────────────────────────────────────────────────────────────
+// ④ CurrentTF FOB Box create/close control - add barstate.isconfirmed and per-timeframe check
+////////////////////////////////////////////////////////////////////////////////
+
+if barstate.isconfirmed and _currentTFiscompareBase and _currentTFuseFOBbox and _currentTFbarIndex == 0
+    // do nothing on initial bar
+    na
+
+if barstate.isconfirmed and _currentTFiscompareBase and _currentTFuseFOBbox and _currentTFbarIndex > _offsetFOB and _currentTFisNewBar
+    // FOB cooldown check (same direction only)
+    _canCreateCurrentTFfobBull = na(lastCurrentTFfobBar) or not lastCurrentTFfobBull or (_currentTFbarIndex - lastCurrentTFfobBar) >= _currentTFfobCooldown
+    _canCreateCurrentTFfobBear = na(lastCurrentTFfobBar) or lastCurrentTFfobBull or (_currentTFbarIndex - lastCurrentTFfobBar) >= _currentTFfobCooldown
+    
+    // FOB condition: use library function
+    _isFOBBull = _canCreateCurrentTFfobBull and lib.IsConditionState(_nameFOB, true, _currentTFhigh2, _currentTFlow)
+    _isFOBBear = _canCreateCurrentTFfobBear and lib.IsConditionState(_nameFOB, false, _currentTFlow2, _currentTFhigh)
+    if _isFOBBull
+        [_result, _data] = lib.CreateBoxData(
+             _nameFOB, 
+             true, 
+             _currentTFuseFOBline,
+             _currentTFlow2, 
+             _currentTFhigh2,
+             xloc.bar_index,
+             _currentTFclrFOBbullBG,
+             _currentTFclrFOBbullBD,
+             _offsetFOB,
+             _currentTF,
+             _currentTFbarIndex,
+             0.0
+             )
+        if _result
+            array.push(_currentTFFOBBullBoxes, _data)
+            lastCurrentTFfobBar := _currentTFbarIndex
+            lastCurrentTFfobBull := true
+    if _isFOBBear
+        [_result, _data] = lib.CreateBoxData(
+             _nameFOB,
+             false,
+             _currentTFuseFOBline,
+             _currentTFlow2,
+             _currentTFhigh2,
+             xloc.bar_index,
+             _currentTFclrFOBbearBG,
+             _currentTFclrFOBbearBD,
+             _offsetFOB,
+             _currentTF,
+             _currentTFbarIndex,
+             0.0
+             )
+             
+        if _result
+            array.push(_currentTFFOBBearBoxes, _data)
+            lastCurrentTFfobBar := _currentTFbarIndex
+            lastCurrentTFfobBull := false

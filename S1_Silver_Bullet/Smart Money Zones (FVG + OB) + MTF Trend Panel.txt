@@ -1,0 +1,250 @@
+//@version=5
+indicator("Smart Money Zones (FVG + OB) + MTF Trend Panel", overlay=true, max_boxes_count=500, max_labels_count=500)
+
+//─────────────────────── INPUTS
+groupDisp = "Display"
+i_showFVG = input.bool(true, "Show Fair Value Gaps", group=groupDisp)
+i_showOB = input.bool(true, "Show Order Blocks", group=groupDisp)
+i_maxZones = input.int(20, "Max zones per TYPE", minval=5, maxval=200, group=groupDisp)
+i_removeOnMit = input.bool(false, "Remove when mitigated", group=groupDisp)
+
+groupDet = "Detection"
+i_minBodyPct = input.float(0.5, "Min impulse body %", minval=0.3, maxval=1.0, step=0.1, group=groupDet)
+i_obLookback = input.int(10, "Order Block lookback", minval=5, maxval=50, group=groupDet)
+i_atrLen = input.int(14, "ATR length", minval=5, maxval=50, group=groupDet)
+
+groupTrend = "Trend Filter"
+i_useTrend = input.bool(true, "Use trend filter", group=groupTrend)
+i_trendMA = input.int(50, "Trend MA period", minval=10, maxval=200, group=groupTrend)
+
+groupPanel = "Multi-Timeframe Panel"
+i_showPanel = input.bool(true, "Show MTF Trend Panel", group=groupPanel)
+i_panelPosition = input.string("Top Right", "Panel Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=groupPanel)
+i_panelSize = input.string("Normal", "Panel Size", options=["Small", "Normal", "Large"], group=groupPanel)
+i_trendMAPeriod = input.int(50, "MTF Trend MA Period", minval=10, maxval=200, group=groupPanel)
+
+//─────────────────────── COLORS
+c_bullFVG = color.new(#00ff00, 85)
+c_bearFVG = color.new(#ff0000, 85)
+c_bullOB = color.new(#0088ff, 80)
+c_bearOB = color.new(#ff6600, 80)
+c_mitigated = color.new(color.gray, 95)
+
+//─────────────────────── TYPE
+type Zone
+    box bx
+    label lbl
+    float top
+    float bot
+    float size
+    bool isLive
+    bool isFVG
+    int birth
+    string strength
+    float mitigatedAmount
+    bool isBullish
+
+// Separate arrays for true "per type" cap
+var array<Zone> bullFVG = array.new<Zone>()
+var array<Zone> bearFVG = array.new<Zone>()
+var array<Zone> bullOB = array.new<Zone>()
+var array<Zone> bearOB = array.new<Zone>()
+
+//─────────────────────── HELPERS
+calcBodyPct(o, h, l, c) =>
+    rng = h - l
+    body = math.abs(c - o)
+    rng > 0 ? body / rng : 0.0
+
+getStrength(sz, atrVal) =>
+    denom = math.max(atrVal, syminfo.mintick)
+    ratio = sz / denom
+    ratio >= 2.0 ? "VERY STRONG" : ratio >= 1.5 ? "STRONG" : ratio >= 1.0 ? "MEDIUM" : "WEAK"
+
+deleteZone(Zone z) =>
+    if not na(z.bx)
+        box.delete(z.bx)
+    if not na(z.lbl)
+        label.delete(z.lbl)
+
+enforceCap(array<Zone> zones, int cap) =>
+    while array.size(zones) > cap
+        z = array.shift(zones)
+        deleteZone(z)
+
+// Mitigation update for one zone; returns updated zone + whether to delete
+mitigateZone(Zone z, bool removeOnMit) =>
+    // ensure non-zero
+    z.size := math.max(z.size, syminfo.mintick)
+    
+    shouldDelete = false
+    
+    if z.isLive
+        isMitigated = false
+        
+        if z.isBullish
+            // price comes down into zone
+            if low <= z.top and low >= z.bot
+                penetration = z.top - low
+                z.mitigatedAmount := (penetration / z.size) * 100.0
+            
+            isMitigated := z.mitigatedAmount >= 50.0 or close <= z.bot
+        else
+            // price comes up into zone
+            if high >= z.bot and high <= z.top
+                penetration = high - z.bot
+                z.mitigatedAmount := (penetration / z.size) * 100.0
+            
+            isMitigated := z.mitigatedAmount >= 50.0 or close >= z.top
+        
+        if isMitigated
+            if removeOnMit
+                shouldDelete := true
+            else
+                box.set_bgcolor(z.bx, c_mitigated)
+                box.set_border_color(z.bx, c_mitigated)
+                z.isLive := false
+    
+    [z, shouldDelete]
+
+//─────────────────────── TREND FILTER (chart TF)
+trendMA = ta.sma(close, i_trendMA)
+isUptrend = close > trendMA
+isDntrend = close < trendMA
+plot(i_useTrend ? trendMA : na, "Trend MA", isUptrend ? color.lime : color.red, 2)
+
+//─────────────────────── MTF TREND (single security call per TF)
+getTrend(tf, maPeriod) =>
+    request.security(syminfo.tickerid, tf, close > ta.sma(close, maPeriod), barmerge.gaps_off, barmerge.lookahead_on)
+
+trend1m = getTrend("1", i_trendMAPeriod)
+trend5m = getTrend("5", i_trendMAPeriod)
+trend15m = getTrend("15", i_trendMAPeriod)
+trend30m = getTrend("30", i_trendMAPeriod)
+trend1h = getTrend("60", i_trendMAPeriod)
+trend4h = getTrend("240", i_trendMAPeriod)
+trend1d = getTrend("D", i_trendMAPeriod)
+
+//─────────────────────── PANEL
+panelPos = i_panelPosition == "Top Right" ? position.top_right : i_panelPosition == "Top Left" ? position.top_left : i_panelPosition == "Bottom Right" ? position.bottom_right : position.bottom_left
+txtSize = i_panelSize == "Small" ? size.small : i_panelSize == "Large" ? size.large : size.normal
+
+var table mtfTable = na
+if i_showPanel and barstate.isfirst
+    mtfTable := table.new(panelPos, 3, 8, bgcolor=color.new(#1a1a1a, 5), frame_color=color.new(#00bcd4, 0), frame_width=2, border_color=color.new(#333333, 0), border_width=1)
+
+f_setRow(int row, string tfName, bool isBull) =>
+    if not na(mtfTable)
+        table.cell(mtfTable, 0, row, tfName, text_color=color.white, text_size=txtSize, text_halign=text.align_left)
+        table.cell(mtfTable, 1, row, isBull ? "BULLISH" : "BEARISH", text_color=isBull ? color.lime : color.red, text_size=txtSize, text_halign=text.align_center)
+        table.cell(mtfTable, 2, row, isBull ? "🟢" : "🔴", text_size=txtSize, text_halign=text.align_center)
+
+if i_showPanel and barstate.islast and not na(mtfTable)
+    // header
+    table.cell(mtfTable, 0, 0, "⏱️ TIMEFRAME", bgcolor=color.new(#00bcd4, 20), text_color=color.white, text_size=txtSize, text_halign=text.align_left)
+    table.cell(mtfTable, 1, 0, "TREND", bgcolor=color.new(#00bcd4, 20), text_color=color.white, text_size=txtSize, text_halign=text.align_center)
+    table.cell(mtfTable, 2, 0, "STATUS", bgcolor=color.new(#00bcd4, 20), text_color=color.white, text_size=txtSize, text_halign=text.align_center)
+
+    f_setRow(1, "1m", trend1m)
+    f_setRow(2, "5m", trend5m)
+    f_setRow(3, "15m", trend15m)
+    f_setRow(4, "30m", trend30m)
+    f_setRow(5, "1H", trend1h)
+    f_setRow(6, "4H", trend4h)
+    f_setRow(7, "1D", trend1d)
+
+//─────────────────────── ATR
+atr = ta.atr(i_atrLen)
+
+//─────────────────────── DETECT FVGs
+if barstate.isconfirmed and bar_index > 2
+    // Bullish FVG: low > high[2]
+    if i_showFVG and low > high[2]
+        midBull = close[1] > open[1]
+        midBody = calcBodyPct(open[1], high[1], low[1], close[1])
+        if midBull and midBody >= i_minBodyPct and (not i_useTrend or isUptrend)
+            top = low
+            bot = high[2]
+            gap = top - bot
+            strn = getStrength(gap, atr)
+
+            bx = box.new(bar_index - 2, top, bar_index, bot, border_color=c_bullFVG, bgcolor=c_bullFVG, text="FVG " + strn, text_color=color.white, text_size=size.tiny)
+            lbl = label.new(bar_index - 1, top, "🟢 FVG", style=label.style_label_down, color=color.new(#00ff00, 20), textcolor=color.white, size=size.tiny)
+
+            array.push(bullFVG, Zone.new(bx, lbl, top, bot, gap, true, true, bar_index, strn, 0.0, true))
+            enforceCap(bullFVG, i_maxZones)
+
+    // Bearish FVG: high < low[2]
+    if i_showFVG and high < low[2]
+        midBear = close[1] < open[1]
+        midBody = calcBodyPct(open[1], high[1], low[1], close[1])
+        if midBear and midBody >= i_minBodyPct and (not i_useTrend or isDntrend)
+            top = low[2]
+            bot = high
+            gap = top - bot
+            strn = getStrength(gap, atr)
+
+            bx = box.new(bar_index - 2, top, bar_index, bot, border_color=c_bearFVG, bgcolor=c_bearFVG, text="FVG " + strn, text_color=color.white, text_size=size.tiny)
+            lbl = label.new(bar_index - 1, bot, "🔴 FVG", style=label.style_label_up, color=color.new(#ff0000, 20), textcolor=color.white, size=size.tiny)
+
+            array.push(bearFVG, Zone.new(bx, lbl, top, bot, gap, true, true, bar_index, strn, 0.0, false))
+            enforceCap(bearFVG, i_maxZones)
+
+//─────────────────────── DETECT ORDER BLOCKS
+if barstate.isconfirmed and bar_index > i_obLookback and i_showOB
+    // Bullish OB idea
+    isBullBreak = close > close[1] and (high - low) > atr * 1.2
+    prevBear = close[1] < open[1]
+    strongUp = close > open and calcBodyPct(open, high, low, close) >= i_minBodyPct
+
+    if isBullBreak and prevBear and strongUp and (not i_useTrend or isUptrend)
+        top = math.max(open[1], close[1])
+        bot = low[1]
+        sz = top - bot
+        strn = getStrength(sz, atr)
+
+        bx = box.new(bar_index - 1, top, bar_index, bot, border_color=c_bullOB, bgcolor=c_bullOB, text="OB " + strn, text_color=color.white, text_size=size.tiny)
+        lbl = label.new(bar_index - 1, top, "🔵 OB", style=label.style_label_down, color=color.new(#0088ff, 20), textcolor=color.white, size=size.tiny)
+
+        array.push(bullOB, Zone.new(bx, lbl, top, bot, sz, true, false, bar_index, strn, 0.0, true))
+        enforceCap(bullOB, i_maxZones)
+
+    // Bearish OB idea
+    isBearBreak = close < close[1] and (high - low) > atr * 1.2
+    prevBull = close[1] > open[1]
+    strongDn = close < open and calcBodyPct(open, high, low, close) >= i_minBodyPct
+
+    if isBearBreak and prevBull and strongDn and (not i_useTrend or isDntrend)
+        top = high[1]
+        bot = math.min(open[1], close[1])
+        sz = top - bot
+        strn = getStrength(sz, atr)
+
+        bx = box.new(bar_index - 1, top, bar_index, bot, border_color=c_bearOB, bgcolor=c_bearOB, text="OB " + strn, text_color=color.white, text_size=size.tiny)
+        lbl = label.new(bar_index - 1, bot, "🟠 OB", style=label.style_label_up, color=color.new(#ff6600, 20), textcolor=color.white, size=size.tiny)
+
+        array.push(bearOB, Zone.new(bx, lbl, top, bot, sz, true, false, bar_index, strn, 0.0, false))
+        enforceCap(bearOB, i_maxZones)
+
+//─────────────────────── UPDATE + MITIGATION
+f_updateZones(array<Zone> zones) =>
+    if array.size(zones) > 0
+        i = array.size(zones) - 1
+        while i >= 0
+            z = array.get(zones, i)
+            box.set_right(z.bx, bar_index)
+            
+            [updatedZone, shouldDelete] = mitigateZone(z, i_removeOnMit)
+            
+            if shouldDelete
+                deleteZone(updatedZone)
+                array.remove(zones, i)
+            else
+                array.set(zones, i, updatedZone)
+            
+            i := i - 1
+
+f_updateZones(bullFVG)
+f_updateZones(bearFVG)
+f_updateZones(bullOB)
+f_updateZones(bearOB)

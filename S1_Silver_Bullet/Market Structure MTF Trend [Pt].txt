@@ -1,0 +1,273 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © PtGambler
+
+//@version=6
+indicator("Market Structure MTF Trend [Pt]", shorttitle="MS-MTF_Trend[Pt]", overlay=false, max_labels_count=500, max_lines_count=500)
+import PtGambler/TimeframeUtils/1 as tf_Utils
+
+// ─────────────────────────────────────────────────────────────
+// INPUTS: TIMEFRAME SETTINGS & COLOR DEFINITIONS
+// ─────────────────────────────────────────────────────────────
+// ----- Timeframe 1 -----
+timeFrame1     = input.timeframe("15", "Timeframe 1", inline="tf1")
+pivotStrength1 = input.int(15, "Pivot Strength", inline="tf1")
+is_tf1_lowerTF = input.bool(false, "└ Lower than chart TF?")
+CHoCHbullColor1 = input.color(color.rgb(46, 104, 48), "└ CHoCH: Bull", inline="col1")
+CHoCHbearColor1 = input.color(color.rgb(128, 41, 41), "Bear", inline="col1")
+showCHoCH1      = input.bool(true, "Show on chart", inline="col1")
+BoSbullColor1   = input.color(color.green, "└ BoS: Bull", inline="col1.")
+BoSbearColor1   = input.color(color.red, "Bear", inline="col1.")
+showBoS1        = input.bool(true, "Show on chart", inline="col1.")
+
+// ----- Timeframe 2 -----
+timeFrame2     = input.timeframe("30", "Timeframe 2", inline="tf2")
+pivotStrength2 = input.int(15, "Pivot Strength", inline="tf2")
+is_tf2_lowerTF = input.bool(false, "└ Lower than chart TF?", inline="tf2")
+CHoCHbullColor2 = input.color(color.rgb(46, 104, 48), "└ CHoCH: Bull", inline="col2")
+CHoCHbearColor2 = input.color(color.rgb(128, 41, 41), "Bear", inline="col2")
+showCHoCH2      = input.bool(false, "Show on chart", inline="col2")
+BoSbullColor2   = input.color(color.green, "└ BoS: Bull", inline="col2.")
+BoSbearColor2   = input.color(color.red, "Bear", inline="col2.")
+showBoS2        = input.bool(false, "Show on chart", inline="col2.")
+
+// ----- Timeframe 3 -----
+timeFrame3     = input.timeframe("60", "Timeframe 3", inline="tf3")
+pivotStrength3 = input.int(15, "Pivot Strength", inline="tf3")
+is_tf3_lowerTF = input.bool(false, "└ Lower than chart TF?", inline="tf3")
+CHoCHbullColor3 = input.color(color.rgb(46, 104, 48), "└ CHoCH: Bull", inline="col3")
+CHoCHbearColor3 = input.color(color.rgb(128, 41, 41), "Bear", inline="col3")
+showCHoCH3      = input.bool(false, "Show on chart", inline="col3")
+BoSbullColor3   = input.color(color.green, "└ BoS: Bull", inline="col3.")
+BoSbearColor3   = input.color(color.red, "Bear", inline="col3.")
+showBoS3        = input.bool(false, "Show on chart", inline="col3.")
+
+// ----- Timeframe 4 -----
+timeFrame4     = input.timeframe("240", "Timeframe 4", inline="tf4")
+pivotStrength4 = input.int(15, "Pivot Strength", inline="tf4")
+is_tf4_lowerTF = input.bool(false, "└ Lower than chart TF?", inline="tf4")
+CHoCHbullColor4 = input.color(color.rgb(46, 104, 48), "└ CHoCH: Bull", inline="col4")
+CHoCHbearColor4 = input.color(color.rgb(128, 41, 41), "Bear", inline="col4")
+showCHoCH4      = input.bool(false, "Show on chart", inline="col4")
+BoSbullColor4   = input.color(color.green, "└ BoS: Bull", inline="col4.")
+BoSbearColor4   = input.color(color.red, "Bear", inline="col4.")
+showBoS4        = input.bool(false, "Show on chart", inline="col4.")
+
+// ─────────────────────────────────────────────────────────────
+// FUNCTION: calcMarketStructureTrend
+// Calculates the market structure trend based on pivot points.
+// Returns a tuple containing:
+//   1. currentTrend      : bool   - Current trend (true if bullish, false if bearish)
+//   2. breakOfStructure  : bool   - True if a break of structure occurred
+//   3. pivotHighTime     : int    - Time of the last valid pivot high
+//   4. pivotLowTime      : int    - Time of the last valid pivot low
+//   5. previousPivotHigh : float  - Previous pivot high level (offset by one bar)
+//   6. previousPivotLow  : float  - Previous pivot low level (offset by one bar)
+// ─────────────────────────────────────────────────────────────
+calcMarketStructureTrend(int pivotLen) =>
+    float pivotHigh = ta.pivothigh(pivotLen, pivotLen)
+    float pivotLow  = ta.pivotlow(pivotLen, pivotLen)
+    
+    // Persistent variables for pivot data
+    var float lastPivotHigh = na
+    var float lastPivotLow  = na
+    var float lastBrokenHigh = na
+    var float lastBrokenLow  = na
+    var int   pivotHighTime = na
+    var int   pivotLowTime  = na
+    var bool  currentTrend  = false
+    bool breakOfStructure = false
+
+    // Update pivot high data
+    if not na(pivotHigh)
+        lastPivotHigh := currentTrend ? math.max(high[pivotLen], lastPivotHigh) : high[pivotLen]
+        pivotHighTime := lastPivotHigh != lastPivotHigh[1] ? time[pivotLen] : pivotHighTime
+    // Update pivot low data
+    if not na(pivotLow)
+        lastPivotLow := not currentTrend ? math.min(low[pivotLen], lastPivotLow) : low[pivotLen]
+        pivotLowTime := lastPivotLow != lastPivotLow[1] ? time[pivotLen] : pivotLowTime
+    
+    // Determine trend change and break of structure
+    if ta.crossover(close, lastPivotHigh)
+        breakOfStructure := currentTrend and lastPivotHigh != lastBrokenHigh ? true : false
+        currentTrend := true
+        lastBrokenHigh := lastPivotHigh
+        lastBrokenLow := na
+    if ta.crossunder(close, lastPivotLow)
+        breakOfStructure := not currentTrend and lastPivotLow != lastBrokenLow ? true : false
+        currentTrend := false
+        lastBrokenLow := lastPivotLow
+        lastBrokenHigh := na
+
+    [currentTrend, breakOfStructure, pivotHighTime, pivotLowTime, lastPivotHigh[1], lastPivotLow[1]]
+
+// ─────────────────────────────────────────────────────────────
+// FUNCTION: drawLabelAtBar
+// Creates/updates a label at a given bar index (x) and price level (y) with the provided text and styling.
+// ─────────────────────────────────────────────────────────────
+drawLabelAtBar(x, y, series string labelText, bgColor, style, txtColor, txtSize, align, tooltipText, bool forceOverlay=false) =>
+    var lbl = label.new(x, y, "", xloc=xloc.bar_index, yloc=yloc.price, color=bgColor, style=style, textcolor=txtColor, size=txtSize, textalign=align, tooltip=tooltipText, force_overlay=forceOverlay)
+    label.set_xy(lbl, x, y)
+    label.set_text(lbl, labelText)
+    label.set_tooltip(lbl, tooltipText)
+    label.set_textcolor(lbl, txtColor)
+    lbl
+
+// ─────────────────────────────────────────────────────────────
+// FUNCTION: drawTrendChange
+// Draws a dotted line and label to mark a trend change for a given timeframe.
+// For bullish trends, uses pivot high data with a downward label;
+// for bearish trends, uses pivot low data with an upward label.
+// The 'toggle' parameter enables/disables drawing.
+// The 'spacing' string can add extra line breaks for visual adjustment.
+// ─────────────────────────────────────────────────────────────
+drawTrendChange(bool toggle, bool hasChange, bool currentTrend, int pivotHighTime, float pivotHighLevel, int pivotLowTime, float pivotLowLevel, string labelText, string spacing, color trendColor) =>
+    if toggle and hasChange
+        if currentTrend
+            // Bullish trend: draw line from pivot high and label below the line
+            line.new(pivotHighTime, pivotHighLevel, time, pivotHighLevel, xloc=xloc.bar_time, color=trendColor, style=line.style_dotted, force_overlay=true)
+            label.new(pivotHighTime + (time - pivotHighTime) / 2, pivotHighLevel, labelText + spacing, xloc=xloc.bar_time,
+                      color=color.new(chart.bg_color, 100), style=label.style_label_down, textcolor=trendColor, size=size.small,
+                      textalign=text.align_center, force_overlay=true)
+        else
+            // Bearish trend: draw line from pivot low and label above the line
+            line.new(pivotLowTime, pivotLowLevel, time, pivotLowLevel, xloc=xloc.bar_time, color=trendColor, style=line.style_dotted, force_overlay=true)
+            label.new(pivotLowTime + (time - pivotLowTime) / 2, pivotLowLevel, spacing + labelText, xloc=xloc.bar_time,
+                      color=color.new(chart.bg_color, 100), style=label.style_label_up, textcolor=trendColor, size=size.small,
+                      textalign=text.align_center, force_overlay=true)
+
+// ─────────────────────────────────────────────────────────────
+// VALIDATE TIMEFRAME INPUTS & DISPLAY ERROR MESSAGES
+// Compares selected timeframes with the chart's timeframe and flags mismatches via a table.
+// ─────────────────────────────────────────────────────────────
+string[] a_timeframes = array.from(timeFrame1, timeFrame2, timeFrame3, timeFrame4)
+bool[]   a_isLowerTF  = array.from(is_tf1_lowerTF, is_tf2_lowerTF, is_tf3_lowerTF, is_tf4_lowerTF)
+bool checkTF1 = false
+bool checkTF2 = false
+
+for x = 0 to array.size(a_timeframes) - 1
+    _tf = a_timeframes.get(x)
+    _isLowerTF = a_isLowerTF.get(x)
+    if not checkTF1
+        checkTF1 := (not _isLowerTF) and (tf_Utils.tfResInMinutes(timeframe.period) > tf_Utils.tfResInMinutes(_tf))
+    if not checkTF2
+        checkTF2 := _isLowerTF and (tf_Utils.tfResInMinutes(timeframe.period) < tf_Utils.tfResInMinutes(_tf))
+
+var table errorMsg = table.new(position.top_center, 1, 2, chart.bg_color, na, 1, na, 1, false)
+if checkTF1
+    table.cell(errorMsg, 0, 0, 'Please check "Lower than chart TF?" for one or more of your selected timeframe(s) for more accurate results', 0, 0, color.red)
+if checkTF2
+    table.cell(errorMsg, 0, 1, 'Please uncheck "Lower than chart TF?" for one or more of your selected timeframe(s) for more accurate results', 0, 0, color.red)
+
+// ─────────────────────────────────────────────────────────────
+// SET LOOKAHEAD PARAMETERS
+// The lookahead parameter is set as a constant based on whether the selected timeframe is lower than the chart timeframe.
+// ─────────────────────────────────────────────────────────────
+tf1_lookahead = is_tf1_lowerTF ? barmerge.lookahead_on : barmerge.lookahead_off
+tf2_lookahead = is_tf2_lowerTF ? barmerge.lookahead_on : barmerge.lookahead_off
+tf3_lookahead = is_tf3_lowerTF ? barmerge.lookahead_on : barmerge.lookahead_off
+tf4_lookahead = is_tf4_lowerTF ? barmerge.lookahead_on : barmerge.lookahead_off
+
+// ─────────────────────────────────────────────────────────────
+// GET MARKET STRUCTURE TRENDS FOR EACH TIMEFRAME
+// Use request.security to compute trends and pivot data for each timeframe.
+// ─────────────────────────────────────────────────────────────
+[trend1, BoS1, phTime1, plTime1, prevPh1, prevPl1] = request.security(syminfo.tickerid, timeFrame1, calcMarketStructureTrend(pivotStrength1), lookahead=tf1_lookahead)
+[trend2, BoS2, phTime2, plTime2, prevPh2, prevPl2] = request.security(syminfo.tickerid, timeFrame2, calcMarketStructureTrend(pivotStrength2), lookahead=tf2_lookahead)
+[trend3, BoS3, phTime3, plTime3, prevPh3, prevPl3] = request.security(syminfo.tickerid, timeFrame3, calcMarketStructureTrend(pivotStrength3), lookahead=tf3_lookahead)
+[trend4, BoS4, phTime4, plTime4, prevPh4, prevPl4] = request.security(syminfo.tickerid, timeFrame4, calcMarketStructureTrend(pivotStrength4), lookahead=tf4_lookahead)
+
+hasTrendChangeTF1 = ta.change(trend1)
+hasTrendChangeTF2 = ta.change(trend2)
+hasTrendChangeTF3 = ta.change(trend3)
+hasTrendChangeTF4 = ta.change(trend4)
+
+// ─────────────────────────────────────────────────────────────
+// PLOT TREND INDICATORS
+// Plot horizontal lines at different vertical levels to indicate trends.
+plotY1 = 3
+plotY2 = 2
+plotY3 = 1
+plotY4 = 0
+
+var color colorTF1 = na
+var color colorTF2 = na
+var color colorTF3 = na
+var color colorTF4 = na
+
+colorTF1 := BoS1 ? (trend1 ? BoSbullColor1 : BoSbearColor1) : (hasTrendChangeTF1 ? (trend1 ? CHoCHbullColor1 : CHoCHbearColor1) : colorTF1)
+colorTF2 := BoS2 ? (trend2 ? BoSbullColor2 : BoSbearColor2) : (hasTrendChangeTF2 ? (trend2 ? CHoCHbullColor2 : CHoCHbearColor2) : colorTF2)
+colorTF3 := BoS3 ? (trend3 ? BoSbullColor3 : BoSbearColor3) : (hasTrendChangeTF3 ? (trend3 ? CHoCHbullColor3 : CHoCHbearColor3) : colorTF3)
+colorTF4 := BoS4 ? (trend4 ? BoSbullColor4 : BoSbearColor4) : (hasTrendChangeTF4 ? (trend4 ? CHoCHbullColor4 : CHoCHbearColor4) : colorTF4)
+
+plot(plotY1, "TF1 Trend", color=colorTF1, linewidth=10, display=display.all - display.data_window)
+plot(plotY2, "TF2 Trend", color=colorTF2, linewidth=10, display=display.all - display.data_window)
+plot(plotY3, "TF3 Trend", color=colorTF3, linewidth=10, display=display.all - display.data_window)
+plot(plotY4, "TF4 Trend", color=colorTF4, linewidth=10, display=display.all - display.data_window)
+
+// ─────────────────────────────────────────────────────────────
+// DRAW TIMEFRAME LABELS ON LAST BAR
+// Display timeframe text labels at specified vertical positions on the last bar.
+tfText1 = tf_Utils.getTimeFrameText(timeFrame1)
+tfText2 = tf_Utils.getTimeFrameText(timeFrame2)
+tfText3 = tf_Utils.getTimeFrameText(timeFrame3)
+tfText4 = tf_Utils.getTimeFrameText(timeFrame4)
+
+if barstate.islast
+    drawLabelAtBar(bar_index, plotY1, tfText1, chart.bg_color, label.style_label_left, chart.fg_color, size.small, text.align_left, "")
+    drawLabelAtBar(bar_index, plotY2, tfText2, chart.bg_color, label.style_label_left, chart.fg_color, size.small, text.align_left, "")
+    drawLabelAtBar(bar_index, plotY3, tfText3, chart.bg_color, label.style_label_left, chart.fg_color, size.small, text.align_left, "")
+    drawLabelAtBar(bar_index, plotY4, tfText4, chart.bg_color, label.style_label_left, chart.fg_color, size.small, text.align_left, "")
+
+// ─────────────────────────────────────────────────────────────
+// DRAW TREND CHANGE LABELS & LINES ON CONFIRMED BARS
+// For each timeframe, if a trend change (CHoCH/BoS) is detected on a confirmed bar,
+// draw a dotted line and display a label mid-way.
+// ─────────────────────────────────────────────────────────────
+// Determine BoS conditions (break of structure)
+isBoSTF1 = BoS1 and not BoS1[1]
+isBoSTF2 = BoS2 and not BoS2[1]
+isBoSTF3 = BoS3 and not BoS3[1]
+isBoSTF4 = BoS4 and not BoS4[1]
+
+// Create arrays for trend change and spacing adjustments
+bool[] trendChg = array.from(false, false, false, false)
+string[] spacing = array.from("", "", "")
+
+if barstate.isconfirmed
+    trendChg.set(0, hasTrendChangeTF1 or ta.barssince(BoS1) < 5)
+    trendChg.set(1, hasTrendChangeTF2 or ta.barssince(BoS2) < 5)
+    trendChg.set(2, hasTrendChangeTF3 or ta.barssince(BoS3) < 5)
+    trendChg.set(3, hasTrendChangeTF4 or ta.barssince(BoS4) < 5)
+    
+    if array.some(trendChg)
+        count = 0
+        for x = 0 to array.size(trendChg) - 1
+            if trendChg.get(x)
+                count += 1
+                if x < array.size(trendChg) - 1
+                    for y = 1 to count
+                        spacing.set(x, spacing.get(x) + " \n \n ")
+    
+    // Draw CHoCH labels and lines
+    drawTrendChange(showCHoCH1, hasTrendChangeTF1, trend1, phTime1, prevPh1, plTime1, prevPl1, "CHoCH\n" + tfText1, "", colorTF1)
+    drawTrendChange(showCHoCH2, hasTrendChangeTF2, trend2, phTime2, prevPh2, plTime2, prevPl2, "CHoCH\n" + tfText2, spacing.get(0), colorTF2)
+    drawTrendChange(showCHoCH3, hasTrendChangeTF3, trend3, phTime3, prevPh3, plTime3, prevPl3, "CHoCH\n" + tfText3, spacing.get(1), colorTF3)
+    drawTrendChange(showCHoCH4, hasTrendChangeTF4, trend4, phTime4, prevPh4, plTime4, prevPl4, "CHoCH\n" + tfText4, spacing.get(2), colorTF4)
+    
+    // Draw BoS labels and lines
+    drawTrendChange(showBoS1, isBoSTF1, trend1, phTime1, prevPh1, plTime1, prevPl1, "BoS\n" + tfText1, "", colorTF1)
+    drawTrendChange(showBoS2, isBoSTF2, trend2, phTime2, prevPh2, plTime2, prevPl2, "BoS\n" + tfText2, spacing.get(0), colorTF2)
+    drawTrendChange(showBoS3, isBoSTF3, trend3, phTime3, prevPh3, plTime3, prevPl3, "BoS\n" + tfText3, spacing.get(1), colorTF3)
+    drawTrendChange(showBoS4, isBoSTF4, trend4, phTime4, prevPh4, plTime4, prevPl4, "BoS\n" + tfText4, spacing.get(2), colorTF4)
+
+// ─────────────────────────────────────────────────────────────
+// ALERT CONDITIONS
+// Set alert conditions for bullish and bearish CHoCH on each timeframe.
+alertcondition(ta.change(trend1) and trend1, "Bullish CHoCH on TF1", "Bullish CHoCH on (Enter your selected timeframe 1 here)")
+alertcondition(ta.change(trend1) and not trend1, "Bearish CHoCH on TF1", "Bearish CHoCH on (Enter your selected timeframe 1 here)")
+alertcondition(ta.change(trend2) and trend2, "Bullish CHoCH on TF2", "Bullish CHoCH on (Enter your selected timeframe 2 here)")
+alertcondition(ta.change(trend2) and not trend2, "Bearish CHoCH on TF2", "Bearish CHoCH on (Enter your selected timeframe 2 here)")
+alertcondition(ta.change(trend3) and trend3, "Bullish CHoCH on TF3", "Bullish CHoCH on (Enter your selected timeframe 3 here)")
+alertcondition(ta.change(trend3) and not trend3, "Bearish CHoCH on TF3", "Bearish CHoCH on (Enter your selected timeframe 3 here)")
+alertcondition(ta.change(trend4) and trend4, "Bullish CHoCH on TF4", "Bullish CHoCH on (Enter your selected timeframe 4 here)")
+alertcondition(ta.change(trend4) and not trend4, "Bearish CHoCH on TF4", "Bearish CHoCH on (Enter your selected timeframe 4 here)")

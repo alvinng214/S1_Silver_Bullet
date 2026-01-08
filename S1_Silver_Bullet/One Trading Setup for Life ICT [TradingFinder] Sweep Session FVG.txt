@@ -1,0 +1,368 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © TFlab
+//@version=6
+indicator('One Trading Setup for Life ICT [TradingFinder] Sweep Session FVG', 'TFlab Trading Setup for Life', overlay = true, max_bars_back = 5000, max_lines_count = 500, max_labels_count = 500)
+
+//import Libraries
+//import Order Block Refiner
+import TFlab/OrderBlockRefiner_TradingFinder/2 as Refiner
+//import Order Block Drawing  Library
+import TFlab/OrderBlockDrawing_TradingFinder/4 as Drawing
+//import Switching Colors Theme
+import TFlab/FVGDetectorLibrary/3 as FVG
+    //import Alert Sender Library
+import TFlab/AlertSenderLibrary_TradingFinder/1 as Alert
+
+//Input 
+BarBackCheck = input.int(5, 'CISD Bar Back Check', minval = 1, group = 'Logical Setting')
+OB_Valid  = input.int(60, 'Order Block Validity', minval = 5, group = 'Logical Setting')
+FVG_Valid = input.int(60, 'FVG Validity', minval = 5, group = 'Logical Setting')
+CISD_Valid = input.int(90, 'CISD Level Validity', group = 'Logical Setting')
+
+//Range Timea
+Newyork_PM = input.session('1330-1600', 'New York PM Session', group = 'Logical Setting')
+Newyork_AM = input.session('0930-1600', 'New York AM Session', group = 'Logical Setting')
+
+//Order Blocks Refinement
+Refine = input.bool(true, 'Refine Order Block', group = 'Order Blocks Logical Setting', inline = 'Refine')
+RefineMe = input.string('Defensive', '', ['Defensive', 'Aggressive'], group = 'Order Blocks Logical Setting', inline = 'Refine')
+MLOB = input.string('Proximal', 'Mitigation Level OB', ['Proximal', '50 % OB', 'Distal'], tooltip = 'Using this entry, you can determine which level the price reacts to in a Order Block.', group = 'Order Blocks Logical Setting')
+
+//FVG Filter
+PFVGFilter = input.bool(false, 'FVG Filter ............', group = 'FVG Logical Setting', inline = 'FVG Filter')
+PFVGFilterType = input.string('Defensive', '', ['Very Aggressive', 'Aggressive', 'Defensive', 'Very Defensive'], group = 'FVG Logical Setting', inline = 'FVG Filter', tooltip = 'If it is "On", this filter will filter "FVGs" based on the width of the Zone.' + 'From "Very Aggressive" to "Very Defensive" the width of the "FVG" decreases.')
+MLFVG = input.string('Proximal', 'Mitigation Level FVG', ['Proximal', '50 % OB', 'Distal'], tooltip = 'Using this entry, you can determine which level the price reacts to in a FVG.', group = 'FVG Logical Setting')
+
+    // Alert
+AlertName = input.string('One Trading Setup ICT [TradingFinder]', 'Alert Name', group = 'Alert')
+Frequncy = input.string('Once Per Bar' , 'Message Frequency' , ['All', 'Once Per Bar' , 'Per Bar Close'], 'The triggering frequency. Possible values are: All'+ 
+ ' (all function calls trigger the alert), Once Per Bar (the first function call during the bar triggers the alert), ' +  
+ ' Per Bar Close (the function call triggers the alert only when it occurs during the last script iteration of the real-time bar,' +  
+ ' when it closes). The default is alert.freq_once_per_bar.)', group = 'Alert')
+UTC = input.string('UTC' , 'Show Alert time by Time Zone', group = 'Alert')
+OB_Bull = input.string('On', 'Alert OB Demand Mitigation', ['On', 'Off'], 'If you turn on the Alert, you can receive alerts and notifications after setting the "Alert".', group = 'Alert')
+OB_Bear = input.string('On', 'Alert OB Supply Mitigation', ['On', 'Off'], 'If you turn on the Alert, you can receive alerts and notifications after setting the "Alert".', group = 'Alert')
+FVG_Bull = input.string('On', 'Alert FVG Demand Mitigation', ['On', 'Off'], 'If you turn on the Alert, you can receive alerts and notifications after setting the "Alert".', group = 'Alert')
+FVG_Bear = input.string('On', 'Alert FVG Supply Mitigation', ['On', 'Off'], 'If you turn on the Alert, you can receive alerts and notifications after setting the "Alert".', group = 'Alert')
+
+//Display Order Block
+DOBShow = input.bool(true, 'Demand Order Block', inline = 'DMOLB', group = 'Order Block Display Setting')
+DOBColor = input.color(#17c0016b, '', inline = 'DMOLB', group = 'Order Block Display Setting')
+
+SOBShow = input.bool(true, 'Supply Order Block', inline = 'SSOLB', group = 'Order Block Display Setting')
+SOBColor = input.color(#df050573, '', inline = 'SSOLB', group = 'Order Block Display Setting')
+
+//Display FVG
+DFVGShow = input.bool(true, 'Demand FVG', inline = 'DFVG', group = 'FVG Display Setting')
+DFVGColor = input.color(#2195f36c, '', inline = 'DFVG', group = 'FVG Display Setting')
+
+SFVGShow = input.bool(true, 'Supply FVG', inline = 'SFVG', group = 'FVG Display Setting')
+SFVGColor = input.color(#ff990070, '', inline = 'SFVG', group = 'FVG Display Setting')
+
+//CISD Display Setting
+CISD_AShow = input.bool(true, 'Show All CISD', group = 'CISD Display Setting')
+CISD_HShow = input.bool(true, 'Show High CISD', group = 'CISD Display Setting', inline = 'CH')
+CISD_LShow = input.bool(true, 'Show Low CISD', group = 'CISD Display Setting', inline = 'CL')
+CISD_HNColor = input.color(#870505, 'Name', group = 'CISD Display Setting', inline = 'CH')
+CISD_LNColor = input.color(#014f07, 'Name', group = 'CISD Display Setting', inline = 'CL')
+CISD_HLColor = input.color(#b90000b8, 'Line', group = 'CISD Display Setting', inline = 'CH')
+CISD_LLColor = input.color(#069206a7, 'Line', group = 'CISD Display Setting', inline = 'CL')
+
+
+Newyork_PM_Range = math.sign(nz(time(timeframe.period, Newyork_PM, 'America/New_York')))
+Newyork_AM_Range = math.sign(nz(time(timeframe.period, Newyork_AM, 'America/New_York')))
+
+one_hour = 60 * 60 * 1000
+ATR = ta.atr(55)
+
+//High & Low Session Detector 
+var line  High_Level       = na
+var line   Low_Level       = na
+var label High_Level_Label = na
+var label Low_Level_Label  = na
+
+LowHighSessionDetector(On_Session) =>
+    var int Time = 0
+    var float High = 0.0
+    var float Low = 0.0
+
+    if On_Session[1] == 0 and On_Session == 1
+        Time := time
+        High := high
+        Low := low
+        Low
+    else if On_Session[1] == 1 or On_Session == 1
+        High := math.max(high, High)
+        Low := math.min(low, Low)
+        Low
+    [High, Low, Time]
+
+[High_OR, Low_OR, Time_OR] = LowHighSessionDetector(Newyork_PM_Range)
+
+if Newyork_AM_Range > Newyork_AM_Range[1]
+    High_Level := line.new(time - int(one_hour / 4), High_OR, time + int(one_hour / 4), High_OR, xloc = xloc.bar_time, style = line.style_dotted, color = #000000)
+    Low_Level := line.new(time - int(one_hour / 4), Low_OR, time + int(one_hour / 4), Low_OR, xloc = xloc.bar_time, style = line.style_dotted, color = #000000)
+    High_Level_Label := label.new(time + int(one_hour / 4), High_OR, 'NY PM Session High',xloc = xloc.bar_time, style = label.style_label_left, textcolor = #000000, color = #ffffff, size = size.tiny)
+    Low_Level_Label  := label.new(time + int(one_hour / 4), Low_OR, 'NY PM Session Low',xloc = xloc.bar_time, style = label.style_label_left, textcolor = #000000, color = #ffffff, size = size.tiny)
+
+var bool Permit_Break = true
+var bool High_Break = false
+var bool Low_Break = false
+
+var int High_Break_Bar = na
+var int Low_Break_Bar = na
+
+if Newyork_AM_Range == 0
+    High_Break := false
+    Low_Break := false
+    High_Break_Bar := na
+    Low_Break_Bar := na
+    Low_Break_Bar
+
+if Newyork_AM_Range == 1
+    if high > High_OR and high[1] < High_OR
+        High_Break := true
+        High_Break
+
+    if low < Low_OR and low[1] > Low_OR
+        Low_Break := true
+        Low_Break
+
+//FVG Call Function
+[DConditionFVG, DDFVG, DPFVG, BarDFVG, SConditionFVG, SDFVG, SPFVG, BarSFVG] = FVG.FVGDetector(PFVGFilter ? 'On' : 'Off', PFVGFilterType, false, false)
+
+//CISD Detector Function
+CISDLevelDetector(CondHigh, CondLow, Newyork_PM_Range, Newyork_AM_Range, DConditionFVG, DDFVG, DPFVG, BarDFVG, SConditionFVG, SDFVG, SPFVG, BarSFVG, BarBackCheck, Label, AShow, HShow, LShow, HNColor, LNColor, HLColor, LLColor) =>
+    var float CISDLvLP_L = 0.0
+    var float CISDLvLP_H = 0.0
+    var int CISDLvLI_L = 0
+    var int CISDLvLI_H = 0
+    var bool Permit_HSet = true
+    var bool Permit_LSet = true
+    var bool Permit_HReset = true
+    var bool Permit_LReset = true
+
+    var line CISD_LineL = na
+    var line CISD_LineH = na
+    var label CISD_NameH = na
+    var label CISD_NameL = na
+    var label CISD_ShapH = na
+    var label CISD_ShapL = na
+
+    var bool Bear_Trigger = false
+    var bool Bull_Trigger = false
+    var bool FVG_Bear_Trigger = false
+    var bool FVG_Bull_Trigger = false
+    var int Bear_FVG = 0
+    var float Bear_FVG_D = 0.0
+    var float Bear_FVG_P = 0.0
+
+
+    var int Bull_FVG = 0
+    var float Bull_FVG_D = 0.0
+    var float Bull_FVG_P = 0.0
+
+
+    var FVG_Bear_D = array.new_float()
+    var FVG_Bear_P = array.new_float()
+    var FVG_Bear_I = array.new_int()
+
+    var FVG_Bull_D = array.new_float()
+    var FVG_Bull_P = array.new_float()
+    var FVG_Bull_I = array.new_int()
+
+
+    var float High_OB = na
+    var float Low_OB = na
+
+    var float Bear_D = na
+    var float Bear_P = na
+    var int Bear_I = na
+
+    var float Bull_D = na
+    var float Bull_P = na
+    var int Bull_I = na
+
+    var Global_Permit = false
+
+    if Newyork_AM_Range[1] == 0 and Newyork_AM_Range == 1 and close > Low_OR and close < High_OR
+        Global_Permit := true
+        Global_Permit
+    else
+        Global_Permit := false
+        Global_Permit
+
+
+    Body = close - open
+    if Newyork_AM_Range[1] == 0 and Newyork_AM_Range == 1
+        High_OB := high
+        Bear_I := bar_index
+        Low_OB := low
+        Bull_I := bar_index
+        Bull_I
+
+
+
+    if Newyork_AM_Range[1] == 1
+        if high > High_OB
+            High_OB := high
+            Bear_I := bar_index
+            Bear_I
+        if low < Low_OB
+            Low_OB := low
+            Bull_I := bar_index
+            Bull_I
+
+
+
+
+
+    if CondHigh
+
+        Permit_HSet := true
+        for i = 1 to BarBackCheck by 1
+            if Body[i] < 0 and Permit_HSet
+                Permit_HReset := true
+                CISDLvLP_H := BarBackCheck > 1 and i > 1 ? math.min(open[i - 1], open[i - 2]) : open[i - 1]
+                CISDLvLI_H := BarBackCheck > 1 and i > 1 ? math.min(open[i - 1], open[i - 2]) == open[i - 2] ? bar_index[i - 2] : bar_index[i - 1] : bar_index[i - 1]
+                if AShow and HShow
+                    CISD_LineH := line.new(CISDLvLI_H, CISDLvLP_H, bar_index, CISDLvLP_H, color = #890505, style = line.style_dotted)
+                    CISD_NameH := label.new(CISDLvLI_H + 1, low[bar_index - CISDLvLI_H] - ATR * 0.3, Label, color = na, style = label.style_label_upper_left, textcolor = #890505, size = size.tiny)
+                    CISD_NameH
+                Permit_HSet := false
+                Permit_HSet
+    if Permit_HReset and Newyork_AM_Range == 1
+        if SConditionFVG
+            FVG_Bear_I.push(BarSFVG)
+            FVG_Bear_D.push(SDFVG)
+            FVG_Bear_P.push(SPFVG)
+        if FVG_Bear_I.size() > 0
+            if high > FVG_Bear_P.get(FVG_Bear_I.size() - 1)
+                FVG_Bear_I.remove(FVG_Bear_I.size() - 1)
+                FVG_Bear_D.remove(FVG_Bear_D.size() - 1)
+                FVG_Bear_P.remove(FVG_Bear_P.size() - 1)
+
+        if close >= CISDLvLP_H and bar_index - CISDLvLI_H <= CISD_Valid
+            CISD_LineH.set_x2(bar_index + 1)
+
+        if close <= CISDLvLP_H and bar_index - CISDLvLI_H <= CISD_Valid
+
+            Permit_HReset := false
+            if AShow and HShow
+                CISD_ShapH := label.new(bar_index, high + ATR * 0.6, '', color = #890505, style = label.style_triangledown, size = size.tiny)
+                CISD_ShapH
+
+
+
+    if CondLow
+
+        Permit_LSet := true
+        for i = 1 to BarBackCheck by 1
+            if Body[i] > 0 and Permit_LSet
+                Permit_LReset := true
+                CISDLvLP_L := BarBackCheck > 1 and i > 1 ? math.max(open[i - 1], open[i - 2]) : open[i - 1]
+                CISDLvLI_L := BarBackCheck > 1 and i > 1 ? math.max(open[i - 1], open[i - 2]) == open[i - 2] ? bar_index[i - 2] : bar_index[i - 1] : bar_index[i - 1]
+                if AShow and LShow
+                    CISD_LineL := line.new(CISDLvLI_L, CISDLvLP_L, bar_index, CISDLvLP_L, color = #016004, style = line.style_dotted)
+                    CISD_NameL := label.new(CISDLvLI_L + 1, high[bar_index - CISDLvLI_L] + ATR * 0.6, Label, color = na, style = label.style_label_lower_right, textcolor = #016004, size = size.tiny)
+                    CISD_NameL
+                Permit_LSet := false
+                Permit_LSet
+    if Permit_LReset and Newyork_AM_Range == 1
+        if DConditionFVG
+            FVG_Bull_I.push(BarDFVG)
+            FVG_Bull_D.push(DDFVG)
+            FVG_Bull_P.push(DPFVG)
+        if FVG_Bull_I.size() > 0
+            if low < FVG_Bull_P.get(FVG_Bull_I.size() - 1)
+                FVG_Bull_I.remove(FVG_Bull_I.size() - 1)
+                FVG_Bull_D.remove(FVG_Bull_D.size() - 1)
+                FVG_Bull_P.remove(FVG_Bull_P.size() - 1)
+        if close <= CISDLvLP_L and bar_index - CISDLvLI_L <= CISD_Valid
+            CISD_LineL.set_x2(bar_index + 1)
+        if close >= CISDLvLP_L and bar_index - CISDLvLI_L <= CISD_Valid
+            Permit_LReset := false
+            if AShow and LShow
+                CISD_ShapL := label.new(bar_index, low - ATR * 0.6, '', color = #016004, style = label.style_triangleup, size = size.tiny)
+                CISD_ShapL
+
+    if Newyork_AM_Range == 1
+        if FVG_Bull_I.size() > 0 or ta.change(FVG_Bull_I.size() > 0) and FVG_Bull_I.size() > 0
+            Bull_FVG := FVG_Bull_I.get(FVG_Bull_I.size() - 1)
+            Bull_FVG_D := FVG_Bull_D.get(FVG_Bull_D.size() - 1)
+            Bull_FVG_P := FVG_Bull_P.get(FVG_Bull_P.size() - 1)
+            Bull_FVG_P
+        if FVG_Bear_I.size() > 0 or ta.change(FVG_Bear_I.size() > 0) and FVG_Bear_I.size() > 0
+            Bear_FVG := FVG_Bear_I.get(FVG_Bear_I.size() - 1)
+            Bear_FVG_D := FVG_Bear_D.get(FVG_Bear_D.size() - 1)
+            Bear_FVG_P := FVG_Bear_P.get(FVG_Bear_P.size() - 1)
+            Bear_FVG_P
+
+    if Permit_HReset[1] and not Permit_HReset
+        Bear_Trigger := true
+        if FVG_Bear_I.size() > 0 and Bear_FVG != 0
+            FVG_Bear_Trigger := true
+            FVG_Bear_Trigger
+        else
+            FVG_Bear_Trigger := false
+            FVG_Bear_Trigger
+    else
+        Bear_Trigger := false
+        FVG_Bear_Trigger := false
+        FVG_Bear_Trigger
+
+    if Permit_LReset[1] and not Permit_LReset
+        Bull_Trigger := true
+        if FVG_Bull_I.size() > 0 and Bull_FVG != 0
+            FVG_Bull_Trigger := true
+            FVG_Bull_Trigger
+        else
+            FVG_Bull_Trigger := false
+            FVG_Bull_Trigger
+    else
+        Bull_Trigger := false
+        FVG_Bull_Trigger := false
+        FVG_Bull_Trigger
+
+    if Newyork_AM_Range[1] == 0 and Newyork_AM_Range[2] == 1
+        Bear_FVG := 0
+        Bear_FVG_D := 0.0
+        Bear_FVG_P := 0.0
+        Bull_FVG := 0
+        Bull_FVG_D := 0.0
+        Bull_FVG_P := 0.0
+        High_OB := na
+        Low_OB := na
+        Bear_D := na
+        Bear_P := na
+        Bear_I := na
+        Bull_D := na
+        Bull_P := na
+        Bull_I := na
+        FVG_Bear_D.clear()
+        FVG_Bear_P.clear()
+        FVG_Bear_I.clear()
+        FVG_Bull_D.clear()
+        FVG_Bull_P.clear()
+        FVG_Bull_I.clear()
+    [Bull_Trigger, Bear_Trigger, FVG_Bull_Trigger, FVG_Bear_Trigger, Bull_FVG, Bear_FVG, Bull_FVG_D, Bear_FVG_D, Bull_FVG_P, Bear_FVG_P, Bull_I, Bear_I, Bull_D, Bear_D, Bull_P, Bear_P]
+
+
+Cond_High = Newyork_AM_Range == 1 and High_Break and not High_Break[1] and not Low_Break
+Cond_Low = Newyork_AM_Range == 1 and Low_Break and not Low_Break[1] and not High_Break
+//Call CISD Function
+[Bull_Trigger, Bear_Trigger, FVG_Bull_Trigger, FVG_Bear_Trigger, Bull_FVG, Bear_FVG, Bull_FVG_D, Bear_FVG_D, Bull_FVG_P, Bear_FVG_P, Bull_I, Bear_I, Bull_D, Bear_D, Bull_P, Bear_P] = CISDLevelDetector(Cond_High, Cond_Low, Newyork_PM_Range, Newyork_AM_Range, DConditionFVG, DDFVG, DPFVG, BarDFVG, SConditionFVG, SDFVG, SPFVG, BarSFVG, 120, 'CISD level', CISD_AShow, CISD_HShow, CISD_LShow, CISD_HNColor, CISD_LNColor, CISD_HLColor, CISD_LLColor)
+
+[Bu_Xd1, Bu_Xd2, Bu_Yd12, Bu_Xp1, Bu_Xp2, Bu_Yp12] = Refiner.OBRefiner('Demand', Refine ? 'On' : 'Off', RefineMe, Bull_Trigger, Bull_I) //and not Bull_FVG 
+[Be_Xd1, Be_Xd2, Be_Yd12, Be_Xp1, Be_Xp2, Be_Yp12] = Refiner.OBRefiner('Supply', Refine ? 'On' : 'Off', RefineMe, Bear_Trigger, Bear_I) // and not Bear_FVG 
+
+[Alert_DAMM, Alert_SAMMbb, PASBB, DASBB, IASBB] = Drawing.OBDrawing('Demand', Bull_Trigger, Bu_Yd12, Bu_Yp12, Bu_Xd1, Newyork_AM_Range == 1, OB_Valid, MLOB, MLOB, true, false, DOBShow, false, DOBColor, #ffffff00) // and not Bull_FVG 11
+[Alert_SMMM, Alert_DMMMbb, PMDBB, DMDBB, IMDBB] = Drawing.OBDrawing('Supply', Bear_Trigger, Be_Yd12, Be_Yp12, Be_Xd1, Newyork_AM_Range == 1, OB_Valid, MLOB, MLOB, true, false, SOBShow, false, SOBColor, #ffffff00) //  and not Bear_FVG  
+
+[Alert_DFVG, Alert_SAMMFVG, PASFVG, DASFVG, IASFVG] = Drawing.OBDrawing('Demand', FVG_Bull_Trigger, Bull_FVG_D, Bull_FVG_P, Bull_FVG, Newyork_AM_Range == 1, FVG_Valid, MLFVG, MLFVG, true, false, DFVGShow, false, DFVGColor, #ffffff00) //Bull_FVG 
+[Alert_SFVG, Alert_DMMMFVG, PMDFVG, DMDFVG, IMDFVG] = Drawing.OBDrawing('Supply', FVG_Bear_Trigger, Bear_FVG_D, Bear_FVG_P, Bear_FVG, Newyork_AM_Range == 1, FVG_Valid, MLFVG, MLFVG, true, false, SFVGShow, false, SFVGColor, #ffffff00) // Bear_FVG
+
+Alert.AlertSender(Alert_DAMM  , OB_Bull, AlertName, 'Bullish', 'Order Block Signal', 'Full' ,Frequncy, UTC, 'Off', 'Alert Demand Mitigation in Son Model ICT Setup', open, high, low, close,0,0,0, 0, 0)
+Alert.AlertSender(Alert_SMMM  , OB_Bear, AlertName, 'Bearish', 'Order Block Signal', 'Full' ,Frequncy, UTC, 'Off', 'Alert Supply Mitigation in Son Model ICT Setup', open, high, low, close,0,0,0, 0, 0)
+Alert.AlertSender(Alert_DFVG  , FVG_Bull, AlertName, 'Bullish', 'Order Block Signal', 'Full' ,Frequncy, UTC, 'Off', 'Alert Demand Mitigation in Son Model ICT Setup', open, high, low, close,0,0,0, 0, 0)
+Alert.AlertSender(Alert_SFVG  , FVG_Bear, AlertName, 'Bearish', 'Order Block Signal', 'Full' ,Frequncy, UTC, 'Off', 'Alert Supply Mitigation in Son Model ICT Setup', open, high, low, close,0,0,0, 0, 0)
