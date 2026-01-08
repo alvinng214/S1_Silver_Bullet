@@ -1,0 +1,853 @@
+================================================================================
+SILVER BULLET STRATEGY S1: COMPLETE LOGICAL STEP BREAKDOWN (V2 - CORRECTED)
+================================================================================
+WITH PINE SCRIPT MAPPING FOR EACH STEP
+
+Document Version: 2.1 (Updated after full script audit + gap review)
+Last Updated: January 2026 (Rev B)
+
+================================================================================
+CORRECTION NOTES
+================================================================================
+
+This version corrects the following errors from V1:
+
+1. ADDED: ICT_Silver_Bullet_with_signals.txt as PRIMARY for Steps 5, 7, 8, 9, 11
+   - Most complete Silver Bullet script with MSS detection + entry signals
+   - Previously missed due to incomplete analysis
+
+2. UPGRADED: Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_.txt
+   - Now PRIMARY option for Steps 1, 2, 3, 7
+   - Most comprehensive single-script solution
+
+3. ADDED: Ighodalo Gold - CRT (Candles are ranges theory).txt as optional for Steps 4, 6
+   - Turtle Soup signals = sweep detection
+   - Alternative range management approach
+
+4. CONFIRMED: MirPapa-ICT-HTF-_FVG_OB_Threeple.txt remains PRIMARY for Step 2
+5. ADDED: ICT Balanced Price Range (BPR) | FVG + IFVG script
+   - Optional filter for Steps 8-9 (FVG selection + inversion handling)
+   - Adds BPR overlap and IFVG invalidation logic
+
+6. ADDED: One Trading Setup for Life ICT (Sweep + Session + FVG workflow)
+   - Listed as an alternative all-in-one execution bundle for Steps 6-9
+
+7. UPDATED: Step 6 sweep tooling priorities
+   - Primary sweep focus shifted from HTF candle sweeps to session/pool liquidity sweeps
+   - Liquidity & inducements + SW's AsiaLondon HL's are now PRIMARY for Step 6
+   - CandelaCharts HTF Sweeps demoted to SUPPORTING/HTF context
+
+8. UPDATED: cd_sweep&cisd_Cx usage
+   - Now explicitly mapped as SECONDARY for Step 7 (CISD proxy confirmation)
+   - Remains PRIMARY for Step 12 (SMT divergence)
+   - Filename normalized to cd_sweep&cisd_Cx.txt
+
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. STRATEGY OVERVIEW
+2. PHASE 1: HIGHER TIMEFRAME BIAS DETERMINATION (Steps 1-3)
+3. PHASE 2: SESSION PREPARATION (Steps 4-5)
+4. PHASE 3: SETUP IDENTIFICATION (Steps 6-8)
+5. PHASE 4: ENTRY & TRADE MANAGEMENT (Steps 9-11)
+6. PHASE 5: OPTIONAL CONFLUENCE FILTERS (Steps 12-13)
+7. FINAL SUMMARY TABLE
+8. MINIMUM VIABLE CHART SETUP
+9. EXPANDED SETUP
+10. CRITICAL REMINDERS
+
+================================================================================
+1. STRATEGY OVERVIEW
+================================================================================
+
+Strategy S1: Silver Bullet is a time-based ICT strategy that executes during 
+specific killzone windows after a liquidity sweep and market structure shift.
+
+CORE REQUIREMENTS:
+- Time Filter: Active killzone (London or NY)
+- Liquidity Target: Day high/low, session high/low, equal highs/lows
+- Sweep: Wick beyond liquidity, close back inside
+- MSS/CHOCH: Candle CLOSE beyond last internal swing (not wick-only)
+- FVG: Formed DURING the MSS displacement leg
+- Entry: At FVG boundary or CE midpoint
+
+SILVER BULLET WINDOWS (NY Time):
+- London: 3:00 AM - 4:00 AM
+- NY AM: 10:00 AM - 11:00 AM
+- NY PM: 2:00 PM - 3:00 PM
+
+================================================================================
+2. PHASE 1: HIGHER TIMEFRAME BIAS DETERMINATION
+================================================================================
+
+--------------------------------------------------------------------------------
+STEP 1: Determine HTF Market Structure Trend (Daily/4H)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Establish directional bias — bullish (HH/HL) or bearish (LH/LL). 
+This gates ALL trades. Trade ONLY in direction of HTF structure.
+
+PRIMARY SCRIPT: Market_Structure_MTF_Trend__Pt_.txt
+
+WHY THIS SCRIPT:
+- Pivot-based CHoCH/BOS using candle CLOSES (not wicks)
+- Tracks 4 timeframes simultaneously
+- Distinguishes trend reversal (CHoCH) from continuation (BOS)
+- Clear visual distinction between structure states
+- Alerts on structure change
+
+CONFIGURATION:
+- TF1 = 15m (entry timeframe)
+- TF2 = 1H (intermediate)
+- TF3 = 4H (HTF bias)
+- TF4 = Daily (macro bias)
+
+ALTERNATIVE PRIMARY: Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_.txt
+
+WHY THIS SCRIPT:
+- Major vs Minor structure distinction
+- CHoCH vs BOS lines with visualization
+- Shows which structure breaks are significant (Major) vs internal (Minor)
+- Combined with OB detection for efficiency
+
+SECONDARY SCRIPT: CandelaCharts - HTF Sweeps.txt
+
+WHY THIS SCRIPT:
+- Displays actual 4H/Daily/Weekly candles on your LTF chart
+- See HTF candle color and direction without switching timeframes
+- Visual confirmation of HTF trend at a glance
+
+DECISION RULE:
+- TF3 (4H) and TF4 (Daily) same direction = confirmed bias
+- Recent BOS on 4H in direction of Daily = high probability
+- CHoCH on 4H against Daily = potential reversal, wait for confirmation
+- Major structure break > Minor structure break in significance
+
+--------------------------------------------------------------------------------
+STEP 2: Identify HTF Points of Interest (POI)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Mark unmitigated HTF Order Blocks and Fair Value Gaps where institutional 
+orders likely rest. S1 requires price to be AT or approaching a HTF POI.
+
+PRIMARY SCRIPT: MirPapa-ICT-HTF-_FVG_OB_Threeple__EN_.txt
+
+WHY THIS SCRIPT:
+- Auto-detects HTF POIs on your LTF chart
+- Shows HighTF, MidTF, and CurrentTF zones simultaneously
+- Detects FOB (FVG + OB overlap) — highest confluence zones
+- Color-coded by timeframe for easy identification
+- No need to switch charts
+- Implements ICT "Threeple" concept (same zone on 3 TFs = high probability)
+
+AUTO TIMEFRAME MAPPING:
+- 1m chart  → Mid: 5m,  High: 15m
+- 5m chart  → Mid: 15m, High: 1H
+- 15m chart → Mid: 1H,  High: 4H
+- 1H chart  → Mid: 4H,  High: Daily
+- 4H chart  → Mid: Daily, High: Weekly
+
+ALTERNATIVE PRIMARY: Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_.txt
+
+WHY THIS SCRIPT:
+- Major vs Minor Order Blocks (significance ranking)
+- CHoCH vs BOS origin (reversal vs continuation OBs)
+- OB Refinement (Aggressive/Defensive entry zones)
+- Combined with structure detection
+
+SECONDARY SCRIPT: Smart_Money_Zones__FVG___OB____MTF_Trend_Panel.txt
+
+WHY THIS SCRIPT:
+- ATR-based strength classification (WEAK to VERY STRONG)
+- Separate FVG and OB detection
+- Mitigation tracking at 50% fill
+- Use when you want strength ratings for individual zones
+
+WHEN TO USE WHICH:
+- MirPapa = When you want Threeple (zone across 3 TFs)
+- SMC Major/Minor = When you want OB significance ranking
+- Smart Money Zones = When you want zone strength ratings
+
+DECISION RULE:
+- No POI nearby = no trade
+- Threeple zone (appears on 3 TFs) = highest probability
+- Major OB from CHoCH origin > Minor OB from BOS origin
+- STRONG or VERY STRONG zones preferred
+
+--------------------------------------------------------------------------------
+STEP 3: Identify External Liquidity Targets (Draw on Liquidity)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Determine where price is heading — the untaken liquidity that acts as a magnet.
+This determines your PROFIT TARGET and helps confirm trade direction.
+
+PRIMARY SCRIPT: CandelaCharts - HTF Sweeps.txt
+
+WHY THIS SCRIPT:
+- Shows highs/lows of 4H, Daily, Weekly candles as layered liquidity targets
+- Each HTF candle extreme is a potential draw
+- Visual representation of liquidity structure across timeframes
+- Sweep detection on these levels (covered in Step 6)
+
+ALTERNATIVE PRIMARY: Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_.txt
+
+WHY THIS SCRIPT:
+- Static Liquidity Lines (larger pivot-based)
+- Dynamic Liquidity Lines (smaller pivot-based)
+- Two-tier liquidity system
+
+SECONDARY SCRIPT: Liquidity & inducements.txt
+
+WHY THIS SCRIPT:
+- Marks buyside (BSL) and sellside (SSL) liquidity at swing pivots
+- Detects equal highs/lows where stops cluster
+- Updates as levels are swept
+- Multiple liquidity types: Grabs, Sweeps, Turtle Soups
+
+DECISION RULE:
+- Bullish bias → target nearest untaken BSL (HTF high, equal highs)
+- Bearish bias → target nearest untaken SSL (HTF low, equal lows)
+- Multiple untaken levels = scale-out targets
+
+================================================================================
+3. PHASE 2: SESSION PREPARATION
+================================================================================
+
+--------------------------------------------------------------------------------
+STEP 4: Mark Current Session Levels (Liquidity for Sweep)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Identify session highs/lows that must be SWEPT before entry setup forms.
+These are the liquidity pools that institutions target.
+
+PRIMARY SCRIPT: SW's AsiaLondon HL's.txt
+
+WHY THIS SCRIPT:
+- Automatic session detection: Asia (5pm-2am), London (12am-9am), NY (5:30am-2pm)
+- Tracks PDH/PDL (Previous Day High/Low)
+- Levels update live during session, freeze when session ends
+- Clean labels for each level
+- Includes session midpoint
+
+SECONDARY SCRIPT: ICT_Customizable_50__Line___DailyAsiaLondonNew_York_HighLow___True_Day_Open.txt
+
+WHY THIS SCRIPT:
+- 50% line divides premium/discount zones (critical for S1)
+- True Day Open (5pm NY time)
+- Killzone visualization with session boundaries
+- Confluence checklist for manual tracking
+
+OPTIONAL: Ighodalo_Gold_-_CRT__Candles_are_ranges_theory_.txt
+
+WHY THIS SCRIPT:
+- Treats HTF candles as ranges (alternative approach)
+- Track 4 different timeframe ranges simultaneously
+- Midpoint (50%) tracking within ranges
+- Useful for seeing session candle as range box
+
+DECISION RULE:
+- Before London: Mark Asia H/L as sweep targets
+- Before NY: Mark Asia + London H/L as sweep targets
+- PDH/PDL are always major targets
+- Entry in discount (below 50%) for longs, premium (above 50%) for shorts
+
+--------------------------------------------------------------------------------
+STEP 5: Confirm Active Killzone Window
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Verify you're in a valid Silver Bullet trading window.
+Outside killzone = NO TRADE.
+
+PRIMARY SCRIPT: ICT_Silver_Bullet_with_signals.txt  ** NEW PRIMARY **
+
+WHY THIS SCRIPT:
+- All three Silver Bullet windows (3-4 AM, 10-11 AM, 2-3 PM)
+- PRE-SESSION PERIODS (30 min before each window) for setup preparation
+- Session-aware FVG filtering
+- Built-in MSS detection (Step 7)
+- FVG Retrace alerts = ENTRY SIGNALS (Step 9)
+- Auto target generation (Step 11)
+- Minimum Trade Framework calculation
+- MOST COMPLETE Silver Bullet implementation
+
+PRE-SESSION PERIODS:
+- 2:30-3:00 AM (before London SB)
+- 9:30-10:00 AM (before NY AM SB)
+- 1:30-2:00 PM (before NY PM SB)
+
+SECONDARY SCRIPT: ICT_Silver_Bullet__LuxAlgo___shorttitle__LuxAlgo_-_ICT_Silver_Bullet.txt
+
+WHY THIS SCRIPT:
+- Four FVG strictness modes (All → Super-Strict)
+- Clean session visualization
+- Use if you prefer visual-only without signals
+
+TERTIARY SCRIPT: Silver_Bullet_ICT_Strategy__TradingFinder__10-11_AM_NY_Time__FVG_TFlab_Silver_Bullet.txt
+
+WHY THIS SCRIPT:
+- Specifically designed for 10-11 AM NY Silver Bullet
+- Defines 9-10 AM as "Opening Range" and 10-11 AM as "Trading Window"
+- More explicit logic for NY AM session specifically
+
+DECISION RULE:
+- Session label visible = valid window
+- Pre-session active = prepare for setup
+- No label = wait or no trade
+- Trade only within marked session boundaries
+
+================================================================================
+4. PHASE 3: SETUP IDENTIFICATION
+================================================================================
+
+--------------------------------------------------------------------------------
+STEP 6: Wait for Liquidity Sweep
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Price must sweep liquidity in the OPPOSITE direction of intended trade.
+Sweep = wick beyond level, then CLOSE back inside (raid, not breakout).
+
+For Silver Bullet, prioritize sweeps of TRADABLE liquidity pools:
+- Asia / London / NY session highs & lows
+- PDH / PDL (previous day high/low)
+- Equal highs / equal lows (stop pools)
+
+PRIMARY SCRIPTS:
+1) Liquidity & inducements.txt
+2) SW's AsiaLondon HL's.txt
+
+WHY THESE SCRIPTS:
+- They plot the exact liquidity pools S1 actually trades (session extremes + inducement/pools)
+- Keeps sweep detection tied to PD arrays and session logic, not generic HTF candle extremes
+- Reduces noise: you are sweeping a known pool, not “any HTF wick”
+
+SUPPORTING SCRIPT (HTF context / overlay):
+- CandelaCharts - HTF Sweeps.txt
+  - Use to validate HTF raids and broader context
+  - NOT the primary trigger for S1 (too HTF-candle-centric for LTF execution)
+
+OPTIONAL:
+- Ighodalo Gold - CRT (Candles are ranges theory).txt
+  - Turtle Soup style sweep/return signals
+  - Use only as confirmation (do not replace the S1 sequence with CRT signals)
+
+DECISION RULE:
+- Bullish S1: require sell-side raid (SSL) → sweep session low / PDL / equal lows, then close back inside.
+- Bearish S1: require buy-side raid (BSL) → sweep session high / PDH / equal highs, then close back inside.
+- Sweep must occur INSIDE killzone AND before MSS.
+- Invalidation: body accepts beyond the level (close outside) or the sweep extreme is taken again after MSS → stand down.
+
+--------------------------------------------------------------------------------
+
+
+STEP 7: Confirm Market Structure Shift (MSS/CHOCH)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+After sweep, price must break structure in the OPPOSITE direction.
+MSS = candle CLOSE beyond last internal swing (not wick-only).
+
+PRIMARY SCRIPT: ICT_Silver_Bullet_with_signals.txt  ** NEW PRIMARY **
+
+WHY THIS SCRIPT:
+- BUILT-IN MSS DETECTION combined with session timing
+- MSS triggers on close > last swing high (bullish) or close < last swing low (bearish)
+- Already integrated with FVG detection
+- Single script covers Steps 5, 7, 8, 9
+
+MSS LOGIC (from script lines 214-219):
+- Bullish MSS: close > aZZ.y.get(iH) where iH is last swing high
+- Bearish MSS: close < aZZ.y.get(iL) where iL is last swing low
+
+SECONDARY SCRIPT: Market_Structure_MTF_Trend__Pt_.txt
+
+WHY THIS SCRIPT:
+- Uses candle CLOSES not wicks — matches S1 specification exactly
+- Pivot-based swing detection (not body-based approximation)
+- Clear visual distinction between CHoCH (reversal) and BOS (continuation)
+- Alerts on structure change
+- Multi-TF capability
+
+ALTERNATIVE: Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_.txt
+
+WHY THIS SCRIPT:
+- Major vs Minor CHoCH distinction
+- Visual CHoCH/BOS lines
+- Shows significance of structure break
+
+TERTIARY SCRIPT: cd_sweep&cisd_Cx.txt
+
+WHY THIS SCRIPT:
+- CISD (Change in State of Delivery) triggers after range break
+- Looks for first opposite-color body candle
+- Draws CISD level line
+- Approximates MSS concept (use as a proxy / secondary confirmation)
+- Also includes SMT divergence tooling (see Step 12)
+
+HOW TO USE (CISD as Step 7 filter):
+- Only consider CISD AFTER a confirmed sweep (Step 6)
+- Require a candle BODY CLOSE beyond the CISD level in trade direction
+- Treat CISD as secondary confirmation; primary MSS remains the close beyond the last swing level
+
+OPTIONAL (time-specific bundle):
+- Silver Bullet ICT Strategy [TradingFinder] 10-11 AM NY Time +FVG,TFlab Silver Bullet.txt
+  - Narrow 10–11 AM NY Silver Bullet tooling; use if you want hard-coded timing/labels.
+
+DECISION RULE:
+- Bullish S1 (after SSL sweep): CHoCH = close ABOVE last swing high
+- Bearish S1 (after BSL sweep): CHoCH = close BELOW last swing low
+- Structure shift must occur AFTER the sweep, not before
+- No MSS after sweep = no trade
+
+--------------------------------------------------------------------------------
+STEP 8: Identify FVG Formed During MSS Displacement Leg
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Locate FVG that formed DURING the MSS candle(s) — not just any FVG in session.
+This is your entry zone.
+
+PRIMARY SCRIPT: ICT_Silver_Bullet_with_signals.txt  ** NEW PRIMARY **
+
+WHY THIS SCRIPT:
+- FVG detection integrated with MSS detection
+- Session-filtered (only shows FVGs in SB windows)
+- HTF FVG option (1, 3, 5, 10, 15 min candles)
+- Trend-filtered FVGs (only direction-aligned)
+- Auto-removes broken FVGs
+- ALERTS: "Bull FVG Formed", "Bear FVG Formed"
+
+SECONDARY SCRIPT: ICT_Silver_Bullet__LuxAlgo___shorttitle__LuxAlgo_-_ICT_Silver_Bullet.txt
+
+WHY THIS SCRIPT:
+- Four strictness modes:
+  * "All FVG" — every gap
+  * "Only FVG in same direction of trend" — trend-aligned only
+  * "Strict" — requires retrace AND close confirmation
+  * "Super-Strict" — requires retrace, close in direction, zone hold
+- FVG boxes extend until invalidated
+- Clean visualization
+
+TERTIARY SCRIPT: Smart_Money_Zones__FVG___OB____MTF_Trend_Panel.txt
+
+WHY THIS SCRIPT:
+- ATR-based strength classification (WEAK to VERY STRONG)
+- Impulse body requirement filters quality
+- Mitigation tracking shows if FVG partially filled
+- Strength rating helps prioritize which FVG to trade
+
+
+OPTIONAL FILTER SCRIPT: ICT Balanced Price Range [TradingFinder]  BPR  FVG + IFVG.txt
+
+WHY THIS SCRIPT (BPR / IFVG):
+- BPR (Balanced Price Range) highlights overlapping imbalances that often act as a cleaner POI than a single FVG
+- IFVG (Inversion FVG) flags when an FVG FAILS and flips; helps you avoid bidding/offering a dead gap
+
+HOW TO APPLY TO S1:
+- Prefer an MSS-leg FVG that also sits inside a BPR overlap (higher-quality entry zone)
+- If your chosen FVG becomes an IFVG (price closes through and flips), treat it as setup INVALIDATION for classic S1
+
+DECISION RULE:
+- FVG must be in direction of new trend (bullish FVG after bullish MSS)
+- FVG must form during or immediately after the MSS displacement candle
+- Prefer STRONG or VERY STRONG FVGs
+- Multiple FVGs = choose one closest to current price or with best strength
+
+================================================================================
+5. PHASE 4: ENTRY & TRADE MANAGEMENT
+================================================================================
+
+--------------------------------------------------------------------------------
+STEP 9: Entry at FVG Zone
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Place limit order at FVG boundary or consequent encroachment (CE/midpoint).
+
+PRIMARY SCRIPT: ICT_Silver_Bullet_with_signals.txt  ** NEW PRIMARY **
+
+WHY THIS SCRIPT:
+- FVG RETRACE ALERT = ENTRY SIGNAL
+- "Bull FVG Retrace" / "Bear FVG Retrace" alerts when price enters FVG
+- Minimum Trade Framework shows minimum acceptable target
+- Auto-draws target lines from FVG to pivot levels
+
+ENTRY SIGNAL LOGIC (from script):
+- Bull entry: low < fvg.box.get_top() (price enters bullish FVG from above)
+- Bear entry: high > fvg.box.get_bottom() (price enters bearish FVG from below)
+
+SECONDARY SCRIPT: ICT_Silver_Bullet__LuxAlgo___shorttitle__LuxAlgo_-_ICT_Silver_Bullet.txt
+
+WHY THIS SCRIPT:
+- Clear FVG boxes showing entry zone boundaries
+- Box top = proximal for bullish FVG
+- Box bottom = proximal for bearish FVG
+- Visual reference for limit order placement
+
+TERTIARY SCRIPT: ICT_Setup_01__TradingFinder__FVG___Liquidity_SweepsHunt_Alerts__ICT_Setup_01_TFlab.txt
+
+WHY THIS SCRIPT:
+- "Discount & Premium" toggle refines FVG to optimal portion
+- Discount portion for longs, premium portion for shorts
+- Multiple reaction tracking for zone tests
+
+OPTIONAL: Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.txt
+
+WHY THIS SCRIPT:
+- 61.8%-78.6% Fibonacci retracement zone (OTE)
+- If FVG aligns with OTE = highest confluence entry
+- Additional confirmation layer
+
+DECISION RULE:
+- Conservative: Enter at FVG proximal edge (top for bullish, bottom for bearish)
+- Aggressive: Enter at FVG CE (50% of gap)
+- Best: FVG overlapping with OTE zone
+- Use limit orders, not market orders
+- FVG Retrace alert = confirmation to place order
+- Optional: Prefer FVG that overlaps a BPR (Balanced Price Range) zone
+- Optional: If FVG inverts into IFVG before entry/after touch (close through + flip), cancel classic S1 entry
+--------------------------------------------------------------------------------
+STEP 10: Stop Loss Placement
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Place stop beyond sweep extreme OR beyond the MSS swing.
+
+PRIMARY SCRIPT: CandelaCharts - HTF Sweeps.txt
+
+WHY THIS SCRIPT:
+- Shows exact price level of the sweep
+- Stop goes beyond this level
+- Sweep line provides precise reference
+- Validated sweep level is your invalidation point
+
+SECONDARY SCRIPT: Liquidity & inducements.txt
+
+WHY THIS SCRIPT:
+- BSL/SSL lines show where liquidity was taken
+- Stop below SSL sweep (for longs) or above BSL sweep (for shorts)
+- Swing pivot levels for reference
+
+TERTIARY SCRIPT: SW's AsiaLondon HL's.txt
+
+WHY THIS SCRIPT:
+- Session H/L lines show sweep target levels
+- Stop beyond session extreme that was swept
+- Clean level reference
+
+DECISION RULE:
+- Bullish S1: Stop below the low that was swept + buffer
+- Bearish S1: Stop above the high that was swept + buffer
+- Buffer: 1-2 pips (FX) or 1 ATR (indices/crypto)
+- Alternative: Stop beyond the swing that caused MSS
+
+--------------------------------------------------------------------------------
+STEP 11: Target Identification
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Set profit targets at internal structure or opposite-side external liquidity.
+
+PRIMARY SCRIPT: ICT_Silver_Bullet_with_signals.txt  ** NEW PRIMARY **
+
+WHY THIS SCRIPT:
+- AUTO TARGET GENERATION from:
+  * Pivot highs/lows (pivH, pivL arrays)
+  * Weekly pivots (NWOG - Friday close, Monday open)
+  * Daily pivots (NDOG - Previous day close, current day open)
+- Target lines drawn automatically when FVG retrace triggers
+- Minimum Trade Framework shows minimum acceptable target
+
+SECONDARY SCRIPT: Liquidity & inducements.txt
+
+WHY THIS SCRIPT:
+- Shows untaken liquidity pools (BSL/SSL)
+- Equal highs/lows as classic targets
+- Updates as levels are taken
+- Multiple levels for scale-out
+
+TERTIARY SCRIPT: CandelaCharts - HTF Sweeps.txt
+
+WHY THIS SCRIPT:
+- HTF candle highs/lows as targets
+- Weekly high = major BSL target
+- Daily low = major SSL target
+- Layered target structure
+
+QUATERNARY SCRIPT: SW's AsiaLondon HL's.txt
+
+WHY THIS SCRIPT:
+- PDH/PDL as major targets
+- Opposite session level from entry
+- Session extremes as intermediate targets
+
+OPTIONAL: Monday_Range__Lines_.txt
+
+WHY THIS SCRIPT:
+- Monday high/low as weekly liquidity targets
+- Useful for mid-week trades
+- Custom multipliers for extensions
+
+DECISION RULE:
+- Bullish S1: Target nearest untaken BSL, then next BSL for scale-out
+- Bearish S1: Target nearest untaken SSL, then next SSL for scale-out
+- Minimum 2R target before considering trade
+- Scale out at intermediate levels, runner to major target
+
+================================================================================
+6. PHASE 5: OPTIONAL CONFLUENCE FILTERS
+================================================================================
+
+--------------------------------------------------------------------------------
+STEP 12: SMT Divergence Confirmation (Optional)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Confirm setup with divergence between correlated pairs.
+
+PRIMARY SCRIPT: cd_sweep&cisd_Cx.txt
+
+WHY THIS SCRIPT:
+- SMT detection built-in
+- Compares current symbol to correlated pair automatically
+- Shows "SMT" label when divergence detected at sweep level
+- Works on HTF timeframe comparison
+
+DECISION RULE:
+- SMT divergence at sweep level + in line with HTF bias = high probability
+- Use as confluence only, not standalone signal
+- No SMT = still valid trade if other criteria met
+
+--------------------------------------------------------------------------------
+STEP 13: Displacement Quality Check (Optional)
+--------------------------------------------------------------------------------
+
+OBJECTIVE:
+Verify MSS displacement shows institutional momentum.
+
+PRIMARY SCRIPT: Liquidity_Engulfing___Displacement__MsF_.txt
+
+WHY THIS SCRIPT:
+- Identifies candles with range > 2 standard deviations
+- Optional FVG requirement confirms institutional move
+- Engulfing pattern detection for body quality
+- Visual highlight of displacement candles
+
+DECISION RULE:
+- Displacement candle (highlighted) during MSS = confirmed institutional momentum
+- Weak MSS (small candles, no displacement) = lower probability setup
+- Strong displacement + FVG = highest probability
+
+================================================================================
+7. FINAL SUMMARY TABLE: SCRIPT-TO-STEP MAPPING (V2 CORRECTED)
+================================================================================
+
++------+------------------------+--------------------------------------------+--------------------------------------------+
+| STEP | PURPOSE                | PRIMARY SCRIPT                             | SECONDARY SCRIPT(S)                        |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  1   | HTF Structure Trend    | Market_Structure_MTF_Trend__Pt_.txt        | SMC_Major_Minor_OB.txt,                    |
+|      |                        | OR Smart_Money_Concept_SMC.txt             | CandelaCharts - HTF Sweeps.txt             |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  2   | HTF POI (OB/FVG)       | MirPapa-ICT-HTF-_FVG_OB_Threeple__EN_.txt  | Smart_Money_Concept_SMC.txt,               |
+|      |                        | OR Smart_Money_Concept_SMC.txt             | Smart_Money_Zones.txt                      |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  3   | Draw on Liquidity      | CandelaCharts - HTF Sweeps.txt             | Smart_Money_Concept_SMC.txt,               |
+|      |                        | OR Smart_Money_Concept_SMC.txt             | Liquidity & inducements.txt                |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  4   | Session Levels         | SW's AsiaLondon HL's.txt                   | ICT_Customizable_50__Line.txt,             |
+|      |                        |                                            | Ighodalo Gold - CRT (Candles are ranges theory).txt (optional)           |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  5   | Killzone Window        | ICT_Silver_Bullet_with_signals.txt **NEW** | ICT_Silver_Bullet__LuxAlgo_.txt,           |
+|      |                        |                                            | Silver_Bullet_TradingFinder.txt            |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  6   | Liquidity Sweep        | Liquidity & inducements.txt               | SW's AsiaLondon HL's.txt,               |
+|      |                        |                                            | CandelaCharts - HTF Sweeps.txt,           |
+|      |                        |                                            | Liquidity_Engulfing.txt,                   |
+|      |                        |                                            | Ighodalo Gold - CRT (Candles are ranges theory).txt (Turtle Soup)        |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  7   | MSS/CHOCH              | ICT_Silver_Bullet_with_signals.txt **NEW** | cd_sweep&cisd_Cx.txt (CISD),             |            |
+|      |                        |                                            | Market_Structure_MTF_Trend__Pt_.txt,      |
+|      |                        |                                            | Smart_Money_Concept_SMC.txt                |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  8   | FVG Detection          | ICT_Silver_Bullet_with_signals.txt **NEW** | ICT Balanced Price Range (BPR) | FVG + IFVG.txt, |
+|      |                        |                                            | ICT_Silver_Bullet__LuxAlgo_.txt,           |
+|      |                        |                                            | Smart_Money_Zones.txt                      |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  9   | Entry Zone             | ICT_Silver_Bullet_with_signals.txt **NEW** | ICT Balanced Price Range (BPR) | FVG + IFVG.txt, |
+|      |                        | (FVG Retrace alert = entry signal)         | ICT_Silver_Bullet__LuxAlgo_.txt,           |
+|      |                        | (FVG Retrace alert = entry signal)         | ICT_Setup_01.txt, Fibonacci Optimal Entry Zone [OTE] (Zeiierman).txt        |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  10  | Stop Loss              | CandelaCharts - HTF Sweeps.txt             | Liquidity & inducements.txt,               |
+|      |                        |                                            | SW's AsiaLondon HL's.txt                   |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  11  | Target                 | ICT_Silver_Bullet_with_signals.txt **NEW** | Liquidity & inducements.txt,               |
+|      |                        | (Auto target generation)                   | CandelaCharts - HTF Sweeps.txt,            |
+|      |                        |                                            | Monday_Range__Lines_.txt                   |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  12  | SMT (Optional)         | cd_sweep&cisd_Cx.txt                       | —                                          |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+|  13  | Displacement (Optional)| Liquidity_Engulfing___Displacement.txt     | —                                          |
++------+------------------------+--------------------------------------------+--------------------------------------------+
+
+================================================================================
+8. MINIMUM VIABLE CHART SETUP (4 Scripts) - UPDATED
+================================================================================
+
+If you want maximum efficiency with minimum scripts:
+
++----+---------------------------------------------+----------------------------------+
+| #  | SCRIPT                                      | COVERS STEPS                     |
++----+---------------------------------------------+----------------------------------+
+| 1  | ICT_Silver_Bullet_with_signals.txt **NEW**  | 5, 7, 8, 9, 11                   |
++----+---------------------------------------------+----------------------------------+
+| 2  | Liquidity & inducements.txt                 | 3, 6, 10, 11                     |
++----+---------------------------------------------+----------------------------------+
+| 3  | SW's AsiaLondon HL's.txt                    | 4, 10                            |
++----+---------------------------------------------+----------------------------------+
+| 4  | CandelaCharts - HTF Sweeps.txt              | 1, 3 (HTF), 10 (context)          |
++----+---------------------------------------------+----------------------------------+
+
+TOTAL: 4 SCRIPTS cover all 11 core steps (excluding optional 12-13)
+
+LOAD ORDER (bottom to top on TradingView):
+1. SW's AsiaLondon HL's.txt — session levels
+2. Liquidity & inducements.txt — swing liquidity
+3. CandelaCharts - HTF Sweeps.txt — HTF context + sweeps
+4. ICT_Silver_Bullet_with_signals.txt — session + MSS + FVG + signals
+
+WHAT'S MISSING FROM MINIMUM SETUP:
+- Step 2 (HTF POI) — add MirPapa or SMC for Threeple/OB zones
+- Steps 12-13 (SMT, Displacement) — optional confluence
+
+================================================================================
+9. EXPANDED SETUP (7 Scripts)
+================================================================================
+
+For higher confluence and comprehensive coverage:
+
+ALTERNATIVE ALL-IN-ONE EXECUTION BUNDLE (Optional):
+- One Trading Setup for Life ICT [TradingFinder] Sweep Session FVG.txt
+  - Useful if you want a single package that includes sweep + session + FVG workflow.
+  - Use as an alternative tooling set for Steps 6-9, but keep the S1 sequence gates (sweep → MSS/CHOCH close → FVG).
+
+
++----+---------------------------------------------+---------------------------+
+| #  | SCRIPT                                      | ADDED VALUE               |
++----+---------------------------------------------+---------------------------+
+| 1-4| Core 4 scripts above                        | Base coverage             |
++----+---------------------------------------------+---------------------------+
+| 5  | MirPapa-ICT-HTF-_FVG_OB_Threeple__EN_.txt   | HTF POI + Threeple zones  |
++----+---------------------------------------------+---------------------------+
+| 6  | Market_Structure_MTF_Trend__Pt_.txt         | MTF structure tracking    |
++----+---------------------------------------------+---------------------------+
+| 7  | ICT_Customizable_50__Line_.txt              | Premium/discount + 50%    |
++----+---------------------------------------------+---------------------------+
+| 8  | ICT Balanced Price Range (BPR) | FVG + IFVG.txt | BPR overlap + IFVG filter |
++----+---------------------------------------------+---------------------------+
+| 9  | cd_sweep&cisd_Cx.txt                          | CISD proxy + SMT filter   |
+
++----+---------------------------------------------+---------------------------+
+
+MAXIMUM SETUP (10 Scripts):
+- Add Smart_Money_Concept_SMC.txt for Major/Minor OB distinction
+- Add cd_sweep&cisd_Cx.txt for SMT divergence
+- Add Liquidity_Engulfing.txt for displacement confirmation
+
+================================================================================
+10. CRITICAL REMINDERS
+================================================================================
+
+KEY CHANGE IN V2:
+--------------------------------------------------------------------------------
+ICT_Silver_Bullet_with_signals.txt is now the RECOMMENDED PRIMARY script for
+Steps 5, 7, 8, 9, and 11. It is the most complete Silver Bullet implementation
+with built-in:
+- Session timing (all 3 windows + pre-sessions)
+- MSS detection
+- FVG detection
+- Entry signals (FVG Retrace alerts)
+- Target generation (auto-drawn from pivots)
+- Minimum Trade Framework
+
+WHAT SCRIPTS CANNOT DO:
+--------------------------------------------------------------------------------
+Even with ICT_Silver_Bullet_with_signals.txt, you must still visually confirm:
+
+✗ Sweep occurred BEFORE MSS (script doesn't enforce sequence)
+✗ FVG formed specifically DURING MSS displacement (not just anytime)
+✗ Setup aligns with HTF bias (script doesn't check higher TF)
+
+YOU MUST VISUALLY CONFIRM:
+--------------------------------------------------------------------------------
+✓ Sweep happened FIRST (use CandelaCharts for sweep detection)
+✓ MSS followed AFTER sweep (script shows MSS but not sequence)
+✓ FVG formed DURING MSS leg
+✓ All occurred within ACTIVE killzone (script confirms this)
+✓ Setup aligns with HTF bias (use Market Structure MTF)
+✓ Minimum 2R reward-to-risk available (script shows minimum framework)
+
+S1 TRADE CHECKLIST:
+--------------------------------------------------------------------------------
+[ ] HTF bias determined (4H/Daily structure)
+[ ] At or near HTF POI
+[ ] Inside active killzone window (script confirms)
+[ ] Liquidity swept (wick beyond, close back)
+[ ] MSS/CHoCH confirmed (script detects)
+[ ] FVG formed during MSS displacement (script detects FVG)
+[ ] Entry at FVG (script signals "FVG Retrace")
+[ ] Stop beyond sweep extreme
+[ ] Target at opposite liquidity (script auto-generates)
+
+NO TRADE CONDITIONS:
+--------------------------------------------------------------------------------
+- Outside killzone window
+- No clear HTF bias
+- Price not at HTF POI
+- No liquidity sweep occurred
+- MSS not confirmed (wick-only break)
+- No FVG during displacement
+- Risk-to-reward below 2R
+
+================================================================================
+SCRIPT FILE REFERENCE
+================================================================================
+
+Full filenames for all scripts mentioned:
+
+CORE SCRIPTS:
+- ICT_Silver_Bullet_with_signals.txt
+- CandelaCharts - HTF Sweeps.txt
+- SW's AsiaLondon HL's.txt
+- Liquidity & inducements.txt
+- Market_Structure_MTF_Trend__Pt_.txt
+- MirPapa-ICT-HTF-_FVG_OB_Threeple__EN_.txt
+
+SECONDARY SCRIPTS:
+- ICT_Silver_Bullet__LuxAlgo___shorttitle__LuxAlgo_-_ICT_Silver_Bullet.txt
+- Smart_Money_Zones__FVG___OB____MTF_Trend_Panel.txt
+- Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_.txt
+- ICT_Customizable_50__Line___DailyAsiaLondonNew_York_HighLow___True_Day_Open.txt
+- Silver_Bullet_ICT_Strategy__TradingFinder__10-11_AM_NY_Time__FVG_TFlab_Silver_Bullet.txt
+
+OPTIONAL SCRIPTS:
+- Ighodalo_Gold_-_CRT__Candles_are_ranges_theory_.txt
+- ICT_Setup_01__TradingFinder__FVG___Liquidity_SweepsHunt_Alerts__ICT_Setup_01_TFlab.txt
+- Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.txt
+- Monday_Range__Lines_.txt
+- cd_sweep&cisd_Cx.txt
+- Liquidity_Engulfing___Displacement__MsF_.txt
+
+NOT PINE SCRIPTS (Knowledge Bank):
+- ALL_IN_ONE_SR.txt (ICT episode transcripts)
+- COMPLETE_TRADING_STRATEGIES_V2.md (Strategy definitions)
+
+================================================================================
+END OF DOCUMENT
+================================================================================
