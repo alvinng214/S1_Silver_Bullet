@@ -139,18 +139,38 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             ax_main.axhline(y=candle.low, color=color, linestyle='--',
                           linewidth=1, alpha=alpha, zorder=0)
 
-        # Plot sweeps
+        # Plot sweeps with different colors for each timeframe
         for sweep in data['sweeps']:
             if sweep.is_bullish:
                 # Bullish sweep (swept high)
+                if tf_name == '1H':
+                    sweep_color = 'green'
+                    label_text = '1H Bull Sweep'
+                elif tf_name == '4H':
+                    sweep_color = 'blue'
+                    label_text = '4H Bull Sweep'
+                else:  # Daily
+                    sweep_color = 'darkgreen'
+                    label_text = 'Daily Bull Sweep'
+
                 ax_main.scatter(sweep.index, sweep.price, marker='^',
-                              color='green', s=100, zorder=5, alpha=0.7,
-                              label=f'{tf_name} Bull Sweep' if sweep == data['sweeps'][0] else '')
+                              color=sweep_color, s=150, zorder=5, alpha=0.8, edgecolors='black', linewidth=1,
+                              label=label_text if sweep == data['sweeps'][0] else '')
             else:
                 # Bearish sweep (swept low)
+                if tf_name == '1H':
+                    sweep_color = 'hotpink'
+                    label_text = '1H Bear Sweep'
+                elif tf_name == '4H':
+                    sweep_color = 'red'
+                    label_text = '4H Bear Sweep'
+                else:  # Daily
+                    sweep_color = 'darkred'
+                    label_text = 'Daily Bear Sweep'
+
                 ax_main.scatter(sweep.index, sweep.price, marker='v',
-                              color='red', s=100, zorder=5, alpha=0.7,
-                              label=f'{tf_name} Bear Sweep' if sweep == data['sweeps'][0] else '')
+                              color=sweep_color, s=150, zorder=5, alpha=0.8, edgecolors='black', linewidth=1,
+                              label=label_text if sweep == data['sweeps'][0] else '')
 
     # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
