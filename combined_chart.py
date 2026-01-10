@@ -144,32 +144,32 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             if sweep.is_bullish:
                 # Bullish sweep (swept high)
                 if tf_name == '1H':
-                    sweep_color = 'green'
+                    sweep_color = 'lime'  # Bright green for better visibility
                     label_text = '1H Bull Sweep'
                 elif tf_name == '4H':
-                    sweep_color = 'blue'
+                    sweep_color = 'dodgerblue'  # Bright blue for better visibility
                     label_text = '4H Bull Sweep'
                 else:  # Daily
                     sweep_color = 'darkgreen'
                     label_text = 'Daily Bull Sweep'
 
                 ax_main.scatter(sweep.index, sweep.price, marker='^',
-                              color=sweep_color, s=150, zorder=5, alpha=0.8, edgecolors='black', linewidth=1,
+                              color=sweep_color, s=250, zorder=5, alpha=1.0, edgecolors='black', linewidth=2,
                               label=label_text if sweep == data['sweeps'][0] else '')
             else:
                 # Bearish sweep (swept low)
                 if tf_name == '1H':
-                    sweep_color = 'hotpink'
+                    sweep_color = 'magenta'  # Bright pink/magenta for better visibility
                     label_text = '1H Bear Sweep'
                 elif tf_name == '4H':
-                    sweep_color = 'red'
+                    sweep_color = 'crimson'  # Deep red for better visibility
                     label_text = '4H Bear Sweep'
                 else:  # Daily
                     sweep_color = 'darkred'
                     label_text = 'Daily Bear Sweep'
 
                 ax_main.scatter(sweep.index, sweep.price, marker='v',
-                              color=sweep_color, s=150, zorder=5, alpha=0.8, edgecolors='black', linewidth=1,
+                              color=sweep_color, s=250, zorder=5, alpha=1.0, edgecolors='black', linewidth=2,
                               label=label_text if sweep == data['sweeps'][0] else '')
 
     # ========================================================================
