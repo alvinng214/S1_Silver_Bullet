@@ -1,13 +1,14 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
 2. HTF Bias indicator (HTF candles, sweeps, and bias)
 3. Order Blocks (15min and 1H)
+4. Fair Value Gaps (FVG) - Demand and Supply
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, and Order Blocks
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, and FVGs
 - Right side: Mini HTF candles (1H, 4H, Daily)
 - Bottom panel: Market structure trend indicators
 """
@@ -29,6 +30,7 @@ from market_structure_chart import (
 )
 from HTF_bias import calculate_htf_data, HTFCandle, Sweep
 from order_blocks import calculate_htf_order_blocks
+from fvg_detection import calculate_fvgs_for_chart
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -219,6 +221,12 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     order_blocks_data = calculate_htf_order_blocks(df, timeframes_minutes={'15min': 15, '1H': 60})
 
     # ========================================================================
+    # CALCULATE FAIR VALUE GAPS (FVG)
+    # ========================================================================
+    print("Calculating Fair Value Gaps (FVG)...")
+    fvg_data = calculate_fvgs_for_chart(df, show_demand=True, show_supply=True, filter_type='Defensive')
+
+    # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
     # ========================================================================
     fig = plt.figure(figsize=(20, 12))
@@ -361,6 +369,56 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT FAIR VALUE GAPS (FVG)
+    # ========================================================================
+    # Colors matching Smart Money Concept Pine Script
+    fvg_bull_color = 'cyan'  # Demand FVG - light blue/cyan
+    fvg_bear_color = 'orange'  # Supply FVG - orange
+    fvg_alpha = 0.15  # More transparent than OBs
+
+    # Plot Bullish FVGs (Demand)
+    for fvg in fvg_data['bullish']:
+        # Only show unmitigated or recently mitigated FVGs
+        if not fvg.mitigated or (fvg.end_idx - fvg.start_idx) < 150:
+            fvg_rect = Rectangle(
+                (fvg.start_idx, fvg.bottom),
+                fvg.end_idx - fvg.start_idx,
+                fvg.top - fvg.bottom,
+                facecolor=fvg_bull_color,
+                edgecolor=fvg_bull_color,
+                alpha=fvg_alpha,
+                linewidth=0.5,
+                linestyle='--',
+                zorder=0.3
+            )
+            ax_main.add_patch(fvg_rect)
+
+    # Plot Bearish FVGs (Supply)
+    for fvg in fvg_data['bearish']:
+        # Only show unmitigated or recently mitigated FVGs
+        if not fvg.mitigated or (fvg.end_idx - fvg.start_idx) < 150:
+            fvg_rect = Rectangle(
+                (fvg.start_idx, fvg.bottom),
+                fvg.end_idx - fvg.start_idx,
+                fvg.top - fvg.bottom,
+                facecolor=fvg_bear_color,
+                edgecolor=fvg_bear_color,
+                alpha=fvg_alpha,
+                linewidth=0.5,
+                linestyle='--',
+                zorder=0.3
+            )
+            ax_main.add_patch(fvg_rect)
+
+    # Add FVG legend entries
+    fvg_legend_elements = [
+        mpatches.Patch(facecolor=fvg_bull_color, edgecolor=fvg_bull_color,
+                      alpha=fvg_alpha, linestyle='--', label='Demand FVG'),
+        mpatches.Patch(facecolor=fvg_bear_color, edgecolor=fvg_bear_color,
+                      alpha=fvg_alpha, linestyle='--', label='Supply FVG'),
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -478,14 +536,15 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias + Order Blocks',
+    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias + Order Blocks + FVG',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps and order blocks
+    # Combine legend handles from sweeps, order blocks, and FVGs
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
-    ax_main.legend(handles=handles, loc='upper left', fontsize=7, ncol=2)
+    handles.extend(fvg_legend_elements)
+    ax_main.legend(handles=handles, loc='upper left', fontsize=6, ncol=3)
 
     # HTF mini chart formatting
     ax_htf.set_ylabel('')
