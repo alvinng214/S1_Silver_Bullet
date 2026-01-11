@@ -240,22 +240,65 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     bos_tf4_display = [(idx - start_idx, direction, price) for idx, direction, price in bos_tf4 if idx >= start_idx]
 
     # ========================================================================
-    # CALCULATE HTF DATA on display window
+    # CALCULATE HTF DATA on full dataset for proper context
     # ========================================================================
-    print("Calculating HTF candles and sweeps...")
-    htf_data = calculate_htf_data(df_display, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 1440})
+    print("Calculating HTF candles and sweeps on full dataset...")
+    htf_data_full = calculate_htf_data(df, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 1440})
+
+    # Filter HTF sweeps to display range
+    htf_data = {}
+    for tf_name, data in htf_data_full.items():
+        htf_data[tf_name] = {
+            'candles': data['candles'],  # Keep all candles for level drawing
+            'sweeps': [s for s in data['sweeps'] if s.index >= start_idx],  # Filter sweeps to visible range
+            'bias': data['bias']
+        }
+        # Adjust sweep indices for display
+        for sweep in htf_data[tf_name]['sweeps']:
+            sweep.index -= start_idx
 
     # ========================================================================
-    # CALCULATE ORDER BLOCKS on display window
+    # CALCULATE ORDER BLOCKS on full dataset
     # ========================================================================
-    print("Calculating Order Blocks for 15min and 1H...")
-    order_blocks_data = calculate_htf_order_blocks(df_display, timeframes_minutes={'15min': 15, '1H': 60})
+    print("Calculating Order Blocks for 15min and 1H on full dataset...")
+    order_blocks_data_full = calculate_htf_order_blocks(df, timeframes_minutes={'15min': 15, '1H': 60})
+
+    # Filter OBs to those visible in display range
+    order_blocks_data = {}
+    for tf_name, obs in order_blocks_data_full.items():
+        visible_obs = []
+        for ob in obs:
+            # Check if OB overlaps with display range
+            if ob.end_idx >= start_idx and ob.start_idx < len(df):
+                # Adjust indices for display
+                ob_display = ob
+                ob_display.start_idx = max(0, ob.start_idx - start_idx)
+                ob_display.end_idx = min(len(df_display), ob.end_idx - start_idx)
+                ob_display.created_at = ob.created_at - start_idx if ob.created_at >= start_idx else 0
+                visible_obs.append(ob_display)
+        order_blocks_data[tf_name] = visible_obs
 
     # ========================================================================
-    # CALCULATE FAIR VALUE GAPS (FVG) on display window
+    # CALCULATE FAIR VALUE GAPS (FVG) on full dataset
     # ========================================================================
-    print("Calculating Fair Value Gaps (FVG)...")
-    fvg_data = calculate_fvgs_for_chart(df_display, show_demand=True, show_supply=True, filter_type='Defensive')
+    print("Calculating Fair Value Gaps (FVG) on full dataset...")
+    fvg_data_full = calculate_fvgs_for_chart(df, show_demand=True, show_supply=True, filter_type='Defensive')
+
+    # Filter FVGs to those visible in display range
+    fvg_data = {'bullish': [], 'bearish': [], 'all': []}
+    for fvg in fvg_data_full['bullish']:
+        if fvg.end_idx >= start_idx and fvg.start_idx < len(df):
+            fvg.start_idx = max(0, fvg.start_idx - start_idx)
+            fvg.end_idx = min(len(df_display), fvg.end_idx - start_idx)
+            fvg.created_at = fvg.created_at - start_idx if fvg.created_at >= start_idx else 0
+            fvg_data['bullish'].append(fvg)
+
+    for fvg in fvg_data_full['bearish']:
+        if fvg.end_idx >= start_idx and fvg.start_idx < len(df):
+            fvg.start_idx = max(0, fvg.start_idx - start_idx)
+            fvg.end_idx = min(len(df_display), fvg.end_idx - start_idx)
+            fvg.created_at = fvg.created_at - start_idx if fvg.created_at >= start_idx else 0
+            fvg_data['bearish'].append(fvg)
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
