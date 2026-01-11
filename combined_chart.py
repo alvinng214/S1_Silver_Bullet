@@ -1,12 +1,13 @@
 """
-Combined Market Structure MTF + HTF Bias Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
 2. HTF Bias indicator (HTF candles, sweeps, and bias)
+3. Order Blocks (15min and 1H)
 
 Display:
-- Main chart: Candlesticks with HTF levels and sweep markers
+- Main chart: Candlesticks with HTF levels, sweep markers, and Order Blocks
 - Right side: Mini HTF candles (1H, 4H, Daily)
 - Bottom panel: Market structure trend indicators
 """
@@ -27,6 +28,7 @@ from market_structure_chart import (
     plot_trend_line
 )
 from HTF_bias import calculate_htf_data, HTFCandle, Sweep
+from order_blocks import calculate_htf_order_blocks
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -211,6 +213,12 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     htf_data = calculate_htf_data(df, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 1440})
 
     # ========================================================================
+    # CALCULATE ORDER BLOCKS
+    # ========================================================================
+    print("Calculating Order Blocks for 15min and 1H...")
+    order_blocks_data = calculate_htf_order_blocks(df, timeframes_minutes={'15min': 15, '1H': 60})
+
+    # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
     # ========================================================================
     fig = plt.figure(figsize=(20, 12))
@@ -313,6 +321,44 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
                 ax_main.scatter(sweep.index, sweep.price, marker='v',
                               color=sweep_color, s=250, zorder=5, alpha=1.0, edgecolors='black', linewidth=2,
                               label=label_text if sweep == data['sweeps'][0] else '')
+
+    # ========================================================================
+    # PLOT ORDER BLOCKS
+    # ========================================================================
+    ob_colors = {
+        '15min': {'bull': 'green', 'bear': 'hotpink'},
+        '1H': {'bull': 'blue', 'bear': 'red'}
+    }
+    ob_alpha = 0.2
+
+    for tf_name, order_blocks in order_blocks_data.items():
+        colors = ob_colors.get(tf_name, {'bull': 'gray', 'bear': 'gray'})
+
+        for ob in order_blocks:
+            # Only show unmitigated OBs or recently mitigated ones
+            if not ob.mitigated or (ob.end_idx - ob.start_idx) < 200:
+                color = colors['bull'] if ob.is_bullish else colors['bear']
+
+                # Draw the Order Block as a rectangle
+                ob_rect = Rectangle(
+                    (ob.start_idx, ob.bottom),
+                    ob.end_idx - ob.start_idx,
+                    ob.top - ob.bottom,
+                    facecolor=color,
+                    edgecolor=color,
+                    alpha=ob_alpha,
+                    linewidth=1,
+                    zorder=0.5
+                )
+                ax_main.add_patch(ob_rect)
+
+    # Add OB legend entries
+    ob_legend_elements = [
+        mpatches.Patch(color=ob_colors['15min']['bull'], alpha=ob_alpha, label='15min Bull OB'),
+        mpatches.Patch(color=ob_colors['15min']['bear'], alpha=ob_alpha, label='15min Bear OB'),
+        mpatches.Patch(color=ob_colors['1H']['bull'], alpha=ob_alpha, label='1H Bull OB'),
+        mpatches.Patch(color=ob_colors['1H']['bear'], alpha=ob_alpha, label='1H Bear OB'),
+    ]
 
     # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
@@ -432,10 +478,14 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias Analysis',
+    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias + Order Blocks',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
-    ax_main.legend(loc='upper left', fontsize=8)
+
+    # Combine legend handles from sweeps and order blocks
+    handles, labels = ax_main.get_legend_handles_labels()
+    handles.extend(ob_legend_elements)
+    ax_main.legend(handles=handles, loc='upper left', fontsize=7, ncol=2)
 
     # HTF mini chart formatting
     ax_htf.set_ylabel('')
