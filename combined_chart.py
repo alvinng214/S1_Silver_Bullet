@@ -51,14 +51,14 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     print(f"Loaded {len(df)} bars from {df.index[0]} to {df.index[-1]}")
 
-    # Get last N candles
-    df = df.tail(num_candles).copy()
+    # Add index column for ALL data (needed for calculations)
     df['index'] = range(len(df))
 
-    print(f"Analyzing last {len(df)} candles...")
+    print(f"Analyzing with {len(df)} candles for MTF calculations...")
 
     # ========================================================================
     # CALCULATE MARKET STRUCTURE FOR MULTIPLE TIMEFRAMES
+    # Use ALL data for proper MTF calculations
     # ========================================================================
     print("Calculating market structure for multiple timeframes...")
 
@@ -209,22 +209,53 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
                 bos_tf4.append((ltf_idx, direction, price))
 
     # ========================================================================
-    # CALCULATE HTF DATA
+    # NOW FILTER TO LAST N CANDLES FOR DISPLAY
+    # ========================================================================
+    print(f"Filtering to last {num_candles} candles for display...")
+
+    # Get the starting index for display
+    start_idx = max(0, len(df) - num_candles)
+
+    # Create display dataframe
+    df_display = df.iloc[start_idx:].copy()
+    df_display['display_index'] = range(len(df_display))
+
+    # Filter trends to display range
+    trend_tf1_display = trend_tf1[start_idx:]
+    trend_tf2_display = trend_tf2[start_idx:]
+    trend_tf3_display = trend_tf3[start_idx:]
+    trend_tf4_display = trend_tf4[start_idx:]
+
+    # Filter signals to display range
+    choch_tf1_display = [(idx - start_idx, direction, price) for idx, direction, price in choch_tf1 if idx >= start_idx]
+    bos_tf1_display = [(idx - start_idx, direction, price) for idx, direction, price in bos_tf1 if idx >= start_idx]
+
+    choch_tf2_display = [(idx - start_idx, direction, price) for idx, direction, price in choch_tf2 if idx >= start_idx]
+    bos_tf2_display = [(idx - start_idx, direction, price) for idx, direction, price in bos_tf2 if idx >= start_idx]
+
+    choch_tf3_display = [(idx - start_idx, direction, price) for idx, direction, price in choch_tf3 if idx >= start_idx]
+    bos_tf3_display = [(idx - start_idx, direction, price) for idx, direction, price in bos_tf3 if idx >= start_idx]
+
+    choch_tf4_display = [(idx - start_idx, direction, price) for idx, direction, price in choch_tf4 if idx >= start_idx]
+    bos_tf4_display = [(idx - start_idx, direction, price) for idx, direction, price in bos_tf4 if idx >= start_idx]
+
+    # ========================================================================
+    # CALCULATE HTF DATA on display window
     # ========================================================================
     print("Calculating HTF candles and sweeps...")
-    htf_data = calculate_htf_data(df, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 1440})
+    htf_data = calculate_htf_data(df_display, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 1440})
 
     # ========================================================================
-    # CALCULATE ORDER BLOCKS
+    # CALCULATE ORDER BLOCKS on display window
     # ========================================================================
     print("Calculating Order Blocks for 15min and 1H...")
-    order_blocks_data = calculate_htf_order_blocks(df, timeframes_minutes={'15min': 15, '1H': 60})
+    order_blocks_data = calculate_htf_order_blocks(df_display, timeframes_minutes={'15min': 15, '1H': 60})
 
     # ========================================================================
-    # CALCULATE FAIR VALUE GAPS (FVG)
+    # CALCULATE FAIR VALUE GAPS (FVG) on display window
     # ========================================================================
     print("Calculating Fair Value Gaps (FVG)...")
-    fvg_data = calculate_fvgs_for_chart(df, show_demand=True, show_supply=True, filter_type='Defensive')
+    fvg_data = calculate_fvgs_for_chart(df_display, show_demand=True, show_supply=True, filter_type='Defensive')
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
@@ -242,11 +273,11 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ax_ms = fig.add_subplot(gs[1, :8], sharex=ax_main)  # Bottom panel
 
     # ========================================================================
-    # PLOT MAIN CANDLESTICKS
+    # PLOT MAIN CANDLESTICKS (using display data)
     # ========================================================================
     width = 0.8
-    for idx in range(len(df)):
-        row = df.iloc[idx]
+    for idx in range(len(df_display)):
+        row = df_display.iloc[idx]
         x_pos = idx
         open_price = row['open']
         high_price = row['high']
@@ -484,9 +515,9 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         x_offset += len(candles) * (htf_candle_width + 0.2) + 2
 
     # ========================================================================
-    # PLOT CHoCH AND BoS LABELS
+    # PLOT CHoCH AND BoS LABELS (using display data)
     # ========================================================================
-    for idx, direction, price in choch_tf3:
+    for idx, direction, price in choch_tf3_display:
         if direction > 0:  # Bullish CHoCH
             ax_main.annotate('CHoCH', xy=(idx, price), xytext=(idx, price - 10),
                            bbox=dict(boxstyle='round,pad=0.3', facecolor='green', alpha=0.7),
@@ -499,20 +530,20 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
                            arrowprops=dict(arrowstyle='->', color='red', lw=1.5))
 
     # ========================================================================
-    # PLOT MARKET STRUCTURE TRENDS
+    # PLOT MARKET STRUCTURE TRENDS (using display data)
     # ========================================================================
     choch_bull_color = 'darkgreen'
     choch_bear_color = 'darkred'
     bos_bull_color = 'green'
     bos_bear_color = 'red'
 
-    plot_trend_line(ax_ms, trend_tf1, choch_tf1, bos_tf1, 3,
+    plot_trend_line(ax_ms, trend_tf1_display, choch_tf1_display, bos_tf1_display, 3,
                     choch_bull_color, choch_bear_color, bos_bull_color, bos_bear_color)
-    plot_trend_line(ax_ms, trend_tf2, choch_tf2, bos_tf2, 2,
+    plot_trend_line(ax_ms, trend_tf2_display, choch_tf2_display, bos_tf2_display, 2,
                     choch_bull_color, choch_bear_color, bos_bull_color, bos_bear_color)
-    plot_trend_line(ax_ms, trend_tf3, choch_tf3, bos_tf3, 1,
+    plot_trend_line(ax_ms, trend_tf3_display, choch_tf3_display, bos_tf3_display, 1,
                     choch_bull_color, choch_bear_color, bos_bull_color, bos_bear_color)
-    plot_trend_line(ax_ms, trend_tf4, choch_tf4, bos_tf4, 0,
+    plot_trend_line(ax_ms, trend_tf4_display, choch_tf4_display, bos_tf4_display, 0,
                     choch_bull_color, choch_bear_color, bos_bull_color, bos_bear_color)
 
     # Add timeframe labels
@@ -524,10 +555,10 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     # ========================================================================
     # FORMATTING
     # ========================================================================
-    # X-axis labels
-    step = max(1, len(df) // 10)
-    tick_positions = list(range(0, len(df), step))
-    tick_labels = [df.iloc[i].name.strftime('%Y-%m-%d %H:%M') for i in tick_positions]
+    # X-axis labels (using display data)
+    step = max(1, len(df_display) // 10)
+    tick_positions = list(range(0, len(df_display), step))
+    tick_labels = [df_display.iloc[i].name.strftime('%Y-%m-%d %H:%M') for i in tick_positions]
     ax_main.set_xticks(tick_positions)
     ax_main.set_xticklabels([])  # Hide x labels on main chart
 
@@ -559,7 +590,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ax_ms.set_yticks([0, 1, 2, 3])
     ax_ms.set_yticklabels([])
     ax_ms.grid(True, alpha=0.2, axis='x')
-    ax_ms.set_xlim(-10, len(df))
+    ax_ms.set_xlim(-10, len(df_display))
 
     # Market structure legend
     legend_elements = [
