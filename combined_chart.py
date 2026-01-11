@@ -331,4 +331,4 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
 if __name__ == '__main__':
     csv_file = 'PEPPERSTONE_XAUUSD, 5.csv'
-    plot_combined_chart(csv_file, num_candles=200, pivot_strength=15)
+    plot_combined_chart(csv_file, num_candles=500, pivot_strength=15)
