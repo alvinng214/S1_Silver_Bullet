@@ -21,16 +21,37 @@ from matplotlib.lines import Line2D
 import matplotlib.patches as mpatches
 import sys
 import os
+import importlib.util
 
-# Import market structure functions
+# Import market structure functions using importlib for filenames with special characters
 sys.path.append(os.path.dirname(__file__))
-from market_structure_chart import (
-    calculate_market_structure,
-    plot_trend_line
-)
-from HTF_bias import calculate_htf_data, HTFCandle, Sweep
-from order_blocks import calculate_htf_order_blocks
-from fvg_detection import calculate_fvgs_for_chart
+
+# Load Market Structure MTF Trend [Pt].py
+spec1 = importlib.util.spec_from_file_location("market_structure", "Market Structure MTF Trend [Pt].py")
+market_structure = importlib.util.module_from_spec(spec1)
+spec1.loader.exec_module(market_structure)
+calculate_market_structure = market_structure.calculate_market_structure
+plot_trend_line = market_structure.plot_trend_line
+
+# Load CandelaCharts - HTF Sweeps.py
+spec2 = importlib.util.spec_from_file_location("htf_sweeps", "CandelaCharts - HTF Sweeps.py")
+htf_sweeps = importlib.util.module_from_spec(spec2)
+spec2.loader.exec_module(htf_sweeps)
+calculate_htf_data = htf_sweeps.calculate_htf_data
+HTFCandle = htf_sweeps.HTFCandle
+Sweep = htf_sweeps.Sweep
+
+# Load MirPapa-ICT-HTF- FVG OB Threeple (EN).py
+spec3 = importlib.util.spec_from_file_location("order_blocks", "MirPapa-ICT-HTF- FVG OB Threeple (EN).py")
+order_blocks_module = importlib.util.module_from_spec(spec3)
+spec3.loader.exec_module(order_blocks_module)
+calculate_htf_order_blocks = order_blocks_module.calculate_htf_order_blocks
+
+# Load Smart Money Concept [TradingFinder] Major Minor OB + FVG (SMC).py
+spec4 = importlib.util.spec_from_file_location("fvg_detection", "Smart Money Concept [TradingFinder] Major Minor OB + FVG (SMC).py")
+fvg_detection_module = importlib.util.module_from_spec(spec4)
+spec4.loader.exec_module(fvg_detection_module)
+calculate_fvgs_for_chart = fvg_detection_module.calculate_fvgs_for_chart
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
