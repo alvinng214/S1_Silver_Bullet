@@ -54,13 +54,155 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     print(f"Analyzing last {len(df)} candles...")
 
     # ========================================================================
-    # CALCULATE MARKET STRUCTURE
+    # CALCULATE MARKET STRUCTURE FOR MULTIPLE TIMEFRAMES
     # ========================================================================
     print("Calculating market structure for multiple timeframes...")
-    trend_tf1, choch_tf1, bos_tf1, pivots_h_tf1, pivots_l_tf1 = calculate_market_structure(df, pivot_strength=5)
-    trend_tf2, choch_tf2, bos_tf2, pivots_h_tf2, pivots_l_tf2 = calculate_market_structure(df, pivot_strength=10)
-    trend_tf3, choch_tf3, bos_tf3, pivots_h_tf3, pivots_l_tf3 = calculate_market_structure(df, pivot_strength=15)
-    trend_tf4, choch_tf4, bos_tf4, pivots_h_tf4, pivots_l_tf4 = calculate_market_structure(df, pivot_strength=20)
+
+    # TF1: 15min - Resample 5min data to 15min
+    df_15m = df.resample('15min').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'index': 'last'
+    }).dropna()
+    df_15m['index_15m'] = range(len(df_15m))
+    trend_tf1_15m, choch_tf1_15m, bos_tf1_15m, _, _ = calculate_market_structure(df_15m, pivot_strength=5)
+
+    # Map 15min results back to 5min indices
+    trend_tf1 = np.zeros(len(df))
+    for i, row in df_15m.iterrows():
+        ltf_idx = int(row['index'])
+        if ltf_idx < len(df):
+            tf_idx = int(row['index_15m'])
+            if tf_idx < len(trend_tf1_15m):
+                trend_tf1[ltf_idx] = trend_tf1_15m[tf_idx]
+    # Forward fill
+    for i in range(1, len(trend_tf1)):
+        if trend_tf1[i] == 0:
+            trend_tf1[i] = trend_tf1[i-1]
+
+    # Map CHoCH and BoS signals
+    choch_tf1 = []
+    bos_tf1 = []
+    for idx_15m, direction, price in choch_tf1_15m:
+        if idx_15m < len(df_15m):
+            ltf_idx = int(df_15m.iloc[idx_15m]['index'])
+            if ltf_idx < len(df):
+                choch_tf1.append((ltf_idx, direction, price))
+    for idx_15m, direction, price in bos_tf1_15m:
+        if idx_15m < len(df_15m):
+            ltf_idx = int(df_15m.iloc[idx_15m]['index'])
+            if ltf_idx < len(df):
+                bos_tf1.append((ltf_idx, direction, price))
+
+    # TF2: 1H - Resample to 1 hour
+    df_1h = df.resample('1h').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'index': 'last'
+    }).dropna()
+    df_1h['index_1h'] = range(len(df_1h))
+    trend_tf2_1h, choch_tf2_1h, bos_tf2_1h, _, _ = calculate_market_structure(df_1h, pivot_strength=5)
+
+    # Map 1H results back to 5min indices
+    trend_tf2 = np.zeros(len(df))
+    for i, row in df_1h.iterrows():
+        ltf_idx = int(row['index'])
+        if ltf_idx < len(df):
+            tf_idx = int(row['index_1h'])
+            if tf_idx < len(trend_tf2_1h):
+                trend_tf2[ltf_idx] = trend_tf2_1h[tf_idx]
+    for i in range(1, len(trend_tf2)):
+        if trend_tf2[i] == 0:
+            trend_tf2[i] = trend_tf2[i-1]
+
+    choch_tf2 = []
+    bos_tf2 = []
+    for idx_1h, direction, price in choch_tf2_1h:
+        if idx_1h < len(df_1h):
+            ltf_idx = int(df_1h.iloc[idx_1h]['index'])
+            if ltf_idx < len(df):
+                choch_tf2.append((ltf_idx, direction, price))
+    for idx_1h, direction, price in bos_tf2_1h:
+        if idx_1h < len(df_1h):
+            ltf_idx = int(df_1h.iloc[idx_1h]['index'])
+            if ltf_idx < len(df):
+                bos_tf2.append((ltf_idx, direction, price))
+
+    # TF3: 4H - Resample to 4 hours
+    df_4h = df.resample('4h').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'index': 'last'
+    }).dropna()
+    df_4h['index_4h'] = range(len(df_4h))
+    trend_tf3_4h, choch_tf3_4h, bos_tf3_4h, _, _ = calculate_market_structure(df_4h, pivot_strength=3)
+
+    # Map 4H results back to 5min indices
+    trend_tf3 = np.zeros(len(df))
+    for i, row in df_4h.iterrows():
+        ltf_idx = int(row['index'])
+        if ltf_idx < len(df):
+            tf_idx = int(row['index_4h'])
+            if tf_idx < len(trend_tf3_4h):
+                trend_tf3[ltf_idx] = trend_tf3_4h[tf_idx]
+    for i in range(1, len(trend_tf3)):
+        if trend_tf3[i] == 0:
+            trend_tf3[i] = trend_tf3[i-1]
+
+    choch_tf3 = []
+    bos_tf3 = []
+    for idx_4h, direction, price in choch_tf3_4h:
+        if idx_4h < len(df_4h):
+            ltf_idx = int(df_4h.iloc[idx_4h]['index'])
+            if ltf_idx < len(df):
+                choch_tf3.append((ltf_idx, direction, price))
+    for idx_4h, direction, price in bos_tf3_4h:
+        if idx_4h < len(df_4h):
+            ltf_idx = int(df_4h.iloc[idx_4h]['index'])
+            if ltf_idx < len(df):
+                bos_tf3.append((ltf_idx, direction, price))
+
+    # TF4: Daily - Resample to 1 day
+    df_daily = df.resample('1D').agg({
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'index': 'last'
+    }).dropna()
+    df_daily['index_daily'] = range(len(df_daily))
+    trend_tf4_daily, choch_tf4_daily, bos_tf4_daily, _, _ = calculate_market_structure(df_daily, pivot_strength=2)
+
+    # Map Daily results back to 5min indices
+    trend_tf4 = np.zeros(len(df))
+    for i, row in df_daily.iterrows():
+        ltf_idx = int(row['index'])
+        if ltf_idx < len(df):
+            tf_idx = int(row['index_daily'])
+            if tf_idx < len(trend_tf4_daily):
+                trend_tf4[ltf_idx] = trend_tf4_daily[tf_idx]
+    for i in range(1, len(trend_tf4)):
+        if trend_tf4[i] == 0:
+            trend_tf4[i] = trend_tf4[i-1]
+
+    choch_tf4 = []
+    bos_tf4 = []
+    for idx_daily, direction, price in choch_tf4_daily:
+        if idx_daily < len(df_daily):
+            ltf_idx = int(df_daily.iloc[idx_daily]['index'])
+            if ltf_idx < len(df):
+                choch_tf4.append((ltf_idx, direction, price))
+    for idx_daily, direction, price in bos_tf4_daily:
+        if idx_daily < len(df_daily):
+            ltf_idx = int(df_daily.iloc[idx_daily]['index'])
+            if ltf_idx < len(df):
+                bos_tf4.append((ltf_idx, direction, price))
 
     # ========================================================================
     # CALCULATE HTF DATA
@@ -270,10 +412,10 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
                     choch_bull_color, choch_bear_color, bos_bull_color, bos_bear_color)
 
     # Add timeframe labels
-    ax_ms.text(-5, 3, 'TF1\n(15m)', ha='right', va='center', fontsize=9, fontweight='bold')
-    ax_ms.text(-5, 2, 'TF2\n(30m)', ha='right', va='center', fontsize=9, fontweight='bold')
-    ax_ms.text(-5, 1, 'TF3\n(1H)', ha='right', va='center', fontsize=9, fontweight='bold')
-    ax_ms.text(-5, 0, 'TF4\n(4H)', ha='right', va='center', fontsize=9, fontweight='bold')
+    ax_ms.text(-5, 3, '15min', ha='right', va='center', fontsize=9, fontweight='bold')
+    ax_ms.text(-5, 2, '1H', ha='right', va='center', fontsize=9, fontweight='bold')
+    ax_ms.text(-5, 1, '4H', ha='right', va='center', fontsize=9, fontweight='bold')
+    ax_ms.text(-5, 0, 'Daily', ha='right', va='center', fontsize=9, fontweight='bold')
 
     # ========================================================================
     # FORMATTING
