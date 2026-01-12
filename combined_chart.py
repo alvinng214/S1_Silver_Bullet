@@ -610,6 +610,57 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             ax_main.text(mid_idx, label_y, '$$$', fontsize=8, color='orange',
                         fontweight='bold', ha='center', va=va, zorder=5)
 
+    # Plot Sweeps ($ labels with lines)
+    for sweep in liquidity_data['sweeps']:
+        pivot_idx = sweep.pivot.index
+        sweep_idx = sweep.sweep_index
+
+        if 0 <= pivot_idx < len(df_display) and 0 <= sweep_idx < len(df_display):
+            color = 'teal' if sweep.is_bullish else 'red'
+
+            # Draw horizontal line
+            ax_main.plot([pivot_idx, sweep_idx], [sweep.pivot.price, sweep.pivot.price],
+                        color=color, linewidth=1, linestyle=':', alpha=0.6, zorder=2)
+
+            # Add $ label
+            mid_idx = (pivot_idx + sweep_idx) / 2
+            label_y = sweep.pivot.price
+            va = 'bottom' if sweep.is_bullish else 'top'
+            ax_main.text(mid_idx, label_y, '$', fontsize=7, color=color,
+                        fontweight='bold', ha='center', va=va, zorder=5)
+
+    # Plot Equal Pivots ($$$ for liquidity, IDM for inducement)
+    # Only show a subset to avoid cluttering
+    equal_pivots_to_show = [ep for ep in liquidity_data['equal_pivots']
+                           if not ep.is_liquidity or ep.pivot1.index > len(df_display) - 200][:10]
+
+    for eq_pivot in equal_pivots_to_show:
+        idx1 = eq_pivot.pivot1.index
+        idx2 = eq_pivot.pivot2.index
+
+        if 0 <= idx1 < len(df_display) and 0 <= idx2 < len(df_display):
+            # Calculate average price
+            avg_price = (eq_pivot.pivot1.price + eq_pivot.pivot2.price) / 2
+
+            if eq_pivot.is_liquidity:
+                color = 'orange'
+                label = '$$$'
+                alpha = 0.4
+            else:
+                color = 'teal' if eq_pivot.is_bullish else 'red'
+                label = 'IDM'
+                alpha = 0.5
+
+            # Draw line connecting equal pivots
+            ax_main.plot([idx1, idx2], [eq_pivot.pivot1.price, eq_pivot.pivot2.price],
+                        color=color, linewidth=1.5, linestyle=':', alpha=alpha, zorder=1)
+
+            # Add label (smaller and less prominent)
+            mid_idx = (idx1 + idx2) / 2
+            va = 'bottom' if eq_pivot.pivot1.type == -1 else 'top'
+            ax_main.text(mid_idx, avg_price, label, fontsize=6, color=color,
+                        fontweight='bold', ha='center', va=va, alpha=0.8, zorder=5)
+
     # Plot BSL (Buyside Liquidity) - extend to the right
     for bsl in liquidity_data['bsl']:
         pivot_idx = bsl.pivot.index
@@ -634,6 +685,10 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     liquidity_legend_elements = [
         mpatches.Patch(facecolor='orange', alpha=0.15, edgecolor='orange',
                       linestyle=':', label='Grabs ($$$)'),
+        plt.Line2D([0], [0], color='teal', linewidth=1, linestyle=':', label='Bullish Sweep ($)'),
+        plt.Line2D([0], [0], color='red', linewidth=1, linestyle=':', label='Bearish Sweep ($)'),
+        plt.Line2D([0], [0], color='orange', linewidth=1.5, linestyle=':', label='Equal Pivots ($$$)'),
+        plt.Line2D([0], [0], color='teal', linewidth=1.5, linestyle=':', label='Inducement (IDM)'),
         plt.Line2D([0], [0], color='teal', linewidth=1.5, linestyle='--', label='BSL'),
         plt.Line2D([0], [0], color='red', linewidth=1.5, linestyle='--', label='SSL')
     ]
