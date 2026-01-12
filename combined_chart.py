@@ -1,14 +1,15 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
 2. HTF Bias indicator (HTF candles, sweeps, and bias)
 3. Order Blocks (15min and 1H)
 4. Fair Value Gaps (FVG) - Demand and Supply
+5. Liquidity & Inducements (Grabs, BSL/SSL)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, and FVGs
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, and Liquidity zones
 - Right side: Mini HTF candles (1H, 4H, Daily)
 - Bottom panel: Market structure trend indicators
 """
@@ -52,6 +53,12 @@ spec4 = importlib.util.spec_from_file_location("fvg_detection", "Smart Money Con
 fvg_detection_module = importlib.util.module_from_spec(spec4)
 spec4.loader.exec_module(fvg_detection_module)
 calculate_fvgs_for_chart = fvg_detection_module.calculate_fvgs_for_chart
+
+# Load Liquidity & inducements.py
+spec5 = importlib.util.spec_from_file_location("liquidity_inducements", "Liquidity & inducements.py")
+liquidity_module = importlib.util.module_from_spec(spec5)
+spec5.loader.exec_module(liquidity_module)
+calculate_liquidity_data = liquidity_module.calculate_liquidity_data
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -322,6 +329,62 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             fvg_data['bearish'].append(fvg)
 
     # ========================================================================
+    # CALCULATE LIQUIDITY & INDUCEMENTS on full dataset
+    # ========================================================================
+    print("Calculating Liquidity & Inducements on full dataset...")
+    liquidity_data_full = calculate_liquidity_data(
+        df,
+        show_grabs=True,
+        show_sweeps=True,
+        show_equal_pivots=True,
+        show_bsl_ssl=True,
+        pivot_left=3,
+        pivot_right=3,
+        lookback=5
+    )
+
+    # Filter liquidity data to display range
+    liquidity_data = {
+        'grabs': [],
+        'sweeps': [],
+        'equal_pivots': [],
+        'bsl': [],
+        'ssl': []
+    }
+
+    # Filter grabs
+    for grab in liquidity_data_full['grabs']:
+        if grab.grab_index >= start_idx and grab.pivot.index >= start_idx:
+            grab.pivot.index -= start_idx
+            grab.grab_index -= start_idx
+            liquidity_data['grabs'].append(grab)
+
+    # Filter sweeps
+    for sweep in liquidity_data_full['sweeps']:
+        if sweep.sweep_index >= start_idx and sweep.pivot.index >= start_idx:
+            sweep.pivot.index -= start_idx
+            sweep.sweep_index -= start_idx
+            liquidity_data['sweeps'].append(sweep)
+
+    # Filter equal pivots
+    for eq_pivot in liquidity_data_full['equal_pivots']:
+        if eq_pivot.pivot1.index >= start_idx and eq_pivot.pivot2.index >= start_idx:
+            eq_pivot.pivot1.index -= start_idx
+            eq_pivot.pivot2.index -= start_idx
+            liquidity_data['equal_pivots'].append(eq_pivot)
+
+    # Filter BSL/SSL
+    for bsl in liquidity_data_full['bsl']:
+        if bsl.pivot.index >= start_idx:
+            bsl.pivot.index -= start_idx
+            liquidity_data['bsl'].append(bsl)
+
+    for ssl in liquidity_data_full['ssl']:
+        if ssl.pivot.index >= start_idx:
+            ssl.pivot.index -= start_idx
+            liquidity_data['ssl'].append(ssl)
+
+    # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
     # ========================================================================
     fig = plt.figure(figsize=(20, 12))
@@ -514,6 +577,68 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT LIQUIDITY & INDUCEMENTS
+    # ========================================================================
+    # Plot Grabs (filled zones with $$$ labels)
+    for grab in liquidity_data['grabs']:
+        pivot_idx = grab.pivot.index
+        grab_idx = grab.grab_index
+
+        if 0 <= pivot_idx < len(df_display) and 0 <= grab_idx < len(df_display):
+            # Draw horizontal line
+            ax_main.plot([pivot_idx, grab_idx], [grab.pivot.price, grab.pivot.price],
+                        color='orange', linewidth=1.5, linestyle=':', alpha=0.6, zorder=2)
+
+            # Draw filled zone
+            if grab.pivot.type == 1:  # Bearish grab (above pivot high)
+                y_bottom = grab.pivot.price
+                y_top = grab.grab_price
+                label_y = grab.pivot.price
+                va = 'top'
+            else:  # Bullish grab (below pivot low)
+                y_bottom = grab.grab_price
+                y_top = grab.pivot.price
+                label_y = grab.pivot.price
+                va = 'bottom'
+
+            grab_rect = Rectangle((pivot_idx, y_bottom), grab_idx - pivot_idx,
+                                 y_top - y_bottom, facecolor='orange', alpha=0.1, zorder=0.5)
+            ax_main.add_patch(grab_rect)
+
+            # Add $$$ label
+            mid_idx = (pivot_idx + grab_idx) / 2
+            ax_main.text(mid_idx, label_y, '$$$', fontsize=8, color='orange',
+                        fontweight='bold', ha='center', va=va, zorder=5)
+
+    # Plot BSL (Buyside Liquidity) - extend to the right
+    for bsl in liquidity_data['bsl']:
+        pivot_idx = bsl.pivot.index
+        if 0 <= pivot_idx < len(df_display):
+            ax_main.axhline(y=bsl.pivot.price, xmin=pivot_idx/len(df_display), xmax=1,
+                          color='teal', linewidth=1.2, linestyle='--', alpha=0.5, zorder=1)
+            ax_main.text(len(df_display) - 10, bsl.pivot.price, 'BSL', fontsize=7,
+                        color='teal', fontweight='bold', ha='right', va='bottom',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6), zorder=5)
+
+    # Plot SSL (Sellside Liquidity) - extend to the right
+    for ssl in liquidity_data['ssl']:
+        pivot_idx = ssl.pivot.index
+        if 0 <= pivot_idx < len(df_display):
+            ax_main.axhline(y=ssl.pivot.price, xmin=pivot_idx/len(df_display), xmax=1,
+                          color='red', linewidth=1.2, linestyle='--', alpha=0.5, zorder=1)
+            ax_main.text(len(df_display) - 10, ssl.pivot.price, 'SSL', fontsize=7,
+                        color='red', fontweight='bold', ha='right', va='top',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6), zorder=5)
+
+    # Add liquidity legend entries
+    liquidity_legend_elements = [
+        mpatches.Patch(facecolor='orange', alpha=0.15, edgecolor='orange',
+                      linestyle=':', label='Grabs ($$$)'),
+        plt.Line2D([0], [0], color='teal', linewidth=1.5, linestyle='--', label='BSL'),
+        plt.Line2D([0], [0], color='red', linewidth=1.5, linestyle='--', label='SSL')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -631,14 +756,15 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias + Order Blocks + FVG',
+    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, and FVGs
+    # Combine legend handles from sweeps, order blocks, FVGs, and liquidity
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
+    handles.extend(liquidity_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=6, ncol=3)
 
     # HTF mini chart formatting
