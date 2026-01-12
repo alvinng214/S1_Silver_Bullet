@@ -202,7 +202,7 @@ def plot_liquidity_chart(csv_file, num_candles=500):
     ax.legend(handles=legend_elements, loc='upper left', fontsize=9)
 
     plt.tight_layout()
-    output_file = 'liquidity_inducements_chart.png'
+    output_file = 'liq_candlestick_chart.png'
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
 
