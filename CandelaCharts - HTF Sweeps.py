@@ -46,6 +46,28 @@ class Sweep:
     htf_timeframe: str = ""
 
 
+def parse_timeframe_to_minutes(timeframe_name):
+    """
+    Convert timeframe string to minutes.
+
+    Args:
+        timeframe_name: String like "1H", "4H", "Daily", "15", "1D"
+
+    Returns:
+        Number of minutes
+    """
+    if timeframe_name == 'Daily' or timeframe_name == '1D' or timeframe_name == 'D':
+        return 1440
+    elif 'H' in timeframe_name:
+        hours = int(timeframe_name[:-1])
+        return hours * 60
+    elif 'M' in timeframe_name or 'min' in timeframe_name.lower():
+        return int(timeframe_name.replace('M', '').replace('min', '').replace('Min', ''))
+    else:
+        # Assume it's just minutes as a number
+        return int(timeframe_name)
+
+
 def resample_to_htf(df, timeframe_minutes):
     """
     Resample the dataframe to a higher timeframe.
@@ -85,9 +107,12 @@ def build_htf_candles(df, df_htf, timeframe_name):
     """
     htf_candles = []
 
+    # Parse timeframe to minutes
+    tf_minutes = parse_timeframe_to_minutes(timeframe_name)
+
     for htf_time, htf_row in df_htf.iterrows():
         # Find LTF bars that fall within this HTF candle
-        ltf_bars_in_htf = df[(df.index >= htf_time) & (df.index < htf_time + pd.Timedelta(minutes=int(timeframe_name[:-1]) if 'H' in timeframe_name else 1440))]
+        ltf_bars_in_htf = df[(df.index >= htf_time) & (df.index < htf_time + pd.Timedelta(minutes=tf_minutes))]
 
         if len(ltf_bars_in_htf) == 0:
             continue
