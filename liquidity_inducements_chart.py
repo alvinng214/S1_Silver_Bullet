@@ -35,7 +35,7 @@ def plot_liquidity_chart(csv_file, num_candles=500):
     # Add index for calculations
     df['index'] = range(len(df))
 
-    # Calculate liquidity data on full dataset
+    # Calculate liquidity data on full dataset with new features
     print("Calculating liquidity and inducements...")
     liquidity_data = calculate_liquidity_data(
         df,
@@ -43,8 +43,14 @@ def plot_liquidity_chart(csv_file, num_candles=500):
         show_sweeps=True,
         show_equal_pivots=True,
         show_bsl_ssl=True,
+        show_big_grabs=True,  # Enable Big Grabs
+        show_turtle_soups=True,  # Enable Turtle Soups
         pivot_left=3,
         pivot_right=3,
+        big_grab_pivot_left=10,  # Larger pivots for HTF grabs
+        big_grab_pivot_right=10,
+        turtle_soup_pivot_left=1,  # Smaller pivots for turtle soups
+        turtle_soup_pivot_right=1,
         lookback=5
     )
 
@@ -182,24 +188,90 @@ def plot_liquidity_chart(csv_file, num_candles=500):
                        color='red', fontweight='bold', ha='right', va='top',
                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
 
+    # Plot Big Grabs (larger zones with BIG $$$ labels)
+    for big_grab in liquidity_data.get('big_grabs', []):
+        if big_grab.grab_index >= start_idx and big_grab.pivot.index >= start_idx:
+            pivot_idx = big_grab.pivot.index - start_idx
+            grab_idx = big_grab.grab_index - start_idx
+
+            if 0 <= pivot_idx < len(df_display) and 0 <= grab_idx < len(df_display):
+                # Draw horizontal line
+                ax.plot([pivot_idx, grab_idx], [big_grab.pivot.price, big_grab.pivot.price],
+                       color='cyan', linewidth=3, linestyle='--', alpha=0.8)
+
+                # Draw filled zone
+                if big_grab.pivot.type == 1:  # Bearish big grab
+                    y_bottom = big_grab.pivot.price
+                    y_top = big_grab.grab_price
+                    label_y = big_grab.pivot.price
+                    label_style = 'top'
+                else:  # Bullish big grab
+                    y_bottom = big_grab.grab_price
+                    y_top = big_grab.pivot.price
+                    label_y = big_grab.pivot.price
+                    label_style = 'bottom'
+
+                rect = Rectangle((pivot_idx, y_bottom), grab_idx - pivot_idx,
+                               y_top - y_bottom, facecolor='cyan', alpha=0.2)
+                ax.add_patch(rect)
+
+                # Add BIG $$$ label
+                mid_idx = (pivot_idx + grab_idx) / 2
+                ax.text(mid_idx, label_y, 'BIG $$$', fontsize=11, color='cyan',
+                       fontweight='bold', ha='center', va=label_style)
+
+    # Plot Turtle Soups (failed breakout patterns)
+    for turtle_soup in liquidity_data.get('turtle_soups', []):
+        if turtle_soup.break_index >= start_idx and turtle_soup.pivot.index >= start_idx:
+            pivot_idx = turtle_soup.pivot.index - start_idx
+            break_idx = turtle_soup.break_index - start_idx
+            reversal_idx = turtle_soup.reversal_index - start_idx
+
+            if 0 <= pivot_idx < len(df_display) and 0 <= break_idx < len(df_display):
+                color = 'lime' if turtle_soup.is_bullish else 'magenta'
+
+                # Draw line from pivot to break
+                ax.plot([pivot_idx, break_idx], [turtle_soup.pivot.price, turtle_soup.pivot.price],
+                       color=color, linewidth=2, linestyle='-.', alpha=0.7)
+
+                # Draw arrow showing reversal
+                if reversal_idx < len(df_display):
+                    ax.annotate('', xy=(reversal_idx, turtle_soup.pivot.price),
+                               xytext=(break_idx, turtle_soup.break_price),
+                               arrowprops=dict(arrowstyle='->', color=color, lw=2, alpha=0.7))
+
+                # Add TURTLE label
+                mid_idx = (pivot_idx + break_idx) / 2
+                label_style = 'bottom' if turtle_soup.is_bullish else 'top'
+                ax.text(mid_idx, turtle_soup.pivot.price, 'TURTLE', fontsize=9, color=color,
+                       fontweight='bold', ha='center', va=label_style)
+
     # Formatting
     ax.set_xlim(-0.5, len(df_display) - 0.5)
     ax.set_xlabel('Candle Index', fontsize=10)
     ax.set_ylabel('Price', fontsize=10)
-    ax.set_title(f'Liquidity & Inducements - Last {num_candles} Candles', fontsize=14, fontweight='bold')
+
+    # Display trend in title
+    trend_text = {1: 'BULLISH', -1: 'BEARISH', 0: 'NEUTRAL'}
+    trend = liquidity_data.get('trend', 0)
+    ax.set_title(f'Liquidity & Inducements - Last {num_candles} Candles | Trend: {trend_text[trend]}',
+                 fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
 
     # Create legend
     legend_elements = [
         mpatches.Patch(facecolor='orange', alpha=0.3, edgecolor='orange', label='Grabs ($$$)'),
+        mpatches.Patch(facecolor='cyan', alpha=0.3, edgecolor='cyan', label='Big Grabs (BIG $$$)'),
         mpatches.Patch(facecolor='teal', alpha=0.5, label='Bullish Sweep ($)'),
         mpatches.Patch(facecolor='red', alpha=0.5, label='Bearish Sweep ($)'),
         mpatches.Patch(facecolor='orange', alpha=0.5, label='Equal Pivots - Liquidity ($$$)'),
         mpatches.Patch(facecolor='teal', alpha=0.5, label='Equal Pivots - Inducement (IDM)'),
+        plt.Line2D([0], [0], color='lime', linewidth=2, linestyle='-.', label='Bullish Turtle Soup'),
+        plt.Line2D([0], [0], color='magenta', linewidth=2, linestyle='-.', label='Bearish Turtle Soup'),
         plt.Line2D([0], [0], color='teal', linewidth=2, linestyle='--', label='BSL'),
         plt.Line2D([0], [0], color='red', linewidth=2, linestyle='--', label='SSL')
     ]
-    ax.legend(handles=legend_elements, loc='upper left', fontsize=9)
+    ax.legend(handles=legend_elements, loc='upper left', fontsize=8, ncol=2)
 
     plt.tight_layout()
     output_file = 'liq_candlestick_chart.png'
@@ -207,8 +279,11 @@ def plot_liquidity_chart(csv_file, num_candles=500):
     plt.close()
 
     print(f"\nLiquidity & Inducements chart saved as '{output_file}'")
+    print(f"  - Market Trend: {trend_text[trend]}")
     print(f"  - Grabs: {len(liquidity_data['grabs'])}")
+    print(f"  - Big Grabs: {len(liquidity_data.get('big_grabs', []))}")
     print(f"  - Sweeps: {len(liquidity_data['sweeps'])}")
+    print(f"  - Turtle Soups: {len(liquidity_data.get('turtle_soups', []))}")
     print(f"  - Equal Pivots: {len(liquidity_data['equal_pivots'])}")
     print(f"  - BSL: {len(liquidity_data['bsl'])}")
     print(f"  - SSL: {len(liquidity_data['ssl'])}")

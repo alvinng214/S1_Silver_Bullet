@@ -362,7 +362,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             fvg_data['bearish'].append(fvg)
 
     # ========================================================================
-    # CALCULATE LIQUIDITY & INDUCEMENTS on full dataset
+    # CALCULATE LIQUIDITY & INDUCEMENTS on full dataset (with new features)
     # ========================================================================
     print("Calculating Liquidity & Inducements on full dataset...")
     liquidity_data_full = calculate_liquidity_data(
@@ -371,8 +371,14 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         show_sweeps=True,
         show_equal_pivots=True,
         show_bsl_ssl=True,
+        show_big_grabs=True,  # Enable Big Grabs
+        show_turtle_soups=True,  # Enable Turtle Soups
         pivot_left=3,
         pivot_right=3,
+        big_grab_pivot_left=10,
+        big_grab_pivot_right=10,
+        turtle_soup_pivot_left=1,
+        turtle_soup_pivot_right=1,
         lookback=5
     )
 
@@ -382,7 +388,10 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         'sweeps': [],
         'equal_pivots': [],
         'bsl': [],
-        'ssl': []
+        'ssl': [],
+        'big_grabs': [],
+        'turtle_soups': [],
+        'trend': liquidity_data_full.get('trend', 0)  # Include trend
     }
 
     # Filter grabs
@@ -417,6 +426,21 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             ssl.pivot.index -= start_idx
             liquidity_data['ssl'].append(ssl)
 
+    # Filter Big Grabs
+    for big_grab in liquidity_data_full.get('big_grabs', []):
+        if big_grab.grab_index >= start_idx and big_grab.pivot.index >= start_idx:
+            big_grab.pivot.index -= start_idx
+            big_grab.grab_index -= start_idx
+            liquidity_data['big_grabs'].append(big_grab)
+
+    # Filter Turtle Soups
+    for turtle_soup in liquidity_data_full.get('turtle_soups', []):
+        if turtle_soup.break_index >= start_idx and turtle_soup.pivot.index >= start_idx:
+            turtle_soup.pivot.index -= start_idx
+            turtle_soup.break_index -= start_idx
+            turtle_soup.reversal_index -= start_idx
+            liquidity_data['turtle_soups'].append(turtle_soup)
+
     # ========================================================================
     # CALCULATE MTF TRENDS for Smart Money Zones panel
     # ========================================================================
@@ -428,13 +452,19 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     )
 
     # ========================================================================
-    # CALCULATE SESSION LEVELS (Asia, London, NY, PDH/PDL)
+    # CALCULATE SESSION LEVELS (Sydney, Asia, London, NY, PDH/PDL)
     # ========================================================================
-    print("Calculating Asia/London/NY session levels...")
-    session_levels_full = detect_session_levels(df, timezone_offset=0)
+    print("Calculating Sydney/Asia/London/NY session levels...")
+    session_config = {
+        'sydney': True,  # Enable Sydney session
+        'asia': True,
+        'london': True,
+        'ny': True
+    }
+    session_levels_full = detect_session_levels(df, timezone_offset=0, session_config=session_config)
 
     print("Calculating PDH/PDL...")
-    pdh_pdl_levels_full = detect_pdh_pdl(df)
+    pdh_pdl_levels_full = detect_pdh_pdl(df, timezone_offset=0, show_pdh_pdl=True, show_mid=True)
 
     # Filter session levels to display range
     session_levels = {}
@@ -812,12 +842,50 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
                         color='red', fontweight='bold', ha='right', va='top',
                         bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6), zorder=5)
 
+    # Plot Big Grabs (larger zones)
+    for big_grab in liquidity_data.get('big_grabs', []):
+        pivot_idx = big_grab.pivot.index
+        grab_idx = big_grab.grab_index
+
+        if 0 <= pivot_idx < len(df_display) and 0 <= grab_idx < len(df_display):
+            # Draw line
+            ax_main.plot([pivot_idx, grab_idx], [big_grab.pivot.price, big_grab.pivot.price],
+                       color='cyan', linewidth=2, linestyle='--', alpha=0.7, zorder=1)
+
+            # Draw filled zone (smaller to avoid clutter)
+            if big_grab.pivot.type == 1:  # Bearish
+                y_bottom = big_grab.pivot.price
+                y_top = big_grab.grab_price
+            else:  # Bullish
+                y_bottom = big_grab.grab_price
+                y_top = big_grab.pivot.price
+
+            rect = Rectangle((pivot_idx, y_bottom), grab_idx - pivot_idx,
+                           y_top - y_bottom, facecolor='cyan', alpha=0.1, zorder=0)
+            ax_main.add_patch(rect)
+
+    # Plot Turtle Soups (failed breakouts) - only show a few recent ones
+    turtle_soups_to_show = liquidity_data.get('turtle_soups', [])[-5:]
+    for turtle_soup in turtle_soups_to_show:
+        pivot_idx = turtle_soup.pivot.index
+        break_idx = turtle_soup.break_index
+
+        if 0 <= pivot_idx < len(df_display) and 0 <= break_idx < len(df_display):
+            color = 'lime' if turtle_soup.is_bullish else 'magenta'
+
+            # Draw line from pivot to break
+            ax_main.plot([pivot_idx, break_idx], [turtle_soup.pivot.price, turtle_soup.pivot.price],
+                       color=color, linewidth=1.5, linestyle='-.', alpha=0.6, zorder=1)
+
     # Add liquidity legend entries
     liquidity_legend_elements = [
         mpatches.Patch(facecolor='orange', alpha=0.15, edgecolor='orange',
                       linestyle=':', label='Grabs ($$$)'),
+        mpatches.Patch(facecolor='cyan', alpha=0.15, edgecolor='cyan',
+                      linestyle='--', label='Big Grabs'),
         plt.Line2D([0], [0], color='teal', linewidth=1, linestyle=':', label='Bullish Sweep ($)'),
         plt.Line2D([0], [0], color='red', linewidth=1, linestyle=':', label='Bearish Sweep ($)'),
+        plt.Line2D([0], [0], color='lime', linewidth=1.5, linestyle='-.', label='Turtle Soup'),
         plt.Line2D([0], [0], color='orange', linewidth=1.5, linestyle=':', label='Equal Pivots ($$$)'),
         plt.Line2D([0], [0], color='teal', linewidth=1.5, linestyle=':', label='Inducement (IDM)'),
         plt.Line2D([0], [0], color='teal', linewidth=1.5, linestyle='--', label='BSL'),
@@ -825,9 +893,18 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
-    # PLOT SESSION LEVELS (Asia, London, NY, PDH/PDL)
+    # PLOT SESSION LEVELS (Sydney, Asia, London, NY, PDH/PDL)
     # ========================================================================
     # Only plot most recent session levels to avoid clutter
+    # Sydney Session - Teal
+    for level in session_levels.get('sydney_high', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#00897B', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    for level in session_levels.get('sydney_low', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#00897B', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
     # Asia Session - Purple
     for level in session_levels.get('asia_high', [])[-2:]:
         ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],

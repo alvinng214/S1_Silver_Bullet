@@ -37,12 +37,18 @@ def plot_session_levels_chart(csv_file, num_candles=500):
 
     print(f"Loaded {len(df)} bars from {df.index[0]} to {df.index[-1]}")
 
-    # Calculate session levels on full dataset
-    print("Calculating Asia/London/NY session levels...")
-    session_levels = detect_session_levels(df, timezone_offset=0)
+    # Calculate session levels on full dataset (now includes Sydney)
+    print("Calculating Sydney/Asia/London/NY session levels...")
+    session_config = {
+        'sydney': True,   # Enable Sydney session
+        'asia': True,
+        'london': True,
+        'ny': True
+    }
+    session_levels = detect_session_levels(df, timezone_offset=0, session_config=session_config)
 
     print("Calculating PDH/PDL...")
-    pdh_pdl_levels = detect_pdh_pdl(df)
+    pdh_pdl_levels = detect_pdh_pdl(df, timezone_offset=0, show_pdh_pdl=True, show_mid=True)
 
     # Filter to last N candles for display
     start_idx = max(0, len(df) - num_candles)
@@ -70,6 +76,27 @@ def plot_session_levels_chart(csv_file, num_candles=500):
         ax.plot([idx, idx], [row['low'], row['high']], color='black', linewidth=0.5, zorder=1)
 
     # Plot session levels - Only last 2 days (last 2 sessions of each type)
+    # Sydney Session - Teal
+    for level in session_levels.get('sydney_high', [])[-2:]:
+        if level.end_idx >= start_idx:
+            x_start = max(0, level.start_idx - start_idx)
+            x_end = min(len(df_display) - 1, level.end_idx - start_idx)
+            ax.plot([x_start, x_end], [level.price, level.price],
+                   color='#00897B', linewidth=2, linestyle='-', alpha=0.8, zorder=3)
+            # Add label
+            ax.text(x_end, level.price, ' Sydney High', fontsize=8,
+                   color='#00897B', va='bottom', ha='left', fontweight='bold', zorder=5)
+
+    for level in session_levels.get('sydney_low', [])[-2:]:
+        if level.end_idx >= start_idx:
+            x_start = max(0, level.start_idx - start_idx)
+            x_end = min(len(df_display) - 1, level.end_idx - start_idx)
+            ax.plot([x_start, x_end], [level.price, level.price],
+                   color='#00897B', linewidth=2, linestyle='-', alpha=0.8, zorder=3)
+            # Add label
+            ax.text(x_end, level.price, ' Sydney Low', fontsize=8,
+                   color='#00897B', va='top', ha='left', fontweight='bold', zorder=5)
+
     # Asia Session - Purple
     for level in session_levels['asia_high'][-2:]:
         if level.end_idx >= start_idx:
@@ -170,12 +197,13 @@ def plot_session_levels_chart(csv_file, num_candles=500):
     ax.set_xlim(-0.5, len(df_display) - 0.5)
     ax.set_xlabel('Candle Index', fontsize=12, fontweight='bold')
     ax.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax.set_title("SW's Asia/London/NY H/L's - Last 2 Days Session Levels + PDH/PDL",
+    ax.set_title("SW's Sydney/Asia/London/NY H/L's - Last 2 Days Session Levels + PDH/PDL",
                  fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
 
     # Create legend
     legend_elements = [
+        mpatches.Patch(facecolor='#00897B', alpha=0.8, label='Sydney Session'),
         mpatches.Patch(facecolor='#4a148c', alpha=0.8, label='Asia Session'),
         mpatches.Patch(facecolor='#0c3299', alpha=0.8, label='London Session'),
         mpatches.Patch(facecolor='#fb7f1f', alpha=0.8, label='NY Session'),
@@ -190,6 +218,8 @@ def plot_session_levels_chart(csv_file, num_candles=500):
 
     print(f"\nSession levels chart saved as '{output_file}'")
     print(f"\nSession Levels Summary:")
+    print(f"  - Sydney Highs: {len(session_levels.get('sydney_high', []))}")
+    print(f"  - Sydney Lows: {len(session_levels.get('sydney_low', []))}")
     print(f"  - Asia Highs: {len(session_levels['asia_high'])}")
     print(f"  - Asia Lows: {len(session_levels['asia_low'])}")
     print(f"  - London Highs: {len(session_levels['london_high'])}")
