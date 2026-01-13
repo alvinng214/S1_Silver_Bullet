@@ -419,6 +419,9 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # MTF Trend Panel
     ax_mtf = fig.add_subplot(gs[1, 8:])  # Bottom right corner
+    ax_mtf.set_facecolor('#1a1a1a')  # Dark background
+    ax_mtf.set_xlim(0, 1)
+    ax_mtf.set_ylim(0, 1)
     ax_mtf.axis('off')
 
     # ========================================================================

@@ -89,6 +89,9 @@ def plot_smart_money_zones_chart(csv_file, num_candles=500):
 
     # MTF Trend Panel (right side)
     ax_panel = fig.add_subplot(gs[0, 8:])
+    ax_panel.set_facecolor('#1a1a1a')  # Dark background
+    ax_panel.set_xlim(0, 1)
+    ax_panel.set_ylim(0, 1)
     ax_panel.axis('off')
 
     # Trend MA panel (bottom)
