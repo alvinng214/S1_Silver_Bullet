@@ -69,9 +69,9 @@ def plot_session_levels_chart(csv_file, num_candles=500):
         # Draw wicks
         ax.plot([idx, idx], [row['low'], row['high']], color='black', linewidth=0.5, zorder=1)
 
-    # Plot session levels
+    # Plot session levels - Only last 2 days (last 2 sessions of each type)
     # Asia Session - Purple
-    for level in session_levels['asia_high']:
+    for level in session_levels['asia_high'][-2:]:
         if level.end_idx >= start_idx:
             x_start = max(0, level.start_idx - start_idx)
             x_end = min(len(df_display) - 1, level.end_idx - start_idx)
@@ -81,7 +81,7 @@ def plot_session_levels_chart(csv_file, num_candles=500):
             ax.text(x_end, level.price, ' Asia High', fontsize=8,
                    color='#4a148c', va='bottom', ha='left', fontweight='bold', zorder=5)
 
-    for level in session_levels['asia_low']:
+    for level in session_levels['asia_low'][-2:]:
         if level.end_idx >= start_idx:
             x_start = max(0, level.start_idx - start_idx)
             x_end = min(len(df_display) - 1, level.end_idx - start_idx)
@@ -92,7 +92,7 @@ def plot_session_levels_chart(csv_file, num_candles=500):
                    color='#4a148c', va='top', ha='left', fontweight='bold', zorder=5)
 
     # London Session - Blue
-    for level in session_levels['london_high']:
+    for level in session_levels['london_high'][-2:]:
         if level.end_idx >= start_idx:
             x_start = max(0, level.start_idx - start_idx)
             x_end = min(len(df_display) - 1, level.end_idx - start_idx)
@@ -102,7 +102,7 @@ def plot_session_levels_chart(csv_file, num_candles=500):
             ax.text(x_end, level.price, ' London High', fontsize=8,
                    color='#0c3299', va='bottom', ha='left', fontweight='bold', zorder=5)
 
-    for level in session_levels['london_low']:
+    for level in session_levels['london_low'][-2:]:
         if level.end_idx >= start_idx:
             x_start = max(0, level.start_idx - start_idx)
             x_end = min(len(df_display) - 1, level.end_idx - start_idx)
@@ -113,7 +113,7 @@ def plot_session_levels_chart(csv_file, num_candles=500):
                    color='#0c3299', va='top', ha='left', fontweight='bold', zorder=5)
 
     # NY Session - Orange
-    for level in session_levels['ny_high']:
+    for level in session_levels['ny_high'][-2:]:
         if level.end_idx >= start_idx:
             x_start = max(0, level.start_idx - start_idx)
             x_end = min(len(df_display) - 1, level.end_idx - start_idx)
@@ -123,7 +123,7 @@ def plot_session_levels_chart(csv_file, num_candles=500):
             ax.text(x_end, level.price, ' NY High', fontsize=8,
                    color='#fb7f1f', va='bottom', ha='left', fontweight='bold', zorder=5)
 
-    for level in session_levels['ny_low']:
+    for level in session_levels['ny_low'][-2:]:
         if level.end_idx >= start_idx:
             x_start = max(0, level.start_idx - start_idx)
             x_end = min(len(df_display) - 1, level.end_idx - start_idx)
@@ -170,7 +170,7 @@ def plot_session_levels_chart(csv_file, num_candles=500):
     ax.set_xlim(-0.5, len(df_display) - 0.5)
     ax.set_xlabel('Candle Index', fontsize=12, fontweight='bold')
     ax.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax.set_title("SW's Asia/London H/L's - Session Levels (Last 500 Candles)",
+    ax.set_title("SW's Asia/London/NY H/L's - Last 2 Days Session Levels + PDH/PDL",
                  fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
 
