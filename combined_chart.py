@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -7,11 +7,13 @@ This script combines:
 3. Order Blocks (15min and 1H)
 4. Fair Value Gaps (FVG) - Demand and Supply
 5. Liquidity & Inducements (Grabs, BSL/SSL)
+6. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
 - Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, and Liquidity zones
-- Right side: Mini HTF candles (1H, 4H, Daily)
-- Bottom panel: Market structure trend indicators
+- Top right: Mini HTF candles (1H, 4H, Daily)
+- Bottom left: Market structure trend indicators
+- Bottom right: MTF Trends Panel (Smart Money Zones)
 """
 
 import pandas as pd
@@ -59,6 +61,12 @@ spec5 = importlib.util.spec_from_file_location("liquidity_inducements", "Liquidi
 liquidity_module = importlib.util.module_from_spec(spec5)
 spec5.loader.exec_module(liquidity_module)
 calculate_liquidity_data = liquidity_module.calculate_liquidity_data
+
+# Load Smart_Money_Zones__FVG___OB____MTF_Trend_Panel.py
+spec6 = importlib.util.spec_from_file_location("smart_money_zones", "Smart_Money_Zones__FVG___OB____MTF_Trend_Panel.py")
+smz_module = importlib.util.module_from_spec(spec6)
+spec6.loader.exec_module(smz_module)
+calculate_mtf_trends = smz_module.calculate_mtf_trends
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -385,6 +393,16 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             liquidity_data['ssl'].append(ssl)
 
     # ========================================================================
+    # CALCULATE MTF TRENDS for Smart Money Zones panel
+    # ========================================================================
+    print("Calculating Multi-Timeframe Trends...")
+    mtf_trends = calculate_mtf_trends(
+        df,
+        timeframes_minutes={'5m': 5, '15m': 15, '1H': 60, '4H': 240, '1D': 1440},
+        ma_period=50
+    )
+
+    # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
     # ========================================================================
     fig = plt.figure(figsize=(20, 12))
@@ -398,6 +416,10 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Market structure indicator panel
     ax_ms = fig.add_subplot(gs[1, :8], sharex=ax_main)  # Bottom panel
+
+    # MTF Trend Panel
+    ax_mtf = fig.add_subplot(gs[1, 8:])  # Bottom right corner
+    ax_mtf.axis('off')
 
     # ========================================================================
     # PLOT MAIN CANDLESTICKS (using display data)
@@ -811,7 +833,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + MTF Trends',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
@@ -845,6 +867,35 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         Line2D([0], [0], color=bos_bear_color, linewidth=8, label='BoS Bearish'),
     ]
     ax_ms.legend(handles=legend_elements, loc='upper right', fontsize=9, ncol=4)
+
+    # ========================================================================
+    # PLOT MTF TREND PANEL
+    # ========================================================================
+    # Title
+    ax_mtf.text(0.5, 0.95, 'MTF TRENDS', ha='center', va='top',
+                fontsize=9, fontweight='bold', color='white',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='#00bcd4', alpha=0.8))
+
+    # Plot each timeframe
+    y_positions = np.linspace(0.75, 0.05, len(mtf_trends))
+
+    for idx, (tf_name, is_bullish) in enumerate(mtf_trends.items()):
+        y_pos = y_positions[idx]
+
+        # Timeframe label
+        ax_mtf.text(0.05, y_pos, tf_name, ha='left', va='center',
+                   fontsize=7, fontweight='bold', color='black')
+
+        # Trend status with color
+        trend_text = "BULL" if is_bullish else "BEAR"
+        trend_color = 'lime' if is_bullish else 'red'
+        ax_mtf.text(0.50, y_pos, trend_text, ha='center', va='center',
+                   fontsize=7, fontweight='bold', color=trend_color)
+
+        # Status indicator (circle)
+        status_symbol = "●"
+        ax_mtf.text(0.85, y_pos, status_symbol, ha='center', va='center',
+                   fontsize=10, color=trend_color)
 
     plt.tight_layout()
 
