@@ -65,10 +65,24 @@ def detect_crt_ranges(df, lookback=20, timeframe_minutes=60):
             'low': 'min',
             'close': 'last'
         }).dropna()
-        df_htf['index'] = range(len(df_htf))
+        df_htf['htf_idx'] = range(len(df_htf))
+
+        # Create mapping from HTF index to LTF index range
+        htf_to_ltf_map = {}
+        for htf_idx, htf_time in enumerate(df_htf.index):
+            # Find LTF bars within this HTF candle
+            ltf_bars = df[(df.index >= htf_time) &
+                          (df.index < htf_time + pd.Timedelta(minutes=timeframe_minutes))]
+            if len(ltf_bars) > 0:
+                htf_to_ltf_map[htf_idx] = {
+                    'start': df.index.get_loc(ltf_bars.index[0]),
+                    'end': df.index.get_loc(ltf_bars.index[-1])
+                }
     else:
         df_htf = df.copy()
-        df_htf['index'] = range(len(df_htf))
+        df_htf['htf_idx'] = range(len(df_htf))
+        # For same timeframe, identity mapping
+        htf_to_ltf_map = {i: {'start': i, 'end': i} for i in range(len(df_htf))}
 
     # Detect CRTs on the HTF data
     for i in range(lookback, len(df_htf)):
@@ -100,16 +114,21 @@ def detect_crt_ranges(df, lookback=20, timeframe_minutes=60):
             if within and unique:
                 mid = (pot_high + pot_low) / 2
 
-                # Map back to base timeframe indices
-                detection_idx = i - k
+                # Map HTF indices back to LTF indices
+                detection_htf_idx = i - k
+                end_htf_idx = i
+
+                # Get LTF index range for start and end
+                ltf_start_idx = htf_to_ltf_map.get(detection_htf_idx, {}).get('start', detection_htf_idx)
+                ltf_end_idx = htf_to_ltf_map.get(end_htf_idx, {}).get('end', end_htf_idx)
 
                 crt_ranges.append(CRTRange(
                     high=pot_high,
                     low=pot_low,
                     mid=mid,
-                    start_idx=detection_idx,
-                    end_idx=i,
-                    detection_time_idx=detection_idx,
+                    start_idx=ltf_start_idx,  # Now using LTF index
+                    end_idx=ltf_end_idx,  # Now using LTF index
+                    detection_time_idx=ltf_start_idx,
                     is_active=True,
                     buy_signaled=False,
                     sell_signaled=False,
