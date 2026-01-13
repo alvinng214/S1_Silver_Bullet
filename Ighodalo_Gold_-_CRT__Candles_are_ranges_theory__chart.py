@@ -78,29 +78,45 @@ def plot_crt_chart(csv_file, num_candles=500, lookback=20, timeframe_minutes=60)
         # Draw wicks
         ax.plot([idx, idx], [row['low'], row['high']], color='black', linewidth=0.5, zorder=1)
 
-    # Plot CRT ranges (only active ones or last 3)
-    active_crts = [crt for crt in crt_ranges if crt.is_active or crt.end_idx >= start_idx][-3:]
+    # Plot CRT ranges - show last 5 CRT ranges regardless of status
+    # This ensures we always see recent CRT levels even if they've been broken
+    recent_crts = crt_ranges[-5:] if len(crt_ranges) > 0 else []
 
-    for crt in active_crts:
+    print(f"Displaying {len(recent_crts)} CRT ranges on chart")
+
+    for crt in recent_crts:
         # Map to display indices
         crt_start = max(0, crt.start_idx - start_idx)
-        crt_end = min(len(df_display) - 1, crt.end_idx - start_idx)
+        # If CRT is still active, extend to end of chart; otherwise use its end_idx
+        if crt.is_active:
+            crt_end = len(df_display) - 1
+            line_alpha = 0.8
+            line_style = '-'
+        else:
+            crt_end = min(len(df_display) - 1, crt.end_idx - start_idx)
+            line_alpha = 0.5  # Faded for broken CRTs
+            line_style = '--'  # Dashed for broken CRTs
 
-        # CRT High (black solid line)
+        # Skip if CRT is completely outside visible range
+        if crt_end < 0 or crt_start >= len(df_display):
+            continue
+
+        # CRT High (black solid line if active, dashed if broken)
         ax.plot([crt_start, crt_end], [crt.high, crt.high],
-               color='black', linewidth=1.5, linestyle='-', alpha=0.8, zorder=3)
-        ax.text(crt_end, crt.high, ' CRTH', fontsize=8,
+               color='black', linewidth=1.5, linestyle=line_style, alpha=line_alpha, zorder=3)
+        status = " (Active)" if crt.is_active else " (Broken)"
+        ax.text(crt_end, crt.high, f' CRTH{status}', fontsize=8,
                color='black', va='bottom', ha='left', fontweight='bold', zorder=5)
 
-        # CRT Low (black solid line)
+        # CRT Low (black solid line if active, dashed if broken)
         ax.plot([crt_start, crt_end], [crt.low, crt.low],
-               color='black', linewidth=1.5, linestyle='-', alpha=0.8, zorder=3)
-        ax.text(crt_end, crt.low, ' CRTL', fontsize=8,
+               color='black', linewidth=1.5, linestyle=line_style, alpha=line_alpha, zorder=3)
+        ax.text(crt_end, crt.low, f' CRTL{status}', fontsize=8,
                color='black', va='top', ha='left', fontweight='bold', zorder=5)
 
         # CRT Midpoint (gray dashed line)
         ax.plot([crt_start, crt_end], [crt.mid, crt.mid],
-               color='gray', linewidth=1.2, linestyle='--', alpha=0.6, zorder=3)
+               color='gray', linewidth=1.2, linestyle='--', alpha=line_alpha * 0.7, zorder=3)
         ax.text(crt_end, crt.mid, ' CRT 50%', fontsize=7,
                color='gray', va='center', ha='left', fontweight='bold', zorder=5)
 

@@ -489,11 +489,16 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     print("Detecting Turtle Soup signals...")
     turtle_soup_signals = detect_turtle_soup_signals(df, crt_ranges_full, atr_multiplier=0.1, atr_period=14)
 
-    # Filter CRT ranges to display range (only last 2 active or recent)
-    crt_ranges = [crt for crt in crt_ranges_full if crt.is_active or crt.end_idx >= start_idx][-2:]
+    # Filter CRT ranges - show last 3 CRT ranges regardless of status
+    # This ensures we always see recent CRT levels even if they've been broken
+    crt_ranges = crt_ranges_full[-3:] if len(crt_ranges_full) > 0 else []
     for crt in crt_ranges:
         crt.start_idx = max(0, crt.start_idx - start_idx)
-        crt.end_idx = min(len(df_display), crt.end_idx - start_idx)
+        # If active, extend to end of chart; otherwise keep original end
+        if crt.is_active:
+            crt.end_idx = len(df_display) - 1
+        else:
+            crt.end_idx = min(len(df_display) - 1, crt.end_idx - start_idx)
 
     # Filter signals to display range
     buy_signals = [s for s in turtle_soup_signals['buy'] if s['idx'] >= start_idx]
@@ -937,21 +942,33 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     # ========================================================================
     # Plot CRT high/low/mid levels (subtle styling to avoid clutter)
     for crt in crt_ranges:
-        # CRT High (dark gray)
+        # Skip if completely outside visible range
+        if crt.end_idx < 0 or crt.start_idx >= len(df_display):
+            continue
+
+        # Different styling for active vs broken CRTs
+        if crt.is_active:
+            line_alpha = 0.6
+            line_style = '-'
+        else:
+            line_alpha = 0.4
+            line_style = '--'
+
+        # CRT High (dark gray, solid if active, dashed if broken)
         ax_main.plot([crt.start_idx, crt.end_idx], [crt.high, crt.high],
-                    color='#2d2d2d', linewidth=1.3, linestyle='-', alpha=0.6, zorder=3.2)
+                    color='#2d2d2d', linewidth=1.3, linestyle=line_style, alpha=line_alpha, zorder=3.2)
         ax_main.text(crt.end_idx - 5, crt.high, 'CRTH ', fontsize=6,
                     color='#2d2d2d', va='bottom', ha='right', fontweight='bold', zorder=5)
 
-        # CRT Low (dark gray)
+        # CRT Low (dark gray, solid if active, dashed if broken)
         ax_main.plot([crt.start_idx, crt.end_idx], [crt.low, crt.low],
-                    color='#2d2d2d', linewidth=1.3, linestyle='-', alpha=0.6, zorder=3.2)
+                    color='#2d2d2d', linewidth=1.3, linestyle=line_style, alpha=line_alpha, zorder=3.2)
         ax_main.text(crt.end_idx - 5, crt.low, 'CRTL ', fontsize=6,
                     color='#2d2d2d', va='top', ha='right', fontweight='bold', zorder=5)
 
         # CRT Midpoint (light gray dashed)
         ax_main.plot([crt.start_idx, crt.end_idx], [crt.mid, crt.mid],
-                    color='#808080', linewidth=1, linestyle='--', alpha=0.4, zorder=3.1)
+                    color='#808080', linewidth=1, linestyle='--', alpha=line_alpha * 0.7, zorder=3.1)
 
     # Plot Turtle Soup signals (if any in visible range)
     for sig in buy_signals:
