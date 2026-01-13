@@ -9,9 +9,8 @@ Simplified version focusing on core functionality:
 """
 
 import pandas as pd
-import numpy as np
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 
 @dataclass
@@ -29,6 +28,8 @@ class HTFCandle:
     open_time: pd.Timestamp
     close_time: pd.Timestamp
     is_bullish: bool
+    is_closed: bool = True
+    sweeps: List["Sweep"] = field(default_factory=list)
 
     def __post_init__(self):
         self.bull_sweep = False
@@ -43,6 +44,12 @@ class Sweep:
     time: pd.Timestamp
     is_bullish: bool  # True = bullish sweep (swept high), False = bearish sweep (swept low)
     invalidated: bool = False
+    invalidated_on: Optional[int] = None
+    removed: bool = False
+    formed: bool = False
+    start_index: Optional[int] = None
+    end_index: Optional[int] = None
+    created_candle_index: Optional[int] = None
     htf_timeframe: str = ""
 
 
@@ -56,16 +63,30 @@ def parse_timeframe_to_minutes(timeframe_name):
     Returns:
         Number of minutes
     """
-    if timeframe_name == 'Daily' or timeframe_name == '1D' or timeframe_name == 'D':
+    if timeframe_name in {'Daily', '1D', 'D'}:
         return 1440
-    elif 'H' in timeframe_name:
+    if timeframe_name.endswith('W'):
+        return int(timeframe_name[:-1]) * 10080
+    if timeframe_name.endswith('M'):
+        return int(timeframe_name[:-1]) * 43200
+    if timeframe_name.endswith('H'):
         hours = int(timeframe_name[:-1])
         return hours * 60
-    elif 'M' in timeframe_name or 'min' in timeframe_name.lower():
+    if timeframe_name.endswith('min') or timeframe_name.endswith('Min') or timeframe_name.endswith('MIN'):
+        return int(timeframe_name[:-3])
+    if timeframe_name.endswith('m'):
+        return int(timeframe_name[:-1])
+    if 'M' in timeframe_name or 'min' in timeframe_name.lower():
         return int(timeframe_name.replace('M', '').replace('min', '').replace('Min', ''))
-    else:
-        # Assume it's just minutes as a number
-        return int(timeframe_name)
+    # Assume it's just minutes as a number
+    return int(timeframe_name)
+
+
+def is_bullish_candle(close, open_, high, low):
+    """Replicate Pine's bullish candle heuristic."""
+    if close == open_:
+        return abs(open_ - high) < abs(open_ - low)
+    return close > open_
 
 
 def resample_to_htf(df, timeframe_minutes):
@@ -83,7 +104,7 @@ def resample_to_htf(df, timeframe_minutes):
     df_copy = df.copy()
 
     # Resample
-    df_resampled = df_copy.resample(f'{timeframe_minutes}min').agg({
+    df_resampled = df_copy.resample(f'{timeframe_minutes}min', label='left', closed='left').agg({
         'open': 'first',
         'high': 'max',
         'low': 'min',
@@ -107,7 +128,6 @@ def build_htf_candles(df, df_htf, timeframe_name):
     """
     htf_candles = []
 
-    # Parse timeframe to minutes
     tf_minutes = parse_timeframe_to_minutes(timeframe_name)
 
     for htf_time, htf_row in df_htf.iterrows():
@@ -135,7 +155,9 @@ def build_htf_candles(df, df_htf, timeframe_name):
         else:
             low_idx = open_idx
 
-        is_bullish = htf_row['close'] >= htf_row['open']
+        is_bullish = is_bullish_candle(htf_row['close'], htf_row['open'], htf_row['high'], htf_row['low'])
+        expected_close_time = htf_time + pd.Timedelta(minutes=tf_minutes)
+        is_closed = ltf_bars_in_htf.index[-1] >= expected_close_time - pd.Timedelta(minutes=1)
 
         candle = HTFCandle(
             timeframe=timeframe_name,
@@ -149,12 +171,52 @@ def build_htf_candles(df, df_htf, timeframe_name):
             low_idx=low_idx,
             open_time=htf_time,
             close_time=ltf_bars_in_htf.index[-1],
-            is_bullish=is_bullish
+            is_bullish=is_bullish,
+            is_closed=is_closed
         )
 
         htf_candles.append(candle)
 
     return htf_candles
+
+
+def detect_sweep(prev_candle, curr_candle, curr_index):
+    """Detect sweep between two consecutive HTF candles."""
+    c2_bull = curr_candle.is_bullish
+
+    bull_sweep_in_range = curr_candle.close < prev_candle.high if c2_bull else curr_candle.open < prev_candle.high
+    is_bull_sweep = curr_candle.high > prev_candle.high and bull_sweep_in_range
+
+    bear_sweep_in_range = curr_candle.open > prev_candle.low if c2_bull else curr_candle.close > prev_candle.low
+    is_bear_sweep = curr_candle.low < prev_candle.low and bear_sweep_in_range
+
+    if is_bull_sweep and not prev_candle.bull_sweep:
+        sweep = Sweep(
+            price=prev_candle.high,
+            index=prev_candle.high_idx,
+            time=prev_candle.close_time,
+            is_bullish=True,
+            start_index=prev_candle.high_idx,
+            end_index=curr_candle.close_idx,
+            created_candle_index=curr_index,
+            htf_timeframe=prev_candle.timeframe
+        )
+        prev_candle.sweeps.append(sweep)
+        prev_candle.bull_sweep = True
+
+    if is_bear_sweep and not prev_candle.bear_sweep:
+        sweep = Sweep(
+            price=prev_candle.low,
+            index=prev_candle.low_idx,
+            time=prev_candle.close_time,
+            is_bullish=False,
+            start_index=prev_candle.low_idx,
+            end_index=curr_candle.close_idx,
+            created_candle_index=curr_index,
+            htf_timeframe=prev_candle.timeframe
+        )
+        prev_candle.sweeps.append(sweep)
+        prev_candle.bear_sweep = True
 
 
 def detect_htf_sweeps(htf_candles):
@@ -171,51 +233,42 @@ def detect_htf_sweeps(htf_candles):
     Returns:
         List of Sweep objects
     """
-    sweeps = []
-
     for i in range(1, len(htf_candles)):
-        prev_candle = htf_candles[i-1]
-        curr_candle = htf_candles[i]
+        detect_sweep(htf_candles[i - 1], htf_candles[i], i)
 
-        # Check for bullish sweep (swept previous high)
-        if curr_candle.high > prev_candle.high:
-            # Check if close is back inside (below the previous high)
-            if curr_candle.is_bullish:
-                close_back_inside = curr_candle.close < prev_candle.high
-            else:
-                close_back_inside = curr_candle.close < prev_candle.high
+    return [sweep for candle in htf_candles for sweep in candle.sweeps]
 
-            if close_back_inside:
-                sweep = Sweep(
-                    price=prev_candle.high,
-                    index=prev_candle.high_idx,
-                    time=prev_candle.close_time,
-                    is_bullish=True,
-                    htf_timeframe=prev_candle.timeframe
-                )
-                sweeps.append(sweep)
-                prev_candle.bull_sweep = True
 
-        # Check for bearish sweep (swept previous low)
-        if curr_candle.low < prev_candle.low:
-            # Check if close is back inside (above the previous low)
-            if curr_candle.is_bullish:
-                close_back_inside = curr_candle.close > prev_candle.low
-            else:
-                close_back_inside = curr_candle.close > prev_candle.low
+def sweep_invalidated(sweep, candle):
+    """Check sweep invalidation based on candle body crossing."""
+    if sweep.is_bullish:
+        return sweep.price < candle.close if candle.is_bullish else sweep.price < candle.open
+    return sweep.price > candle.open if candle.is_bullish else sweep.price > candle.close
 
-            if close_back_inside:
-                sweep = Sweep(
-                    price=prev_candle.low,
-                    index=prev_candle.low_idx,
-                    time=prev_candle.close_time,
-                    is_bullish=False,
-                    htf_timeframe=prev_candle.timeframe
-                )
-                sweeps.append(sweep)
-                prev_candle.bear_sweep = True
 
-    return sweeps
+def invalidate_sweeps(htf_candles):
+    """Invalidate sweeps based on subsequent candle bodies."""
+    for candle_index, candle in enumerate(htf_candles):
+        for sweep in candle.sweeps:
+            if sweep.removed:
+                continue
+            if sweep.created_candle_index is None:
+                sweep.created_candle_index = candle_index + 1
+
+            for idx in range(sweep.created_candle_index, len(htf_candles)):
+                next_candle = htf_candles[idx]
+                if not next_candle.is_closed:
+                    continue
+                invalidated = sweep_invalidated(sweep, next_candle)
+                if invalidated:
+                    sweep.invalidated = True
+                    sweep.invalidated_on = next_candle.open_idx
+                    if idx == sweep.created_candle_index:
+                        sweep.removed = True
+                    break
+
+            if not sweep.invalidated:
+                sweep.formed = True
 
 
 def get_htf_bias(htf_candles, num_candles=3):
@@ -260,7 +313,7 @@ def get_htf_bias(htf_candles, num_candles=3):
         return 0
 
 
-def calculate_htf_data(df, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 1440}):
+def calculate_htf_data(df, timeframes_minutes=None):
     """
     Calculate HTF candles, sweeps, and bias for multiple timeframes.
 
@@ -272,6 +325,8 @@ def calculate_htf_data(df, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 144
         Dictionary with HTF candles, sweeps, and bias for each timeframe
     """
     results = {}
+    if timeframes_minutes is None:
+        timeframes_minutes = {'1H': 60, '4H': 240, 'Daily': 1440}
 
     for tf_name, tf_minutes in timeframes_minutes.items():
         # Resample to HTF
@@ -281,7 +336,14 @@ def calculate_htf_data(df, timeframes_minutes={'1H': 60, '4H': 240, 'Daily': 144
         htf_candles = build_htf_candles(df, df_htf, tf_name)
 
         # Detect sweeps
-        sweeps = detect_htf_sweeps(htf_candles)
+        detect_htf_sweeps(htf_candles)
+        invalidate_sweeps(htf_candles)
+        sweeps = [
+            sweep
+            for candle in htf_candles
+            for sweep in candle.sweeps
+            if not sweep.invalidated and not sweep.removed
+        ]
 
         # Get bias
         bias = get_htf_bias(htf_candles)
