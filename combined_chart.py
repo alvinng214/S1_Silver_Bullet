@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -7,10 +7,11 @@ This script combines:
 3. Order Blocks (15min and 1H)
 4. Fair Value Gaps (FVG) - Demand and Supply
 5. Liquidity & Inducements (Grabs, BSL/SSL)
-6. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+6. Session Levels (Asia, London, NY, PDH/PDL)
+7. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, and Liquidity zones
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, and Session levels
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -67,6 +68,13 @@ spec6 = importlib.util.spec_from_file_location("smart_money_zones", "Smart_Money
 smz_module = importlib.util.module_from_spec(spec6)
 spec6.loader.exec_module(smz_module)
 calculate_mtf_trends = smz_module.calculate_mtf_trends
+
+# Load SW's AsiaLondon HL's.py
+spec7 = importlib.util.spec_from_file_location("session_levels", "SW's AsiaLondon HL's.py")
+session_levels_module = importlib.util.module_from_spec(spec7)
+spec7.loader.exec_module(session_levels_module)
+detect_session_levels = session_levels_module.detect_session_levels
+detect_pdh_pdl = session_levels_module.detect_pdh_pdl
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -403,6 +411,32 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     )
 
     # ========================================================================
+    # CALCULATE SESSION LEVELS (Asia, London, NY, PDH/PDL)
+    # ========================================================================
+    print("Calculating Asia/London/NY session levels...")
+    session_levels_full = detect_session_levels(df, timezone_offset=0)
+
+    print("Calculating PDH/PDL...")
+    pdh_pdl_levels_full = detect_pdh_pdl(df)
+
+    # Filter session levels to display range
+    session_levels = {}
+    for key, levels in session_levels_full.items():
+        session_levels[key] = [level for level in levels if level.end_idx >= start_idx]
+        # Adjust indices for display
+        for level in session_levels[key]:
+            level.start_idx = max(0, level.start_idx - start_idx)
+            level.end_idx = min(len(df_display), level.end_idx - start_idx)
+
+    pdh_pdl_levels = {}
+    for key, levels in pdh_pdl_levels_full.items():
+        pdh_pdl_levels[key] = [level for level in levels if level.end_idx >= start_idx]
+        # Adjust indices for display
+        for level in pdh_pdl_levels[key]:
+            level.start_idx = max(0, level.start_idx - start_idx)
+            level.end_idx = min(len(df_display), level.end_idx - start_idx)
+
+    # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
     # ========================================================================
     fig = plt.figure(figsize=(20, 12))
@@ -719,6 +753,64 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT SESSION LEVELS (Asia, London, NY, PDH/PDL)
+    # ========================================================================
+    # Only plot most recent session levels to avoid clutter
+    # Asia Session - Purple
+    for level in session_levels.get('asia_high', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#4a148c', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    for level in session_levels.get('asia_low', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#4a148c', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    # London Session - Blue
+    for level in session_levels.get('london_high', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#0c3299', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    for level in session_levels.get('london_low', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#0c3299', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    # NY Session - Orange
+    for level in session_levels.get('ny_high', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#fb7f1f', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    for level in session_levels.get('ny_low', [])[-2:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#fb7f1f', linewidth=1.5, linestyle='-', alpha=0.6, zorder=3)
+
+    # PDH/PDL - Dark Green (most prominent)
+    for level in pdh_pdl_levels.get('pdh', []):
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#00332a', linewidth=2, linestyle='-', alpha=0.8, zorder=4)
+        # Add small label
+        ax_main.text(level.end_idx - 5, level.price, 'PDH ', fontsize=6,
+                    color='#00332a', va='bottom', ha='right', fontweight='bold', zorder=5)
+
+    for level in pdh_pdl_levels.get('pdl', []):
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#00332a', linewidth=2, linestyle='-', alpha=0.8, zorder=4)
+        # Add small label
+        ax_main.text(level.end_idx - 5, level.price, 'PDL ', fontsize=6,
+                    color='#00332a', va='top', ha='right', fontweight='bold', zorder=5)
+
+    for level in pdh_pdl_levels.get('pd_mid', []):
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#00332a', linewidth=1, linestyle='--', alpha=0.6, zorder=4)
+
+    # Add session levels legend entries
+    session_legend_elements = [
+        plt.Line2D([0], [0], color='#4a148c', linewidth=1.5, label='Asia Session'),
+        plt.Line2D([0], [0], color='#0c3299', linewidth=1.5, label='London Session'),
+        plt.Line2D([0], [0], color='#fb7f1f', linewidth=1.5, label='NY Session'),
+        plt.Line2D([0], [0], color='#00332a', linewidth=2, label='PDH/PDL')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -836,15 +928,16 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + MTF Trends',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + MTF Trends',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, and liquidity
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, and session levels
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
     handles.extend(liquidity_legend_elements)
+    handles.extend(session_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=6, ncol=3)
 
     # HTF mini chart formatting
