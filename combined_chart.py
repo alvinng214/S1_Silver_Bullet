@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -9,10 +9,11 @@ This script combines:
 5. Liquidity & Inducements (Grabs, BSL/SSL)
 6. Session Levels (Asia, London, NY, PDH/PDL)
 7. ICT Levels (Daily 50% Line + Killzone Sessions)
-8. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+8. CRT - Candles are Ranges Theory (1H CRT levels + Turtle Soup signals)
+9. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, and ICT levels
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, and CRT ranges
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -83,6 +84,14 @@ ict_levels_module = importlib.util.module_from_spec(spec8)
 spec8.loader.exec_module(ict_levels_module)
 detect_daily_levels = ict_levels_module.detect_daily_levels
 detect_killzone_sessions = ict_levels_module.detect_killzone_sessions
+
+# Load Ighodalo_Gold_-_CRT__Candles_are_ranges_theory_.py
+spec9 = importlib.util.spec_from_file_location("crt_module", "Ighodalo_Gold_-_CRT__Candles_are_ranges_theory_.py")
+crt_module = importlib.util.module_from_spec(spec9)
+spec9.loader.exec_module(crt_module)
+detect_crt_ranges = crt_module.detect_crt_ranges
+detect_turtle_soup_signals = crt_module.detect_turtle_soup_signals
+filter_overlapping_crts = crt_module.filter_overlapping_crts
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -469,6 +478,30 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         for level in killzone_levels[key]:
             level.start_idx = max(0, level.start_idx - start_idx)
             level.end_idx = min(len(df_display), level.end_idx - start_idx)
+
+    # ========================================================================
+    # CALCULATE CRT RANGES (Candles are Ranges Theory)
+    # ========================================================================
+    print("Detecting CRT ranges (1H timeframe)...")
+    crt_ranges_full = detect_crt_ranges(df, lookback=20, timeframe_minutes=60)
+    crt_ranges_full = filter_overlapping_crts(crt_ranges_full, enable_overlapping=False)
+
+    print("Detecting Turtle Soup signals...")
+    turtle_soup_signals = detect_turtle_soup_signals(df, crt_ranges_full, atr_multiplier=0.1, atr_period=14)
+
+    # Filter CRT ranges to display range (only last 2 active or recent)
+    crt_ranges = [crt for crt in crt_ranges_full if crt.is_active or crt.end_idx >= start_idx][-2:]
+    for crt in crt_ranges:
+        crt.start_idx = max(0, crt.start_idx - start_idx)
+        crt.end_idx = min(len(df_display), crt.end_idx - start_idx)
+
+    # Filter signals to display range
+    buy_signals = [s for s in turtle_soup_signals['buy'] if s['idx'] >= start_idx]
+    sell_signals = [s for s in turtle_soup_signals['sell'] if s['idx'] >= start_idx]
+    for sig in buy_signals:
+        sig['idx'] = sig['idx'] - start_idx
+    for sig in sell_signals:
+        sig['idx'] = sig['idx'] - start_idx
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
@@ -900,6 +933,47 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT CRT RANGES (Candles are Ranges Theory)
+    # ========================================================================
+    # Plot CRT high/low/mid levels (subtle styling to avoid clutter)
+    for crt in crt_ranges:
+        # CRT High (dark gray)
+        ax_main.plot([crt.start_idx, crt.end_idx], [crt.high, crt.high],
+                    color='#2d2d2d', linewidth=1.3, linestyle='-', alpha=0.6, zorder=3.2)
+        ax_main.text(crt.end_idx - 5, crt.high, 'CRTH ', fontsize=6,
+                    color='#2d2d2d', va='bottom', ha='right', fontweight='bold', zorder=5)
+
+        # CRT Low (dark gray)
+        ax_main.plot([crt.start_idx, crt.end_idx], [crt.low, crt.low],
+                    color='#2d2d2d', linewidth=1.3, linestyle='-', alpha=0.6, zorder=3.2)
+        ax_main.text(crt.end_idx - 5, crt.low, 'CRTL ', fontsize=6,
+                    color='#2d2d2d', va='top', ha='right', fontweight='bold', zorder=5)
+
+        # CRT Midpoint (light gray dashed)
+        ax_main.plot([crt.start_idx, crt.end_idx], [crt.mid, crt.mid],
+                    color='#808080', linewidth=1, linestyle='--', alpha=0.4, zorder=3.1)
+
+    # Plot Turtle Soup signals (if any in visible range)
+    for sig in buy_signals:
+        if 0 <= sig['idx'] < len(df_display):
+            ax_main.scatter(sig['idx'], sig['price'], marker='^', s=120,
+                          color='lime', edgecolors='black', linewidth=1, zorder=6, alpha=0.8)
+
+    for sig in sell_signals:
+        if 0 <= sig['idx'] < len(df_display):
+            ax_main.scatter(sig['idx'], sig['price'], marker='v', s=120,
+                          color='magenta', edgecolors='black', linewidth=1, zorder=6, alpha=0.8)
+
+    # Add CRT legend entries
+    crt_legend_elements = [
+        plt.Line2D([0], [0], color='#2d2d2d', linewidth=1.3, label='CRT H/L'),
+        plt.Line2D([0], [0], marker='^', color='w', markerfacecolor='lime',
+                  markersize=8, label='Turtle Soup Buy', markeredgecolor='black', linestyle='None'),
+        plt.Line2D([0], [0], marker='v', color='w', markerfacecolor='magenta',
+                  markersize=8, label='Turtle Soup Sell', markeredgecolor='black', linestyle='None')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -1017,18 +1091,19 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + MTF Trends',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + MTF Trends',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, and ICT
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, and CRT
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
     handles.extend(liquidity_legend_elements)
     handles.extend(session_legend_elements)
     handles.extend(ict_legend_elements)
-    ax_main.legend(handles=handles, loc='upper left', fontsize=6, ncol=3)
+    handles.extend(crt_legend_elements)
+    ax_main.legend(handles=handles, loc='upper left', fontsize=5.5, ncol=3)
 
     # HTF mini chart formatting
     ax_htf.set_ylabel('')
