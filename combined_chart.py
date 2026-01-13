@@ -877,28 +877,30 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     # Title
     ax_mtf.text(0.5, 0.95, 'MTF TRENDS', ha='center', va='top',
                 fontsize=9, fontweight='bold', color='white',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='#00bcd4', alpha=0.8))
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='#00bcd4', alpha=0.9))
 
     # Plot each timeframe
-    y_positions = np.linspace(0.75, 0.05, len(mtf_trends))
+    y_positions = np.linspace(0.78, 0.15, len(mtf_trends))
 
     for idx, (tf_name, is_bullish) in enumerate(mtf_trends.items()):
         y_pos = y_positions[idx]
 
-        # Timeframe label
-        ax_mtf.text(0.05, y_pos, tf_name, ha='left', va='center',
-                   fontsize=7, fontweight='bold', color='black')
+        # Timeframe label with white background box for visibility
+        ax_mtf.text(0.18, y_pos, tf_name, ha='center', va='center',
+                   fontsize=9, fontweight='bold', color='black',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9))
 
         # Trend status with color
         trend_text = "BULL" if is_bullish else "BEAR"
         trend_color = 'lime' if is_bullish else 'red'
-        ax_mtf.text(0.50, y_pos, trend_text, ha='center', va='center',
-                   fontsize=7, fontweight='bold', color=trend_color)
+        ax_mtf.text(0.58, y_pos, trend_text, ha='center', va='center',
+                   fontsize=8, fontweight='bold', color=trend_color,
+                   bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.7))
 
         # Status indicator (circle)
         status_symbol = "●"
-        ax_mtf.text(0.85, y_pos, status_symbol, ha='center', va='center',
-                   fontsize=10, color=trend_color)
+        ax_mtf.text(0.88, y_pos, status_symbol, ha='center', va='center',
+                   fontsize=12, color=trend_color, weight='bold')
 
     plt.tight_layout()
 

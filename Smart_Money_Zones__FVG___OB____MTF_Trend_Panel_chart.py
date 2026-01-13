@@ -208,28 +208,31 @@ def plot_smart_money_zones_chart(csv_file, num_candles=500):
     ax_trend.grid(True, alpha=0.3, axis='x')
 
     # Create MTF Trend Panel
-    ax_panel.text(0.5, 0.98, '⏱️ MTF TREND PANEL', ha='center', va='top',
-                 fontsize=12, fontweight='bold', color='white',
-                 bbox=dict(boxstyle='round,pad=0.5', facecolor='#00bcd4', alpha=0.8))
+    ax_panel.text(0.5, 0.95, 'MTF TREND PANEL', ha='center', va='top',
+                 fontsize=11, fontweight='bold', color='white',
+                 bbox=dict(boxstyle='round,pad=0.4', facecolor='#00bcd4', alpha=0.9))
 
-    y_positions = np.linspace(0.88, 0.05, len(mtf_trends))
+    y_positions = np.linspace(0.80, 0.15, len(mtf_trends))
 
     for idx, (tf_name, is_bullish) in enumerate(mtf_trends.items()):
         y_pos = y_positions[idx]
 
-        # Timeframe label
-        ax_panel.text(0.05, y_pos, tf_name, ha='left', va='center',
-                     fontsize=10, fontweight='bold', color='white')
+        # Timeframe label with background box
+        ax_panel.text(0.15, y_pos, tf_name, ha='center', va='center',
+                     fontsize=12, fontweight='bold', color='black',
+                     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9))
 
         # Trend status
-        trend_text = "BULLISH" if is_bullish else "BEARISH"
+        trend_text = "BULL" if is_bullish else "BEAR"
         trend_color = 'lime' if is_bullish else 'red'
-        ax_panel.text(0.40, y_pos, trend_text, ha='center', va='center',
-                     fontsize=9, fontweight='bold', color=trend_color)
+        ax_panel.text(0.55, y_pos, trend_text, ha='center', va='center',
+                     fontsize=11, fontweight='bold', color=trend_color,
+                     bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7))
 
-        # Status indicator
-        status_emoji = "🟢" if is_bullish else "🔴"
-        ax_panel.text(0.85, y_pos, status_emoji, ha='center', va='center', fontsize=14)
+        # Status indicator circle (simple colored square)
+        status_symbol = "●"
+        ax_panel.text(0.85, y_pos, status_symbol, ha='center', va='center',
+                     fontsize=16, color=trend_color, weight='bold')
 
     # Formatting
     ax_main.set_xlim(-0.5, len(df_display) - 0.5)
