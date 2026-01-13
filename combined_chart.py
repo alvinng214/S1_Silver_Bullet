@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -8,10 +8,11 @@ This script combines:
 4. Fair Value Gaps (FVG) - Demand and Supply
 5. Liquidity & Inducements (Grabs, BSL/SSL)
 6. Session Levels (Asia, London, NY, PDH/PDL)
-7. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+7. ICT Levels (Daily 50% Line + Killzone Sessions)
+8. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, and Session levels
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, and ICT levels
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -75,6 +76,13 @@ session_levels_module = importlib.util.module_from_spec(spec7)
 spec7.loader.exec_module(session_levels_module)
 detect_session_levels = session_levels_module.detect_session_levels
 detect_pdh_pdl = session_levels_module.detect_pdh_pdl
+
+# Load ICT_Customizable_50__Line___DailyAsiaLondonNew_York_HighLow___True_Day_Open.py
+spec8 = importlib.util.spec_from_file_location("ict_levels", "ICT_Customizable_50__Line___DailyAsiaLondonNew_York_HighLow___True_Day_Open.py")
+ict_levels_module = importlib.util.module_from_spec(spec8)
+spec8.loader.exec_module(ict_levels_module)
+detect_daily_levels = ict_levels_module.detect_daily_levels
+detect_killzone_sessions = ict_levels_module.detect_killzone_sessions
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -433,6 +441,32 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         pdh_pdl_levels[key] = [level for level in levels if level.end_idx >= start_idx]
         # Adjust indices for display
         for level in pdh_pdl_levels[key]:
+            level.start_idx = max(0, level.start_idx - start_idx)
+            level.end_idx = min(len(df_display), level.end_idx - start_idx)
+
+    # ========================================================================
+    # CALCULATE ICT LEVELS (Daily High/Low/50% + Killzones)
+    # ========================================================================
+    print("Calculating ICT daily levels (50% line)...")
+    daily_levels_full = detect_daily_levels(df)
+
+    print("Calculating ICT killzone sessions...")
+    killzone_levels_full = detect_killzone_sessions(df)
+
+    # Filter ICT daily levels to display range
+    daily_levels = [level for level in daily_levels_full if level.end_idx >= start_idx]
+    for level in daily_levels:
+        level.start_idx = max(0, level.start_idx - start_idx)
+        level.end_idx = min(len(df_display), level.end_idx - start_idx)
+        if level.market_open_idx >= start_idx:
+            level.market_open_idx = level.market_open_idx - start_idx
+
+    # Filter killzone levels to display range
+    killzone_levels = {}
+    for key, levels in killzone_levels_full.items():
+        killzone_levels[key] = [level for level in levels if level.end_idx >= start_idx]
+        # Adjust indices for display
+        for level in killzone_levels[key]:
             level.start_idx = max(0, level.start_idx - start_idx)
             level.end_idx = min(len(df_display), level.end_idx - start_idx)
 
@@ -811,6 +845,61 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT ICT LEVELS (Daily 50% Line + Killzone Sessions)
+    # ========================================================================
+    # Plot daily 50% levels (last 1 for clarity)
+    for daily in daily_levels[-1:]:
+        # 50% Line (cyan, most prominent)
+        ax_main.plot([daily.start_idx, daily.end_idx], [daily.mid, daily.mid],
+                    color='cyan', linewidth=1.8, linestyle=':', alpha=0.7, zorder=3.5)
+        ax_main.text(daily.end_idx - 10, daily.mid, '50% ', fontsize=7,
+                    color='cyan', va='center', ha='right', fontweight='bold', zorder=5,
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='black', alpha=0.5))
+
+        # Daily High (lighter red to avoid confusion with existing red)
+        ax_main.plot([daily.start_idx, daily.end_idx], [daily.high, daily.high],
+                    color='#ff6b6b', linewidth=1, linestyle=':', alpha=0.4, zorder=2.8)
+
+        # Daily Low (lighter red)
+        ax_main.plot([daily.start_idx, daily.end_idx], [daily.low, daily.low],
+                    color='#ff6b6b', linewidth=1, linestyle=':', alpha=0.4, zorder=2.8)
+
+    # Plot ICT killzone levels (only last 1 session of each for clarity)
+    # These are more subtle than the main session levels
+    # Asia Killzone - light blue
+    for level in killzone_levels.get('asia_high', [])[-1:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#6ba3ff', linewidth=1, linestyle='-', alpha=0.3, zorder=2.5)
+
+    for level in killzone_levels.get('asia_low', [])[-1:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#6ba3ff', linewidth=1, linestyle='-', alpha=0.3, zorder=2.5)
+
+    # London Killzone - light orange
+    for level in killzone_levels.get('london_high', [])[-1:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#ffb366', linewidth=1, linestyle='-', alpha=0.3, zorder=2.5)
+
+    for level in killzone_levels.get('london_low', [])[-1:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#ffb366', linewidth=1, linestyle='-', alpha=0.3, zorder=2.5)
+
+    # NY Killzone - light green
+    for level in killzone_levels.get('ny_high', [])[-1:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#66ffb3', linewidth=1, linestyle='-', alpha=0.3, zorder=2.5)
+
+    for level in killzone_levels.get('ny_low', [])[-1:]:
+        ax_main.plot([level.start_idx, level.end_idx], [level.price, level.price],
+                    color='#66ffb3', linewidth=1, linestyle='-', alpha=0.3, zorder=2.5)
+
+    # Add ICT levels legend entries (simpler to avoid clutter)
+    ict_legend_elements = [
+        plt.Line2D([0], [0], color='cyan', linewidth=1.8, linestyle=':', label='ICT 50% Line'),
+        plt.Line2D([0], [0], color='#6ba3ff', linewidth=1, alpha=0.3, label='ICT Killzones')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -928,16 +1017,17 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + MTF Trends',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + MTF Trends',
                      fontsize=14, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, and session levels
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, and ICT
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
     handles.extend(liquidity_legend_elements)
     handles.extend(session_legend_elements)
+    handles.extend(ict_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=6, ncol=3)
 
     # HTF mini chart formatting
