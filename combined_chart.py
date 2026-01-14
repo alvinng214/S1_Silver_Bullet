@@ -1,19 +1,20 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
 2. HTF Bias indicator (HTF candles, sweeps, and bias)
 3. Order Blocks (15min and 1H)
 4. Fair Value Gaps (FVG) - Demand and Supply
-5. Liquidity & Inducements (Grabs, BSL/SSL)
-6. Session Levels (Asia, London, NY, PDH/PDL)
+5. Liquidity & Inducements (Grabs, BSL/SSL, Big Grabs, Turtle Soups)
+6. Session Levels (Sydney, Asia, London, NY, PDH/PDL)
 7. ICT Levels (Daily 50% Line + Killzone Sessions)
 8. CRT - Candles are Ranges Theory (1H CRT levels + Turtle Soup signals)
-9. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+9. ICT Silver Bullet (FVGs during London, AM, PM sessions with target lines)
+10. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, and CRT ranges
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, and Silver Bullet FVGs
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -92,6 +93,12 @@ spec9.loader.exec_module(crt_module)
 detect_crt_ranges = crt_module.detect_crt_ranges
 detect_turtle_soup_signals = crt_module.detect_turtle_soup_signals
 filter_overlapping_crts = crt_module.filter_overlapping_crts
+
+# Load ICT_Silver_Bullet_with_signals.py
+spec10 = importlib.util.spec_from_file_location("silver_bullet", "ICT_Silver_Bullet_with_signals.py")
+silver_bullet_module = importlib.util.module_from_spec(spec10)
+spec10.loader.exec_module(silver_bullet_module)
+detect_silver_bullet_signals = silver_bullet_module.detect_silver_bullet_signals
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -537,6 +544,45 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
         sig['idx'] = sig['idx'] - start_idx
     for sig in sell_signals:
         sig['idx'] = sig['idx'] - start_idx
+
+    # ========================================================================
+    # CALCULATE ICT SILVER BULLET SIGNALS
+    # ========================================================================
+    print("Detecting ICT Silver Bullet sessions and FVGs...")
+    silver_bullet_results = detect_silver_bullet_signals(
+        df,
+        htf_minutes=15,
+        filter_by_trend=True,
+        minimum_trade_framework=0
+    )
+
+    sb_sessions_full = silver_bullet_results['sessions']
+    sb_pivot_highs = silver_bullet_results['pivot_highs']
+    sb_pivot_lows = silver_bullet_results['pivot_lows']
+
+    # Filter Silver Bullet data to display range
+    sb_sessions = []
+    for session in sb_sessions_full:
+        if session.end_idx >= start_idx:
+            # Adjust session indices for display
+            session.start_idx = max(0, session.start_idx - start_idx)
+            session.end_idx = min(len(df_display) - 1, session.end_idx - start_idx)
+
+            # Adjust FVG indices for display
+            for fvg in session.fvgs:
+                fvg.start_idx = max(0, fvg.start_idx - start_idx)
+                fvg.end_idx = min(len(df_display) - 1, fvg.end_idx - start_idx)
+
+                # Adjust target line indices
+                for target in fvg.targets:
+                    if target.source_idx >= start_idx:
+                        target.source_idx = target.source_idx - start_idx
+
+            sb_sessions.append(session)
+
+    print(f"Found {len(sb_sessions)} Silver Bullet sessions in display range")
+    total_sb_fvgs = sum(len(s.fvgs) for s in sb_sessions)
+    print(f"Total Silver Bullet FVGs: {total_sb_fvgs}")
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
@@ -1068,6 +1114,107 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT ICT SILVER BULLET SESSIONS, FVGs, AND TARGET LINES
+    # ========================================================================
+    # Plot only last 3 sessions to avoid clutter
+    sb_sessions_to_plot = sb_sessions[-3:] if len(sb_sessions) > 0 else []
+
+    # Session background colors - very light to avoid clutter
+    sb_session_colors = {
+        'LN': '#fff8dc',  # Cornsilk - very light yellow
+        'AM': '#f0f8ff',  # Alice blue - very light blue
+        'PM': '#fff0f5'   # Lavender blush - very light pink
+    }
+
+    for session in sb_sessions_to_plot:
+        # Get y-range for background
+        y_min_chart = df_display['low'].min()
+        y_max_chart = df_display['high'].max()
+
+        # Draw subtle session background (only if session has FVGs)
+        if len(session.fvgs) > 0:
+            sess_color = sb_session_colors.get(session.name, '#fafafa')
+            rect = Rectangle(
+                (session.start_idx - 0.5, y_min_chart),
+                session.end_idx - session.start_idx + 1,
+                y_max_chart - y_min_chart,
+                facecolor=sess_color,
+                alpha=0.15,
+                zorder=0.1
+            )
+            ax_main.add_patch(rect)
+
+        # Plot FVGs within this session
+        for fvg in session.fvgs:
+            # Choose color based on type and status
+            if fvg.is_bullish:
+                fvg_color = '#8b4513' if fvg.active else '#d2691e'  # Saddle brown / Chocolate
+                alpha = 0.25 if fvg.active else 0.12
+            else:
+                fvg_color = '#8b0000' if fvg.active else '#cd5c5c'  # Dark red / Indian red
+                alpha = 0.25 if fvg.active else 0.12
+
+            # Draw FVG box
+            fvg_height = abs(fvg.top - fvg.bottom)
+            # Extend to end of chart if active
+            fvg_display_end = len(df_display) - 1 if fvg.active and not fvg.broken else fvg.end_idx + 20
+
+            rect = Rectangle(
+                (fvg.start_idx - 0.5, fvg.bottom),
+                fvg_display_end - fvg.start_idx + 1,
+                fvg_height,
+                facecolor=fvg_color,
+                edgecolor=fvg_color,
+                alpha=alpha,
+                linewidth=1,
+                linestyle='-',
+                zorder=0.8
+            )
+            ax_main.add_patch(rect)
+
+            # Add small label for active FVGs only
+            if fvg.active:
+                label_x = min(fvg_display_end, len(df_display) - 1)
+                label_text = f"SB {'↑' if fvg.is_bullish else '↓'}"
+                ax_main.text(
+                    label_x - 2,
+                    (fvg.top + fvg.bottom) / 2,
+                    label_text,
+                    fontsize=6,
+                    color=fvg_color,
+                    va='center',
+                    ha='right',
+                    fontweight='bold',
+                    zorder=5,
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.5)
+                )
+
+            # Plot target lines for active FVGs (show max 2 targets)
+            if fvg.active and fvg.targets:
+                for target in fvg.targets[:2]:
+                    if not target.reached:
+                        target_color = '#556b2f' if fvg.is_bullish else '#8b0000'  # Dark olive green / Dark red
+
+                        ax_main.plot(
+                            [fvg.end_idx, len(df_display) - 1],
+                            [target.price, target.price],
+                            color=target_color,
+                            linewidth=1,
+                            linestyle=':',
+                            alpha=0.5,
+                            zorder=2.5
+                        )
+
+    # Add Silver Bullet legend entries
+    sb_legend_elements = [
+        mpatches.Patch(facecolor='#8b4513', alpha=0.25, edgecolor='#8b4513',
+                      label='SB Bull FVG'),
+        mpatches.Patch(facecolor='#8b0000', alpha=0.25, edgecolor='#8b0000',
+                      label='SB Bear FVG'),
+        plt.Line2D([0], [0], color='#556b2f', linewidth=1, linestyle=':', label='SB Targets')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -1185,11 +1332,11 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + MTF Trends',
-                     fontsize=14, fontweight='bold')
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + MTF Trends',
+                     fontsize=13, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, and CRT
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, and Silver Bullet
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
@@ -1197,6 +1344,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     handles.extend(session_legend_elements)
     handles.extend(ict_legend_elements)
     handles.extend(crt_legend_elements)
+    handles.extend(sb_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=5.5, ncol=3)
 
     # HTF mini chart formatting
