@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + Monday Range + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + Monday Range + CISD + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -13,10 +13,11 @@ This script combines:
 9. ICT Silver Bullet (FVGs during London, AM, PM sessions with target lines)
 10. Fibonacci OTE (Optimal Entry Zone with 0.50 and 0.618 levels)
 11. Monday Range (Monday High/Low/Equilibrium levels extended through week with breakouts)
-12. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+12. cd_sweep&cisd (HTF sweeps with CISD - Change in State of Delivery signals)
+13. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, Silver Bullet FVGs, Fibonacci OTE levels, and Monday Range levels
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, Silver Bullet FVGs, Fibonacci OTE levels, Monday Range levels, and CISD signals
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -114,6 +115,12 @@ monday_range_module = importlib.util.module_from_spec(spec12)
 spec12.loader.exec_module(monday_range_module)
 detect_monday_ranges = monday_range_module.detect_monday_ranges
 LevelConfig = monday_range_module.LevelConfig
+
+# Load cd_sweep&cisd_Cx.py
+spec13 = importlib.util.spec_from_file_location("cd_sweep_cisd", "cd_sweep&cisd_Cx.py")
+cd_sweep_cisd_module = importlib.util.module_from_spec(spec13)
+spec13.loader.exec_module(cd_sweep_cisd_module)
+detect_cd_sweep_cisd = cd_sweep_cisd_module.detect_cd_sweep_cisd
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -677,6 +684,45 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             mr_breakouts.append(breakout)
 
     print(f"Found {len(mondays_full)} Monday ranges, {len(mr_levels)} levels, {len(mr_breakouts)} breakouts")
+
+    # ========================================================================
+    # CALCULATE CD_SWEEP&CISD (HTF Sweeps and CISD Signals)
+    # ========================================================================
+    print("Detecting HTF sweeps and CISD signals...")
+    cisd_data = detect_cd_sweep_cisd(
+        df,
+        htf_minutes=60,  # Use 1H as HTF
+        show_htf_boxes=False,  # Don't show HTF boxes (too cluttered)
+        show_sweep_boxes=True,
+        show_cisd=True
+    )
+
+    sweep_boxes_full = cisd_data['sweep_boxes']
+    cisd_levels_full = cisd_data['cisd_levels']
+    cisd_signals_full = cisd_data['cisd_signals']
+
+    # Filter to display range
+    sweep_boxes_cisd = []
+    for box in sweep_boxes_full:
+        if box.end_idx >= start_idx:
+            box.start_idx = max(0, box.start_idx - start_idx)
+            box.end_idx = min(len(df_display) - 1, box.end_idx - start_idx)
+            sweep_boxes_cisd.append(box)
+
+    cisd_levels = []
+    for level in cisd_levels_full:
+        if level.idx >= start_idx:
+            level.idx = level.idx - start_idx
+            cisd_levels.append(level)
+
+    cisd_signals = []
+    for signal in cisd_signals_full:
+        if signal.idx >= start_idx:
+            signal.idx = signal.idx - start_idx
+            signal.cisd_start_idx = max(0, signal.cisd_start_idx - start_idx)
+            cisd_signals.append(signal)
+
+    print(f"Found {len(sweep_boxes_cisd)} sweep boxes, {len(cisd_levels)} CISD levels, {len(cisd_signals)} CISD signals")
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
@@ -1455,6 +1501,89 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT CD_SWEEP&CISD (HTF Sweeps and CISD Signals)
+    # ========================================================================
+    # Plot CISD sweep boxes (only show recent ones to avoid clutter)
+    for box in sweep_boxes_cisd[-20:]:  # Last 20 sweep boxes
+        if 0 <= box.start_idx < len(df_display) and box.end_idx < len(df_display):
+            rect = Rectangle(
+                (box.start_idx - 0.5, box.bottom),
+                box.end_idx - box.start_idx + 1,
+                box.top - box.bottom,
+                facecolor='#FFA500',  # Orange
+                edgecolor='gray',
+                linewidth=1,
+                linestyle=':',
+                alpha=0.15,
+                zorder=1.5
+            )
+            ax_main.add_patch(rect)
+
+    # Plot CISD levels (only recent ones)
+    for level in cisd_levels[-30:]:  # Last 30 CISD levels
+        if 0 <= level.idx < len(df_display):
+            color = '#2E7D32' if level.is_bullish else '#C62828'  # Dark green/red
+            ax_main.plot(
+                [level.idx, min(level.idx + 3, len(df_display) - 1)],
+                [level.price, level.price],
+                color=color,
+                linewidth=1.5,
+                linestyle=':',
+                alpha=0.6,
+                zorder=2.8
+            )
+
+    # Plot CISD signals
+    for signal in cisd_signals:
+        if 0 <= signal.idx < len(df_display):
+            # Draw connecting line from CISD level to signal
+            ax_main.plot(
+                [signal.cisd_start_idx, signal.idx],
+                [signal.cisd_price, signal.cisd_price],
+                color='#2E7D32' if signal.is_bullish else '#C62828',
+                linewidth=1,
+                alpha=0.5,
+                zorder=2.7
+            )
+
+            # Add signal marker
+            if signal.is_bullish:
+                ax_main.scatter(
+                    signal.idx,
+                    df_display.iloc[signal.idx]['low'],
+                    marker='^',
+                    s=120,
+                    color='#4CAF50',  # Light green
+                    edgecolors='black',
+                    linewidth=1,
+                    zorder=5.8,
+                    alpha=0.85
+                )
+            else:
+                ax_main.scatter(
+                    signal.idx,
+                    df_display.iloc[signal.idx]['high'],
+                    marker='v',
+                    s=120,
+                    color='#F44336',  # Light red
+                    edgecolors='black',
+                    linewidth=1,
+                    zorder=5.8,
+                    alpha=0.85
+                )
+
+    # Add cd_sweep&cisd legend entries
+    cisd_legend_elements = [
+        mpatches.Patch(facecolor='#FFA500', alpha=0.15, edgecolor='gray', linestyle=':', label='Sweep Area'),
+        plt.Line2D([0], [0], color='#2E7D32', linewidth=1.5, linestyle=':', alpha=0.6, label='Bull CISD'),
+        plt.Line2D([0], [0], color='#C62828', linewidth=1.5, linestyle=':', alpha=0.6, label='Bear CISD'),
+        plt.Line2D([0], [0], marker='^', color='w', markerfacecolor='#4CAF50',
+                  markersize=8, label='CISD+', markeredgecolor='black', linestyle='None'),
+        plt.Line2D([0], [0], marker='v', color='w', markerfacecolor='#F44336',
+                  markersize=8, label='CISD-', markeredgecolor='black', linestyle='None')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -1572,11 +1701,11 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + Monday Range + MTF',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + Monday Range + CISD + MTF',
                      fontsize=13, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, Silver Bullet, OTE, and Monday Range
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, Silver Bullet, OTE, Monday Range, and CISD
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
@@ -1587,6 +1716,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     handles.extend(sb_legend_elements)
     handles.extend(ote_legend_elements)
     handles.extend(mr_legend_elements)
+    handles.extend(cisd_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=5.5, ncol=3)
 
     # HTF mini chart formatting
