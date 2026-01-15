@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + Monday Range + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -12,10 +12,11 @@ This script combines:
 8. CRT - Candles are Ranges Theory (1H CRT levels + Turtle Soup signals)
 9. ICT Silver Bullet (FVGs during London, AM, PM sessions with target lines)
 10. Fibonacci OTE (Optimal Entry Zone with 0.50 and 0.618 levels)
-11. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+11. Monday Range (Monday High/Low/Equilibrium levels extended through week with breakouts)
+12. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, Silver Bullet FVGs, and Fibonacci OTE levels
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, Silver Bullet FVGs, Fibonacci OTE levels, and Monday Range levels
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -106,6 +107,13 @@ spec11 = importlib.util.spec_from_file_location("fib_ote", "Fibonacci_Optimal_En
 fib_ote_module = importlib.util.module_from_spec(spec11)
 spec11.loader.exec_module(fib_ote_module)
 detect_fibonacci_ote_accurate = fib_ote_module.detect_fibonacci_ote_accurate
+
+# Load Monday_Range__Lines_.py
+spec12 = importlib.util.spec_from_file_location("monday_range", "Monday_Range__Lines_.py")
+monday_range_module = importlib.util.module_from_spec(spec12)
+spec12.loader.exec_module(monday_range_module)
+detect_monday_ranges = monday_range_module.detect_monday_ranges
+LevelConfig = monday_range_module.LevelConfig
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -627,6 +635,48 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             ote_structures.append(struct)
 
     print(f"Found {len(ote_structures)} OTE structures in display range")
+
+    # ========================================================================
+    # CALCULATE MONDAY RANGE LEVELS
+    # ========================================================================
+    print("Detecting Monday Range levels...")
+    custom_levels_mr = [
+        LevelConfig(enabled=True, label='EQ', value=0.5, color='#00BFFF',
+                   line_style='dashed', line_width=1)
+    ]
+
+    monday_data = detect_monday_ranges(
+        df,
+        max_weeks=4,
+        show_mh=True,
+        show_ml=True,
+        show_mo=False,
+        show_mc=False,
+        custom_levels=custom_levels_mr,
+        extension_type='end_of_week',
+        track_breakouts=True,
+        track_reclaims=False  # Don't track reclaims to reduce clutter
+    )
+
+    mondays_full = monday_data['mondays']
+    mr_levels_full = monday_data['levels']
+    mr_breakouts_full = monday_data['breakouts']
+
+    # Filter Monday Range data to display range
+    mr_levels = []
+    for level in mr_levels_full:
+        if level.end_idx >= start_idx:
+            level.start_idx = max(0, level.start_idx - start_idx)
+            level.end_idx = min(len(df_display) - 1, level.end_idx - start_idx)
+            mr_levels.append(level)
+
+    mr_breakouts = []
+    for breakout in mr_breakouts_full:
+        if breakout.idx >= start_idx:
+            breakout.idx = breakout.idx - start_idx
+            mr_breakouts.append(breakout)
+
+    print(f"Found {len(mondays_full)} Monday ranges, {len(mr_levels)} levels, {len(mr_breakouts)} breakouts")
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
@@ -1330,6 +1380,81 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT MONDAY RANGE LEVELS
+    # ========================================================================
+    for level in mr_levels:
+        if level.end_idx < 0 or level.start_idx >= len(df_display):
+            continue
+
+        # Convert line style
+        linestyle_map = {
+            'solid': '-',
+            'dashed': '--',
+            'dotted': ':'
+        }
+        linestyle = linestyle_map.get(level.line_style, '-')
+
+        # Draw level line (subtle to avoid clutter)
+        ax_main.plot(
+            [level.start_idx, level.end_idx],
+            [level.price, level.price],
+            color=level.color,
+            linewidth=level.line_width,
+            linestyle=linestyle,
+            alpha=0.6,
+            zorder=2.2
+        )
+
+        # Add label at end (smaller to avoid clutter)
+        if level.label and level.label in ['MH', 'ML']:  # Only label high/low, not EQ
+            ax_main.text(
+                level.end_idx - 3,
+                level.price,
+                level.label,
+                fontsize=6,
+                color=level.color,
+                va='center',
+                ha='right',
+                fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6),
+                zorder=5
+            )
+
+    # Plot Monday Range breakout markers (only show a few recent ones)
+    for breakout in mr_breakouts[-10:]:  # Last 10 breakouts
+        if 0 <= breakout.idx < len(df_display):
+            if breakout.is_high_break:
+                marker = '^'
+                color = '#FFD700'  # Gold
+                size = 100
+            else:
+                marker = 'v'
+                color = '#87CEEB'  # Sky blue
+                size = 100
+
+            ax_main.scatter(
+                breakout.idx,
+                breakout.price,
+                marker=marker,
+                s=size,
+                color=color,
+                edgecolors='black',
+                linewidth=1,
+                zorder=5.5,
+                alpha=0.8
+            )
+
+    # Add Monday Range legend entries
+    mr_legend_elements = [
+        plt.Line2D([0], [0], color='#007FFF', linewidth=1.5, alpha=0.6, label='Monday H/L'),
+        plt.Line2D([0], [0], color='#00BFFF', linewidth=1.5, linestyle='--', alpha=0.6, label='Monday EQ'),
+        plt.Line2D([0], [0], marker='^', color='w', markerfacecolor='#FFD700',
+                  markersize=8, label='MH Break', markeredgecolor='black', linestyle='None'),
+        plt.Line2D([0], [0], marker='v', color='w', markerfacecolor='#87CEEB',
+                  markersize=8, label='ML Break', markeredgecolor='black', linestyle='None')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -1447,11 +1572,11 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + MTF',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + Monday Range + MTF',
                      fontsize=13, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, Silver Bullet, and OTE
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, Silver Bullet, OTE, and Monday Range
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
@@ -1461,6 +1586,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     handles.extend(crt_legend_elements)
     handles.extend(sb_legend_elements)
     handles.extend(ote_legend_elements)
+    handles.extend(mr_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=5.5, ncol=3)
 
     # HTF mini chart formatting
