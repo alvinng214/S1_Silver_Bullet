@@ -1,5 +1,5 @@
 """
-Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + MTF Trends Chart
+Combined Market Structure MTF + HTF Bias + Order Blocks + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + MTF Trends Chart
 
 This script combines:
 1. Market Structure MTF Trend indicator (multi-timeframe trend panel)
@@ -11,10 +11,11 @@ This script combines:
 7. ICT Levels (Daily 50% Line + Killzone Sessions)
 8. CRT - Candles are Ranges Theory (1H CRT levels + Turtle Soup signals)
 9. ICT Silver Bullet (FVGs during London, AM, PM sessions with target lines)
-10. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
+10. Fibonacci OTE (Optimal Entry Zone with 0.50 and 0.618 levels)
+11. Multi-Timeframe Trends Panel (5m, 15m, 1H, 4H, 1D)
 
 Display:
-- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, and Silver Bullet FVGs
+- Main chart: Candlesticks with HTF levels, sweep markers, Order Blocks, FVGs, Liquidity zones, Session levels, ICT levels, CRT ranges, Silver Bullet FVGs, and Fibonacci OTE levels
 - Top right: Mini HTF candles (1H, 4H, Daily)
 - Bottom left: Market structure trend indicators
 - Bottom right: MTF Trends Panel (Smart Money Zones)
@@ -99,6 +100,12 @@ spec10 = importlib.util.spec_from_file_location("silver_bullet", "ICT_Silver_Bul
 silver_bullet_module = importlib.util.module_from_spec(spec10)
 spec10.loader.exec_module(silver_bullet_module)
 detect_silver_bullet_signals = silver_bullet_module.detect_silver_bullet_signals
+
+# Load Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.py
+spec11 = importlib.util.spec_from_file_location("fib_ote", "Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.py")
+fib_ote_module = importlib.util.module_from_spec(spec11)
+spec11.loader.exec_module(fib_ote_module)
+detect_fibonacci_ote = fib_ote_module.detect_fibonacci_ote
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -583,6 +590,41 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     print(f"Found {len(sb_sessions)} Silver Bullet sessions in display range")
     total_sb_fvgs = sum(len(s.fvgs) for s in sb_sessions)
     print(f"Total Silver Bullet FVGs: {total_sb_fvgs}")
+
+    # ========================================================================
+    # CALCULATE FIBONACCI OTE (Optimal Entry Zone)
+    # ========================================================================
+    print("Detecting Fibonacci OTE structures...")
+    fib_ote_results = detect_fibonacci_ote(
+        df,
+        pivot_period=10,
+        fib_levels=[0.50, 0.618],
+        fib_colors=['#4CAF50', '#009688'],
+        show_bullish=True,
+        show_bearish=True,
+        swing_tracker=True
+    )
+
+    ote_structures_full = fib_ote_results['structures']
+
+    # Filter OTE structures to display range - only show last 2 structures to avoid clutter
+    ote_structures = []
+    for struct in ote_structures_full[-2:]:
+        # Check if structure is in visible range
+        if struct.swing_high.index >= start_idx or struct.swing_low.index >= start_idx:
+            # Adjust indices for display
+            struct.swing_high.index = max(0, struct.swing_high.index - start_idx)
+            struct.swing_low.index = max(0, struct.swing_low.index - start_idx)
+            struct.choch_idx = max(0, struct.choch_idx - start_idx)
+
+            # Adjust Fibonacci level indices
+            for fib_level in struct.fib_levels:
+                fib_level.start_idx = max(0, fib_level.start_idx - start_idx)
+                fib_level.end_idx = min(len(df_display) - 1, fib_level.end_idx - start_idx)
+
+            ote_structures.append(struct)
+
+    print(f"Found {len(ote_structures)} OTE structures in display range")
 
     # ========================================================================
     # CREATE FIGURE WITH SUBPLOTS
@@ -1215,6 +1257,74 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ]
 
     # ========================================================================
+    # PLOT FIBONACCI OTE (Optimal Entry Zone)
+    # ========================================================================
+    for struct in ote_structures:
+        # Skip if completely outside visible range
+        if struct.swing_high.index >= len(df_display) or struct.swing_low.index >= len(df_display):
+            continue
+
+        struct_color = '#08ec32' if struct.is_bullish else '#FF2222'
+
+        # Plot Fibonacci levels (subtle to avoid clutter)
+        for fib_level in struct.fib_levels:
+            if fib_level.end_idx < 0 or fib_level.start_idx >= len(df_display):
+                continue
+
+            fib_start = max(0, fib_level.start_idx)
+            fib_end = min(len(df_display) - 1, fib_level.end_idx)
+
+            # Draw Fibonacci level line
+            ax_main.plot(
+                [fib_start, fib_end],
+                [fib_level.price, fib_level.price],
+                color=fib_level.color,
+                linewidth=1.5,
+                linestyle='-',
+                alpha=0.5,
+                zorder=1.8
+            )
+
+            # Add small label at end
+            label_text = f'OTE {fib_level.level:.2f}'
+            ax_main.text(
+                fib_end - 3,
+                fib_level.price,
+                label_text,
+                fontsize=5,
+                color=fib_level.color,
+                va='center',
+                ha='right',
+                fontweight='bold',
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.6),
+                zorder=5
+            )
+
+        # Fill golden zone (very subtle)
+        if struct.golden_zone_top and struct.golden_zone_bottom:
+            gz_start = max(0, min(struct.swing_high.index, struct.swing_low.index))
+            gz_end = len(df_display) - 1
+
+            if 0 <= gz_start < len(df_display):
+                golden_color = '#008080' if struct.is_bullish else '#FF6B6B'
+                rect = Rectangle(
+                    (gz_start - 0.5, struct.golden_zone_bottom),
+                    gz_end - gz_start + 1,
+                    struct.golden_zone_top - struct.golden_zone_bottom,
+                    facecolor=golden_color,
+                    alpha=0.08,
+                    zorder=0.3
+                )
+                ax_main.add_patch(rect)
+
+    # Add OTE legend entries
+    ote_legend_elements = [
+        plt.Line2D([0], [0], color='#4CAF50', linewidth=1.5, alpha=0.5, label='OTE 0.50'),
+        plt.Line2D([0], [0], color='#009688', linewidth=1.5, alpha=0.5, label='OTE 0.618'),
+        mpatches.Patch(facecolor='#008080', alpha=0.08, label='OTE Golden Zone')
+    ]
+
+    # ========================================================================
     # PLOT HTF MINI CANDLES (Right side)
     # ========================================================================
     htf_candle_width = 0.6
@@ -1332,11 +1442,11 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
 
     # Main chart formatting
     ax_main.set_ylabel('Price', fontsize=12, fontweight='bold')
-    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + MTF Trends',
+    ax_main.set_title('XAUUSD - Market Structure + HTF + OB + FVG + Liquidity + Sessions + ICT + CRT + Silver Bullet + OTE + MTF',
                      fontsize=13, fontweight='bold')
     ax_main.grid(True, alpha=0.3, linestyle='--')
 
-    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, and Silver Bullet
+    # Combine legend handles from sweeps, order blocks, FVGs, liquidity, session levels, ICT, CRT, Silver Bullet, and OTE
     handles, labels = ax_main.get_legend_handles_labels()
     handles.extend(ob_legend_elements)
     handles.extend(fvg_legend_elements)
@@ -1345,6 +1455,7 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     handles.extend(ict_legend_elements)
     handles.extend(crt_legend_elements)
     handles.extend(sb_legend_elements)
+    handles.extend(ote_legend_elements)
     ax_main.legend(handles=handles, loc='upper left', fontsize=5.5, ncol=3)
 
     # HTF mini chart formatting
