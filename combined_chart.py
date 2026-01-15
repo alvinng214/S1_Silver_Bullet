@@ -105,7 +105,7 @@ detect_silver_bullet_signals = silver_bullet_module.detect_silver_bullet_signals
 spec11 = importlib.util.spec_from_file_location("fib_ote", "Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.py")
 fib_ote_module = importlib.util.module_from_spec(spec11)
 spec11.loader.exec_module(fib_ote_module)
-detect_fibonacci_ote = fib_ote_module.detect_fibonacci_ote
+detect_fibonacci_ote_accurate = fib_ote_module.detect_fibonacci_ote_accurate
 
 
 def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
@@ -595,14 +595,16 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     # CALCULATE FIBONACCI OTE (Optimal Entry Zone)
     # ========================================================================
     print("Detecting Fibonacci OTE structures...")
-    fib_ote_results = detect_fibonacci_ote(
+    fib_ote_results = detect_fibonacci_ote_accurate(
         df,
         pivot_period=10,
         fib_levels=[0.50, 0.618],
         fib_colors=['#4CAF50', '#009688'],
         show_bullish=True,
         show_bearish=True,
-        swing_tracker=True
+        swing_tracker=True,
+        show_old=False,
+        extend=True
     )
 
     ote_structures_full = fib_ote_results['structures']
@@ -611,16 +613,16 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     ote_structures = []
     for struct in ote_structures_full[-2:]:
         # Check if structure is in visible range
-        if struct.swing_high.index >= start_idx or struct.swing_low.index >= start_idx:
+        if struct.swing_high_idx >= start_idx or struct.swing_low_idx >= start_idx:
             # Adjust indices for display
-            struct.swing_high.index = max(0, struct.swing_high.index - start_idx)
-            struct.swing_low.index = max(0, struct.swing_low.index - start_idx)
+            struct.swing_high_idx = max(0, struct.swing_high_idx - start_idx)
+            struct.swing_low_idx = max(0, struct.swing_low_idx - start_idx)
             struct.choch_idx = max(0, struct.choch_idx - start_idx)
 
             # Adjust Fibonacci level indices
-            for fib_level in struct.fib_levels:
-                fib_level.start_idx = max(0, fib_level.start_idx - start_idx)
-                fib_level.end_idx = min(len(df_display) - 1, fib_level.end_idx - start_idx)
+            for fib_line in struct.fib_lines:
+                fib_line.start_idx = max(0, fib_line.start_idx - start_idx)
+                fib_line.end_idx = min(len(df_display) - 1, fib_line.end_idx - start_idx)
 
             ote_structures.append(struct)
 
@@ -1261,24 +1263,24 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
     # ========================================================================
     for struct in ote_structures:
         # Skip if completely outside visible range
-        if struct.swing_high.index >= len(df_display) or struct.swing_low.index >= len(df_display):
+        if struct.swing_high_idx >= len(df_display) or struct.swing_low_idx >= len(df_display):
             continue
 
         struct_color = '#08ec32' if struct.is_bullish else '#FF2222'
 
         # Plot Fibonacci levels (subtle to avoid clutter)
-        for fib_level in struct.fib_levels:
-            if fib_level.end_idx < 0 or fib_level.start_idx >= len(df_display):
+        for fib_line in struct.fib_lines:
+            if fib_line.end_idx < 0 or fib_line.start_idx >= len(df_display):
                 continue
 
-            fib_start = max(0, fib_level.start_idx)
-            fib_end = min(len(df_display) - 1, fib_level.end_idx)
+            fib_start = max(0, fib_line.start_idx)
+            fib_end = min(len(df_display) - 1, fib_line.end_idx)
 
             # Draw Fibonacci level line
             ax_main.plot(
                 [fib_start, fib_end],
-                [fib_level.price, fib_level.price],
-                color=fib_level.color,
+                [fib_line.price, fib_line.price],
+                color=fib_line.color,
                 linewidth=1.5,
                 linestyle='-',
                 alpha=0.5,
@@ -1286,13 +1288,13 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
             )
 
             # Add small label at end
-            label_text = f'OTE {fib_level.level:.2f}'
+            label_text = f'OTE {fib_line.level:.2f}'
             ax_main.text(
                 fib_end - 3,
-                fib_level.price,
+                fib_line.price,
                 label_text,
                 fontsize=5,
-                color=fib_level.color,
+                color=fib_line.color,
                 va='center',
                 ha='right',
                 fontweight='bold',
@@ -1300,17 +1302,20 @@ def plot_combined_chart(csv_file, num_candles=200, pivot_strength=15):
                 zorder=5
             )
 
-        # Fill golden zone (very subtle)
-        if struct.golden_zone_top and struct.golden_zone_bottom:
-            gz_start = max(0, min(struct.swing_high.index, struct.swing_low.index))
+        # Fill golden zone (very subtle) - between first two Fib levels
+        if len(struct.fib_lines) >= 2:
+            golden_zone_top = max(struct.fib_lines[0].price, struct.fib_lines[1].price)
+            golden_zone_bottom = min(struct.fib_lines[0].price, struct.fib_lines[1].price)
+
+            gz_start = max(0, min(struct.swing_high_idx, struct.swing_low_idx))
             gz_end = len(df_display) - 1
 
             if 0 <= gz_start < len(df_display):
                 golden_color = '#008080' if struct.is_bullish else '#FF6B6B'
                 rect = Rectangle(
-                    (gz_start - 0.5, struct.golden_zone_bottom),
+                    (gz_start - 0.5, golden_zone_bottom),
                     gz_end - gz_start + 1,
-                    struct.golden_zone_top - struct.golden_zone_bottom,
+                    golden_zone_top - golden_zone_bottom,
                     facecolor=golden_color,
                     alpha=0.08,
                     zorder=0.3
