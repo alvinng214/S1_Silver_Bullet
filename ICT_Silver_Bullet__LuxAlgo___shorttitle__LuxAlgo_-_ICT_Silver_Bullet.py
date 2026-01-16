@@ -1,581 +1,465 @@
 """
 ICT Silver Bullet [LuxAlgo] - Python Translation
-Detects FVGs during Silver Bullet sessions with strict filtering and target lines from swings
 
-Features:
-- Silver Bullet sessions: London (3-4 AM), AM (10-11 AM), PM (2-3 PM) NY time
-- FVG detection with activation logic (requires retrace)
-- Multiple filtering modes: All FVG, Trend-based, Strict, Super-Strict
-- Market Structure Shift (MSS) detection
-- Target lines from swing pivots
-- Session-specific pivot tracking
+Replicates the LuxAlgo Pine Script logic for ICT Silver Bullet sessions by:
+- Tracking Silver Bullet sessions (LN/AM/PM) in America/New_York time.
+- Building swing pivots, zigzag points, and market structure shifts (MSS).
+- Creating and managing FVG boxes with strict/super-strict activation rules.
+- Generating target lines from session pivots with hit detection.
+- Preserving per-bar state for downstream plotting or backtesting.
 
 License: CC BY-NC-SA 4.0
 Original: LuxAlgo
 """
 
-import pandas as pd
-import numpy as np
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
+
+import numpy as np
+import pandas as pd
 
 
 @dataclass
 class Pivot:
-    """Swing pivot (high or low)"""
     index: int
     price: float
-    broken: bool = False
 
 
 @dataclass
-class FVG:
-    """Fair Value Gap with activation logic"""
-    start_idx: int
-    end_idx: int
+class ZigZagState:
+    d: List[int]
+    x: List[int]
+    y: List[float]
+
+
+@dataclass
+class FVGBox:
+    left: int
+    right: int
     top: float
     bottom: float
-    is_bullish: bool
-    active: bool = False  # Activated by retrace
-    current: bool = True  # Still in current session
-    session_name: str = ""  # LN, AM, PM, or GN
+    active: bool
+    current: bool
+    bullish: bool
+    visible: bool = True
 
 
 @dataclass
-class TargetLine:
-    """Support/Resistance target line from pivot"""
-    price: float
-    source_idx: int
-    is_resistance: bool  # True for highs, False for lows
-    active: bool = True
-    reached: bool = False
-
-
-@dataclass
-class SessionPivots:
-    """Track pivots for a specific session"""
-    swing_highs: List[Pivot] = field(default_factory=list)
-    swing_lows: List[Pivot] = field(default_factory=list)
-    min_pivot: float = 1e10
-    max_pivot: float = 0.0
-    target_highs: List[TargetLine] = field(default_factory=list)
-    target_lows: List[TargetLine] = field(default_factory=list)
-
-
-@dataclass
-class ZigZagPoint:
-    """Point in zig-zag trend detection"""
+class ActLine:
     index: int
     price: float
-    direction: int  # 1 for high, -1 for low
+    active: bool = True
 
 
-def is_in_silver_bullet_session(dt: datetime, session_name: str = None) -> Tuple[bool, str]:
-    """
-    Check if datetime is in a Silver Bullet session (NY time)
+@dataclass
+class SessionState:
+    swing_highs: List[Pivot] = field(default_factory=list)
+    swing_lows: List[Pivot] = field(default_factory=list)
+    min_pivot: float = 1e7
+    max_pivot: float = 0.0
+    target_highs: List[ActLine] = field(default_factory=list)
+    target_lows: List[ActLine] = field(default_factory=list)
 
-    Returns: (is_in_session, session_name)
-    """
-    hour = dt.hour
 
-    # London Open: 3-4 AM NY
-    in_ln = hour == 3
-    # AM Session: 10-11 AM NY
-    in_am = hour == 10
-    # PM Session: 2-3 PM NY (14:00-15:00)
-    in_pm = hour == 14
+@dataclass
+class BarState:
+    index: int
+    in_sb: bool
+    in_ln: bool
+    in_am: bool
+    in_pm: bool
+    start_sb: bool
+    end_sb: bool
+    trend: int
+    target_hit_high: bool
+    target_hit_low: bool
 
-    if session_name:
-        if session_name == 'LN':
-            return in_ln, 'LN'
-        elif session_name == 'AM':
-            return in_am, 'AM'
-        elif session_name == 'PM':
-            return in_pm, 'PM'
 
-    if in_ln:
-        return True, 'LN'
-    elif in_am:
-        return True, 'AM'
-    elif in_pm:
-        return True, 'PM'
+@dataclass
+class TargetHit:
+    index: int
+    direction: str
+    price: float
+
+
+NY_TZ = ZoneInfo("America/New_York")
+
+
+def _ny_time(ts: pd.Timestamp) -> datetime:
+    if ts.tzinfo is None:
+        return ts.tz_localize(NY_TZ).to_pydatetime()
+    return ts.tz_convert(NY_TZ).to_pydatetime()
+
+
+def _session_flags(ts: pd.Timestamp) -> Tuple[bool, bool, bool, bool]:
+    dt = _ny_time(ts)
+    in_ln = dt.hour == 3
+    in_am = dt.hour == 10
+    in_pm = dt.hour == 14
+    in_sb = in_ln or in_am or in_pm
+    return in_sb, in_ln, in_am, in_pm
+
+
+def _pivot_at(values: pd.Series, index: int, left: int, right: int, is_high: bool) -> Optional[float]:
+    pivot_idx = index - right
+    if pivot_idx - left < 0 or pivot_idx + right >= len(values):
+        return None
+    center = float(values.iloc[pivot_idx])
+    before = values.iloc[pivot_idx - left : pivot_idx]
+    after = values.iloc[pivot_idx + 1 : pivot_idx + right + 1]
+    if is_high:
+        if (before >= center).any() or (after >= center).any():
+            return None
     else:
-        return False, None
+        if (before <= center).any() or (after <= center).any():
+            return None
+    return center
 
 
-def detect_pivot_highs_lows(df: pd.DataFrame, left: int = 5, right: int = 1) -> Tuple[List[dict], List[dict]]:
-    """
-    Detect pivot highs and lows
-
-    Args:
-        df: DataFrame with OHLC data
-        left: Bars to the left for pivot detection
-        right: Bars to the right for pivot detection
-
-    Returns: (pivot_highs, pivot_lows) as lists of {'index': int, 'price': float}
-    """
-    pivot_highs = []
-    pivot_lows = []
-
-    for i in range(left, len(df) - right):
-        # Check pivot high
-        is_pivot_high = True
-        center_high = df.iloc[i]['high']
-
-        for j in range(i - left, i):
-            if df.iloc[j]['high'] >= center_high:
-                is_pivot_high = False
-                break
-
-        if is_pivot_high:
-            for j in range(i + 1, i + right + 1):
-                if df.iloc[j]['high'] >= center_high:
-                    is_pivot_high = False
-                    break
-
-        if is_pivot_high:
-            pivot_highs.append({'index': i, 'price': center_high})
-
-        # Check pivot low
-        is_pivot_low = True
-        center_low = df.iloc[i]['low']
-
-        for j in range(i - left, i):
-            if df.iloc[j]['low'] <= center_low:
-                is_pivot_low = False
-                break
-
-        if is_pivot_low:
-            for j in range(i + 1, i + right + 1):
-                if df.iloc[j]['low'] <= center_low:
-                    is_pivot_low = False
-                    break
-
-        if is_pivot_low:
-            pivot_lows.append({'index': i, 'price': center_low})
-
-    return pivot_highs, pivot_lows
+def _in_out(zz: ZigZagState, direction: int, x2: int, y2: float) -> None:
+    zz.d.insert(0, direction)
+    zz.x.insert(0, x2)
+    zz.y.insert(0, y2)
+    zz.d.pop()
+    zz.x.pop()
+    zz.y.pop()
 
 
-def detect_market_structure_trend(df: pd.DataFrame, zigzag_points: List[ZigZagPoint]) -> int:
-    """
-    Detect market structure trend based on zig-zag points
-
-    Returns: 1 for bullish, -1 for bearish, 0 for neutral
-    """
-    if len(zigzag_points) < 3:
-        return 0
-
-    # Find last high and low in zig-zag
-    last_high_idx = -1
-    last_low_idx = -1
-
-    for i in range(len(zigzag_points) - 1, -1, -1):
-        if zigzag_points[i].direction == 1 and last_high_idx == -1:
-            last_high_idx = i
-        if zigzag_points[i].direction == -1 and last_low_idx == -1:
-            last_low_idx = i
-
-        if last_high_idx != -1 and last_low_idx != -1:
-            break
-
-    if last_high_idx == -1 or last_low_idx == -1:
-        return 0
-
-    current_price = df.iloc[-1]['close']
-    last_high = zigzag_points[last_high_idx].price
-    last_low = zigzag_points[last_low_idx].price
-
-    # MSS Bullish: price breaks above last swing high
-    if current_price > last_high:
+def _set_trend(zz: ZigZagState, trend: int, close: float) -> int:
+    if len(zz.d) < 3:
+        return trend
+    i_h = 2 if zz.d[2] == 1 else 1
+    i_l = 2 if zz.d[2] == -1 else 1
+    y_h = zz.y[i_h]
+    y_l = zz.y[i_l]
+    if y_h is not None and not np.isnan(y_h) and close > y_h and zz.d[i_h] == 1 and trend < 1:
         return 1
-    # MSS Bearish: price breaks below last swing low
-    elif current_price < last_low:
+    if y_l is not None and not np.isnan(y_l) and close < y_l and zz.d[i_l] == -1 and trend > -1:
         return -1
-    else:
-        return 0
+    return trend
 
 
-def detect_luxalgo_silver_bullet(
+def _minimum_trade_framework(symbol_type: str, min_tick: float) -> float:
+    if symbol_type == "forex":
+        return min_tick * 15 * 10
+    if symbol_type in {"index", "futures"}:
+        return min_tick * 40
+    return 0.0
+
+
+def calculate_luxalgo_silver_bullet(
     df: pd.DataFrame,
+    *,
     pivot_left: int = 5,
     pivot_right: int = 1,
-    filter_mode: str = 'Super-Strict',
+    filter_mode: str = "Super-Strict",
     extend_fvg: bool = True,
-    target_mode: str = 'previous session (similar)',
-    keep_lines: bool = True
-) -> dict:
-    """
-    Detect ICT Silver Bullet signals with LuxAlgo logic
+    target_mode: str = "previous session (similar)",
+    keep_lines: bool = True,
+    symbol_type: str = "forex",
+    min_tick: float = 0.0001,
+) -> Dict[str, object]:
+    """Replicate LuxAlgo ICT Silver Bullet logic.
 
     Args:
-        df: DataFrame with OHLC data and datetime index
-        pivot_left: Left period for pivot detection
-        pivot_right: Right period for pivot detection
-        filter_mode: 'All FVG', 'Only FVG in the same direction of trend', 'Strict', 'Super-Strict'
-        extend_fvg: Extend FVG boxes when active
-        target_mode: 'previous session (any)' or 'previous session (similar)'
-        keep_lines: Keep target lines between sessions (only in strict modes)
-
-    Returns: Dictionary with sessions, FVGs, targets, and pivots
+        df: DataFrame with columns open, high, low, close and datetime index.
+        pivot_left: Left bars for pivots.
+        pivot_right: Right bars for pivots (Pine uses 1).
+        filter_mode: 'All FVG', 'Only FVG in the same direction of trend', 'Strict', 'Super-Strict'.
+        extend_fvg: Extend FVG boxes while active.
+        target_mode: 'previous session (any)' or 'previous session (similar)'.
+        keep_lines: Keep target lines across sessions when strict.
+        symbol_type: 'forex', 'index', 'futures', etc.
+        min_tick: Minimum tick size for the instrument.
     """
-    print(f"Detecting LuxAlgo Silver Bullet with filter_mode={filter_mode}")
+    max_size = 250
+    zz = ZigZagState(d=[0] * max_size, x=[0] * max_size, y=[np.nan] * max_size)
+    trend = 0
 
-    # Detect all pivot highs and lows first
-    pivot_highs, pivot_lows = detect_pivot_highs_lows(df, left=pivot_left, right=pivot_right)
+    use_trend = filter_mode != "All FVG"
+    strict = filter_mode == "Strict"
+    super_strict = filter_mode == "Super-Strict"
+    strict_mode = strict or super_strict
 
-    print(f"Detected {len(pivot_highs)} pivot highs and {len(pivot_lows)} pivot lows")
-
-    # Initialize session trackers
-    sessions = {
-        'GN': SessionPivots(),  # General session (all Silver Bullet times combined)
-        'LN': SessionPivots(),  # London Open
-        'AM': SessionPivots(),  # AM Session
-        'PM': SessionPivots()   # PM Session
+    sessions: Dict[str, SessionState] = {
+        "GN": SessionState(),
+        "LN": SessionState(),
+        "AM": SessionState(),
+        "PM": SessionState(),
     }
 
-    # Track zig-zag for market structure
-    zigzag_points: List[ZigZagPoint] = []
-    last_direction = 0  # 1 for high, -1 for low
+    fvg_bull: List[FVGBox] = []
+    fvg_bear: List[FVGBox] = []
+    highs: List[ActLine] = []
+    lows: List[ActLine] = []
+    target_hits: List[TargetHit] = []
+    bar_states: List[BarState] = []
 
-    # Track FVGs
-    bullish_fvgs: List[FVG] = []
-    bearish_fvgs: List[FVG] = []
+    min_val = 1e7
+    max_val = 0.0
+    hilo_high = 0.0
+    hilo_low = 1e7
 
-    # Track session state
-    current_session = None
-    session_start_idx = None
-    session_high = -float('inf')
-    session_low = float('inf')
+    last_in_sb = False
+    last_in_ln = False
+    last_in_am = False
+    last_in_pm = False
 
-    # Market structure trend
-    trend = 0  # 1 bullish, -1 bearish, 0 neutral
-
-    # Filter settings
-    use_trend = filter_mode != 'All FVG'
-    strict = filter_mode == 'Strict'
-    super_strict = filter_mode == 'Super-Strict'
-    is_strict_mode = strict or super_strict
-
-    # Process each bar
     for i in range(len(df)):
-        dt = df.index[i]
-        row = df.iloc[i]
+        high = float(df["high"].iloc[i])
+        low = float(df["low"].iloc[i])
+        close = float(df["close"].iloc[i])
+        ts = df.index[i]
 
-        in_session, sess_name = is_in_silver_bullet_session(dt)
+        in_sb, in_ln, in_am, in_pm = _session_flags(ts)
+        start_sb = in_sb and not last_in_sb
+        end_sb = (not in_sb) and last_in_sb
+        start_ln = in_ln and not last_in_ln
+        start_am = in_am and not last_in_am
+        start_pm = in_pm and not last_in_pm
+        end_ln = (not in_ln) and last_in_ln
+        end_am = (not in_am) and last_in_am
+        end_pm = (not in_pm) and last_in_pm
 
-        # Track session starts and ends
-        was_in_session = current_session is not None
-        session_started = in_session and not was_in_session
-        session_ended = not in_session and was_in_session
+        trend = _set_trend(zz, trend, close)
 
-        if session_started:
-            current_session = sess_name
-            session_start_idx = i
-            session_high = row['high']
-            session_low = row['low']
+        target_hit_high = False
+        target_hit_low = False
 
-            # Clear target lines if not keeping them
-            if is_strict_mode and not keep_lines:
-                for sess in sessions.values():
-                    sess.target_highs.clear()
-                    sess.target_lows.clear()
+        if len(highs) > 200:
+            highs.pop(0)
+        if len(lows) > 200:
+            lows.pop(0)
 
-        # Update session high/low
-        if in_session:
-            session_high = max(session_high, row['high'])
-            session_low = min(session_low, row['low'])
+        for line in highs:
+            if line.active and high > line.price:
+                line.active = False
+                target_hit_high = True
+                target_hits.append(TargetHit(i, "high", line.price))
+        for line in lows:
+            if line.active and low < line.price:
+                line.active = False
+                target_hit_low = True
+                target_hits.append(TargetHit(i, "low", line.price))
 
-        # Update zig-zag with pivots
-        for ph in [p for p in pivot_highs if p['index'] == i]:
-            if last_direction != 1:
-                zigzag_points.append(ZigZagPoint(i, ph['price'], 1))
-                last_direction = 1
+        if start_sb:
+            min_val = 1e7
+            max_val = 0.0
+            for box in fvg_bull:
+                if i > box.right - 1 and box.current:
+                    box.current = False
+            for box in fvg_bear:
+                if i > box.right - 1 and box.current:
+                    box.current = False
+
+        if in_sb:
+            if use_trend:
+                if trend == 1 and i >= 2 and low > float(df["high"].iloc[i - 2]):
+                    top = low
+                    bottom = float(df["high"].iloc[i - 2])
+                    fvg_bull.insert(0, FVGBox(i - 2, i, top, bottom, active=False, current=True, bullish=True))
+                elif trend != 1 and i >= 2 and high < float(df["low"].iloc[i - 2]):
+                    top = float(df["low"].iloc[i - 2])
+                    bottom = high
+                    fvg_bear.insert(0, FVGBox(i - 2, i, top, bottom, active=False, current=True, bullish=False))
             else:
-                # Update last high if higher
-                if len(zigzag_points) > 0 and ph['price'] > zigzag_points[-1].price:
-                    zigzag_points[-1] = ZigZagPoint(i, ph['price'], 1)
+                if i >= 2 and low > float(df["high"].iloc[i - 2]):
+                    top = low
+                    bottom = float(df["high"].iloc[i - 2])
+                    fvg_bull.insert(0, FVGBox(i, i, top, bottom, active=False, current=True, bullish=True))
+                if i >= 2 and high < float(df["low"].iloc[i - 2]):
+                    top = float(df["low"].iloc[i - 2])
+                    bottom = high
+                    fvg_bear.insert(0, FVGBox(i, i, top, bottom, active=False, current=True, bullish=False))
 
-        for pl in [p for p in pivot_lows if p['index'] == i]:
-            if last_direction != -1:
-                zigzag_points.append(ZigZagPoint(i, pl['price'], -1))
-                last_direction = -1
-            else:
-                # Update last low if lower
-                if len(zigzag_points) > 0 and pl['price'] < zigzag_points[-1].price:
-                    zigzag_points[-1] = ZigZagPoint(i, pl['price'], -1)
-
-        # Update market structure trend
-        if len(zigzag_points) >= 2:
-            # Find relevant highs and lows
-            high_idx = -1
-            low_idx = -1
-
-            for j in range(len(zigzag_points) - 1, max(-1, len(zigzag_points) - 4), -1):
-                if zigzag_points[j].direction == 1 and high_idx == -1:
-                    high_idx = j
-                if zigzag_points[j].direction == -1 and low_idx == -1:
-                    low_idx = j
-
-            if high_idx != -1 and row['close'] > zigzag_points[high_idx].price and trend < 1:
-                trend = 1  # MSS Bullish
-            elif low_idx != -1 and row['close'] < zigzag_points[low_idx].price and trend > -1:
-                trend = -1  # MSS Bearish
-
-        # Detect FVGs during Silver Bullet sessions
-        if in_session and i >= 2:
-            # Bullish FVG: current low > high[2]
-            if row['low'] > df.iloc[i-2]['high']:
-                # Check trend filter
-                create_fvg = True
-                if use_trend and trend != 1:
-                    create_fvg = False
-
-                if create_fvg:
-                    fvg = FVG(
-                        start_idx=i-2,
-                        end_idx=i,
-                        top=row['low'],
-                        bottom=df.iloc[i-2]['high'],
-                        is_bullish=True,
-                        active=False,
-                        current=True,
-                        session_name=sess_name
-                    )
-                    bullish_fvgs.append(fvg)
-
-            # Bearish FVG: current high < low[2]
-            if row['high'] < df.iloc[i-2]['low']:
-                # Check trend filter
-                create_fvg = True
-                if use_trend and trend != -1:
-                    create_fvg = False
-
-                if create_fvg:
-                    fvg = FVG(
-                        start_idx=i-2,
-                        end_idx=i,
-                        top=df.iloc[i-2]['low'],
-                        bottom=row['high'],
-                        is_bullish=False,
-                        active=False,
-                        current=True,
-                        session_name=sess_name
-                    )
-                    bearish_fvgs.append(fvg)
-
-        # Update FVG activation status
-        for fvg in bullish_fvgs:
-            if not fvg.current:
+        for box in fvg_bull:
+            if i - box.left >= 1000:
                 continue
+            if box.current:
+                if in_sb:
+                    if close < box.bottom:
+                        if super_strict:
+                            box.current = False
+                            box.visible = False
+                            box.right = box.left
+                        if strict_mode:
+                            box.active = False
+                    else:
+                        if extend_fvg and box.active:
+                            box.right = i
+                    if not box.active:
+                        if low < box.top and close > box.bottom:
+                            box.active = True
+                            if extend_fvg:
+                                box.right = i
+                if end_sb:
+                    if box.active:
+                        if strict and close < box.bottom:
+                            box.active = False
+                        if super_strict and close < box.top:
+                            box.active = False
+                    if not box.active:
+                        box.visible = False
+                        box.right = box.left
+                    if box.active:
+                        min_val = min(min_val, box.bottom + _minimum_trade_framework(symbol_type, min_tick))
+                        if extend_fvg:
+                            box.right = i
+                if last_in_sb and not in_sb:
+                    box.active = False
 
-            # Check if price retraced into FVG to activate it
-            if not fvg.active:
-                if row['low'] < fvg.top and row['close'] > fvg.bottom:
-                    fvg.active = True
-                    if extend_fvg:
-                        fvg.end_idx = i
-
-            # Extend FVG if active
-            if fvg.active and extend_fvg and in_session:
-                fvg.end_idx = i
-
-            # Check for invalidation (close below bottom)
-            if in_session and row['close'] < fvg.bottom:
-                if super_strict:
-                    fvg.current = False
-                if is_strict_mode:
-                    fvg.active = False
-
-        for fvg in bearish_fvgs:
-            if not fvg.current:
+        for box in fvg_bear:
+            if i - box.left >= 1000:
                 continue
+            if box.current:
+                if in_sb:
+                    if close > box.top:
+                        if super_strict:
+                            box.current = False
+                            box.visible = False
+                            box.right = box.left
+                        if strict_mode:
+                            box.active = False
+                    else:
+                        if extend_fvg and box.active:
+                            box.right = i
+                    if not box.active:
+                        if high > box.bottom and close < box.top:
+                            box.active = True
+                            if extend_fvg:
+                                box.right = i
+                if end_sb:
+                    if box.active:
+                        if strict and close > box.top:
+                            box.active = False
+                        if super_strict and close > box.bottom:
+                            box.active = False
+                    if not box.active:
+                        box.visible = False
+                        box.right = box.left
+                    if box.active:
+                        max_val = max(max_val, box.top - _minimum_trade_framework(symbol_type, min_tick))
+                        if extend_fvg:
+                            box.right = i
+                if last_in_sb and not in_sb:
+                    box.active = False
 
-            # Check if price retraced into FVG to activate it
-            if not fvg.active:
-                if row['high'] > fvg.bottom and row['close'] < fvg.top:
-                    fvg.active = True
-                    if extend_fvg:
-                        fvg.end_idx = i
+        ph = _pivot_at(df["high"], i, pivot_left, pivot_right, is_high=True)
+        pl = _pivot_at(df["low"], i, pivot_left, pivot_right, is_high=False)
 
-            # Extend FVG if active
-            if fvg.active and extend_fvg and in_session:
-                fvg.end_idx = i
+        def apply_swings(session_key: str, start: bool, end: bool, active: bool) -> None:
+            nonlocal trend
+            nonlocal hilo_high, hilo_low
+            state = sessions[session_key]
+            if start:
+                hilo_high = 0.0
+                hilo_low = 1e7
+                if strict_mode:
+                    should_clear = not keep_lines
+                else:
+                    should_clear = True
+                if should_clear:
+                    highs.clear()
+                    lows.clear()
+                    state.target_highs.clear()
+                    state.target_lows.clear()
+                    for other in sessions.values():
+                        other.target_highs.clear()
+                        other.target_lows.clear()
+                state.min_pivot = 1e7
+                state.max_pivot = 0.0
+            if active:
+                hilo_high = max(hilo_high, high)
+                hilo_low = min(hilo_low, low)
+            if ph is not None:
+                state.max_pivot = max(state.max_pivot, ph)
+                state.swing_highs = [p for p in state.swing_highs if ph < p.price]
+                state.swing_highs.insert(0, Pivot(i - 1, ph))
+                if session_key in {"GN", "LN"}:
+                    dir0 = zz.d[0]
+                    y1 = zz.y[0]
+                    y2 = float(df["high"].iloc[i - 1])
+                    if dir0 < 1:
+                        _in_out(zz, 1, i - 1, y2)
+                    else:
+                        if dir0 == 1 and ph > y1:
+                            zz.x[0] = i - 1
+                            zz.y[0] = y2
+            if pl is not None:
+                state.min_pivot = min(state.min_pivot, pl)
+                state.swing_lows = [p for p in state.swing_lows if pl > p.price]
+                state.swing_lows.insert(0, Pivot(i - 1, pl))
+                if session_key in {"GN", "LN"}:
+                    dir0 = zz.d[0]
+                    y1 = zz.y[0]
+                    y2 = float(df["low"].iloc[i - 1])
+                    if dir0 > -1:
+                        _in_out(zz, -1, i - 1, y2)
+                    else:
+                        if dir0 == -1 and pl < y1:
+                            zz.x[0] = i - 1
+                            zz.y[0] = y2
 
-            # Check for invalidation (close above top)
-            if in_session and row['close'] > fvg.top:
-                if super_strict:
-                    fvg.current = False
-                if is_strict_mode:
-                    fvg.active = False
+            i_h = 2 if zz.d[2] == 1 else 1
+            i_l = 2 if zz.d[2] == -1 else 1
+            y_h = zz.y[i_h]
+            y_l = zz.y[i_l]
+            if y_h is not None and not np.isnan(y_h) and close > y_h and zz.d[i_h] == 1 and trend < 1:
+                trend = 1
+            if y_l is not None and not np.isnan(y_l) and close < y_l and zz.d[i_l] == -1 and trend > -1:
+                trend = -1
 
-        # Add session pivots
-        for ph in [p for p in pivot_highs if p['index'] == i]:
-            pivot = Pivot(index=i, price=ph['price'])
+            if end:
+                for pivot in state.swing_highs:
+                    if pivot.price > (min_val if strict_mode else hilo_high):
+                        state.target_highs.insert(0, ActLine(pivot.index, pivot.price, True))
+                        highs.insert(0, ActLine(i, pivot.price, True))
+                for pivot in state.swing_lows:
+                    if pivot.price < (max_val if strict_mode else hilo_low):
+                        state.target_lows.insert(0, ActLine(pivot.index, pivot.price, True))
+                        lows.insert(0, ActLine(i, pivot.price, True))
+                state.swing_highs.clear()
+                state.swing_lows.clear()
+                state.min_pivot = 1e7
+                state.max_pivot = 0.0
 
-            if in_session:
-                # Add to current session
-                if sess_name == 'LN':
-                    sessions['LN'].swing_highs.append(pivot)
-                    sessions['LN'].max_pivot = max(sessions['LN'].max_pivot, ph['price'])
-                elif sess_name == 'AM':
-                    sessions['AM'].swing_highs.append(pivot)
-                    sessions['AM'].max_pivot = max(sessions['AM'].max_pivot, ph['price'])
-                elif sess_name == 'PM':
-                    sessions['PM'].swing_highs.append(pivot)
-                    sessions['PM'].max_pivot = max(sessions['PM'].max_pivot, ph['price'])
+        if target_mode == "previous session (any)":
+            apply_swings("GN", start_sb, end_sb, in_sb)
+        else:
+            apply_swings("LN", start_ln, end_ln, in_ln)
+            apply_swings("AM", start_am, end_am, in_am)
+            apply_swings("PM", start_pm, end_pm, in_pm)
 
-                # Also add to general session
-                sessions['GN'].swing_highs.append(pivot)
-                sessions['GN'].max_pivot = max(sessions['GN'].max_pivot, ph['price'])
+        bar_states.append(
+            BarState(
+                index=i,
+                in_sb=in_sb,
+                in_ln=in_ln,
+                in_am=in_am,
+                in_pm=in_pm,
+                start_sb=start_sb,
+                end_sb=end_sb,
+                trend=trend,
+                target_hit_high=target_hit_high,
+                target_hit_low=target_hit_low,
+            )
+        )
 
-        for pl in [p for p in pivot_lows if p['index'] == i]:
-            pivot = Pivot(index=i, price=pl['price'])
-
-            if in_session:
-                # Add to current session
-                if sess_name == 'LN':
-                    sessions['LN'].swing_lows.append(pivot)
-                    sessions['LN'].min_pivot = min(sessions['LN'].min_pivot, pl['price'])
-                elif sess_name == 'AM':
-                    sessions['AM'].swing_lows.append(pivot)
-                    sessions['AM'].min_pivot = min(sessions['AM'].min_pivot, pl['price'])
-                elif sess_name == 'PM':
-                    sessions['PM'].swing_lows.append(pivot)
-                    sessions['PM'].min_pivot = min(sessions['PM'].min_pivot, pl['price'])
-
-                # Also add to general session
-                sessions['GN'].swing_lows.append(pivot)
-                sessions['GN'].min_pivot = min(sessions['GN'].min_pivot, pl['price'])
-
-        # Handle session end
-        if session_ended:
-            # Determine which session data to use
-            if target_mode == 'previous session (similar)':
-                sess_key = current_session  # Use session-specific pivots
-            else:
-                sess_key = 'GN'  # Use all sessions combined
-
-            sess_data = sessions[sess_key]
-
-            # Create target lines from swing highs (resistance)
-            for swing in sess_data.swing_highs:
-                # Filter: only create target if pivot is above session high (strict modes)
-                threshold = session_low if is_strict_mode else session_high
-
-                if swing.price > threshold:
-                    target = TargetLine(
-                        price=swing.price,
-                        source_idx=swing.index,
-                        is_resistance=True,
-                        active=True,
-                        reached=False
-                    )
-                    sess_data.target_highs.append(target)
-
-            # Create target lines from swing lows (support)
-            for swing in sess_data.swing_lows:
-                # Filter: only create target if pivot is below session low (strict modes)
-                threshold = session_high if is_strict_mode else session_low
-
-                if swing.price < threshold:
-                    target = TargetLine(
-                        price=swing.price,
-                        source_idx=swing.index,
-                        is_resistance=False,
-                        active=True,
-                        reached=False
-                    )
-                    sess_data.target_lows.append(target)
-
-            # Clear session pivots for next session
-            sess_data.swing_highs.clear()
-            sess_data.swing_lows.clear()
-            sess_data.min_pivot = 1e10
-            sess_data.max_pivot = 0.0
-
-            # Mark FVGs as no longer current
-            for fvg in bullish_fvgs + bearish_fvgs:
-                if fvg.current:
-                    # Validate at end of session
-                    if strict and fvg.is_bullish and row['close'] < fvg.bottom:
-                        fvg.active = False
-                    if super_strict and fvg.is_bullish and row['close'] < fvg.top:
-                        fvg.active = False
-                    if strict and not fvg.is_bullish and row['close'] > fvg.top:
-                        fvg.active = False
-                    if super_strict and not fvg.is_bullish and row['close'] > fvg.bottom:
-                        fvg.active = False
-
-                    # Make inactive FVGs invisible
-                    if not fvg.active:
-                        fvg.current = False
-
-                    fvg.current = False
-
-            current_session = None
-
-        # Update target line status
-        for sess in sessions.values():
-            for target in sess.target_highs:
-                if target.active and row['high'] > target.price:
-                    target.active = False
-                    target.reached = True
-
-            for target in sess.target_lows:
-                if target.active and row['low'] < target.price:
-                    target.active = False
-                    target.reached = True
-
-    # Filter to active FVGs only
-    active_bull_fvgs = [fvg for fvg in bullish_fvgs if fvg.active]
-    active_bear_fvgs = [fvg for fvg in bearish_fvgs if fvg.active]
-
-    print(f"Total FVGs: {len(bullish_fvgs)} bullish, {len(bearish_fvgs)} bearish")
-    print(f"Active FVGs: {len(active_bull_fvgs)} bullish, {len(active_bear_fvgs)} bearish")
-
-    # Collect all target lines
-    all_targets = []
-    for sess in sessions.values():
-        all_targets.extend(sess.target_highs)
-        all_targets.extend(sess.target_lows)
-
-    active_targets = [t for t in all_targets if t.active]
-
-    print(f"Active target lines: {len(active_targets)}")
+        last_in_sb = in_sb
+        last_in_ln = in_ln
+        last_in_am = in_am
+        last_in_pm = in_pm
 
     return {
-        'bullish_fvgs': bullish_fvgs,
-        'bearish_fvgs': bearish_fvgs,
-        'active_bull_fvgs': active_bull_fvgs,
-        'active_bear_fvgs': active_bear_fvgs,
-        'sessions': sessions,
-        'all_targets': all_targets,
-        'active_targets': active_targets,
-        'pivot_highs': pivot_highs,
-        'pivot_lows': pivot_lows,
-        'zigzag_points': zigzag_points
+        "fvg_bull": fvg_bull,
+        "fvg_bear": fvg_bear,
+        "sessions": sessions,
+        "targets_active_highs": highs,
+        "targets_active_lows": lows,
+        "target_hits": target_hits,
+        "bar_states": bar_states,
     }
-
-
-if __name__ == "__main__":
-    # Test with sample data
-    df = pd.read_csv("PEPPERSTONE_XAUUSD, 5.csv")
-    df['datetime'] = pd.to_datetime(df['time'])
-    df = df.set_index('datetime').sort_index()
-
-    results = detect_luxalgo_silver_bullet(
-        df,
-        pivot_left=5,
-        pivot_right=1,
-        filter_mode='Super-Strict',
-        extend_fvg=True
-    )
-
-    print(f"\nResults:")
-    print(f"  Total bullish FVGs: {len(results['bullish_fvgs'])}")
-    print(f"  Total bearish FVGs: {len(results['bearish_fvgs'])}")
-    print(f"  Active bullish FVGs: {len(results['active_bull_fvgs'])}")
-    print(f"  Active bearish FVGs: {len(results['active_bear_fvgs'])}")
-    print(f"  Active targets: {len(results['active_targets'])}")

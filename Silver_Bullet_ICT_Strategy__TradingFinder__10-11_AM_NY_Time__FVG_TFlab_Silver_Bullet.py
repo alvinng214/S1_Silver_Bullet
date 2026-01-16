@@ -2,470 +2,476 @@
 Silver Bullet ICT Strategy [TradingFinder] 10-11 AM NY Time +FVG
 TFlab Silver Bullet - Python Translation
 
-Strategy:
-1. Opening Range: 9:00-10:00 AM NY time - track high and low
-2. Trading Time: 10:00-11:00 AM NY time
-3. Break Detection: High or low break during trading time
-4. CISD (Change in State of Delivery): Level from recent opposite candle
-5. Order Blocks: Demand/Supply zones
-6. FVGs: Fair Value Gaps for entry confirmation
-
-License: MPL 2.0
-Original: TFlab
+This module mirrors the Pine Script logic by:
+- Tracking the New York opening range (09:00-10:00) highs/lows.
+- Tracking the New York trading window (10:00-11:00) for breaks.
+- Detecting FVGs with optional width filtering.
+- Building CISD levels and trigger signals with TradingFinder-style logic.
 """
 
-import pandas as pd
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict
+
 import numpy as np
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
-from datetime import datetime, timedelta
+import pandas as pd
 
 
 @dataclass
-class Session:
-    """Opening range session data"""
-    start_idx: int
-    end_idx: int
-    high: float
-    low: float
-    start_time: datetime
+class FVGDetection:
+    demand_condition: pd.Series
+    demand_distal: pd.Series
+    demand_proximal: pd.Series
+    demand_bar: pd.Series
+    supply_condition: pd.Series
+    supply_distal: pd.Series
+    supply_proximal: pd.Series
+    supply_bar: pd.Series
 
 
 @dataclass
-class OrderBlock:
-    """Order Block (Demand/Supply zone)"""
-    start_idx: int
-    end_idx: int
-    top: float
-    bottom: float
-    is_demand: bool  # True for demand, False for supply
-    mitigated: bool = False
-    created_at: int = 0
+class CISDOutputs:
+    bull_trigger: pd.Series
+    bear_trigger: pd.Series
+    fvg_bull_trigger: pd.Series
+    fvg_bear_trigger: pd.Series
+    bull_fvg_bar: pd.Series
+    bear_fvg_bar: pd.Series
+    bull_fvg_distal: pd.Series
+    bear_fvg_distal: pd.Series
+    bull_fvg_proximal: pd.Series
+    bear_fvg_proximal: pd.Series
+    bull_ob_index: pd.Series
+    bear_ob_index: pd.Series
+    cisd_high_level: pd.Series
+    cisd_low_level: pd.Series
+    cisd_high_index: pd.Series
+    cisd_low_index: pd.Series
 
 
 @dataclass
-class FVG:
-    """Fair Value Gap"""
-    start_idx: int
-    end_idx: int
-    top: float
-    bottom: float
-    is_bullish: bool
-    mitigated: bool = False
+class SessionLevels:
+    or_high: pd.Series
+    or_low: pd.Series
+    or_start_time: pd.Series
+    or_range: pd.Series
+    trading_range: pd.Series
+    high_break: pd.Series
+    low_break: pd.Series
 
 
-@dataclass
-class CISDLevel:
-    """Change in State of Delivery Level"""
-    price: float
-    index: int
-    is_bearish: bool  # True for bearish CISD (resistance), False for bullish (support)
-    triggered: bool = False
-    trigger_idx: Optional[int] = None
+def _atr(df: pd.DataFrame, length: int = 55) -> pd.Series:
+    tr = np.maximum(
+        df["high"] - df["low"],
+        np.maximum(
+            (df["high"] - df["close"].shift(1)).abs(),
+            (df["low"] - df["close"].shift(1)).abs(),
+        ),
+    )
+    return tr.rolling(length).mean()
 
 
-@dataclass
-class SilverBulletSignal:
-    """Complete Silver Bullet setup"""
-    session: Session
-    high_break: bool
-    low_break: bool
-    cisd_level: Optional[CISDLevel]
-    order_block: Optional[OrderBlock]
-    fvg: Optional[FVG]
-    signal_type: str  # 'BULL' or 'BEAR'
+def _session_mask(index: pd.DatetimeIndex, session: str, tz: str) -> pd.Series:
+    start_str, end_str = session.split("-")
+    start_hour = int(start_str[:2])
+    start_min = int(start_str[2:])
+    end_hour = int(end_str[:2])
+    end_min = int(end_str[2:])
+    local = index.tz_convert(tz) if index.tzinfo else index.tz_localize(tz)
+    times = local.time
+    start = pd.Timestamp(year=2000, month=1, day=1, hour=start_hour, minute=start_min).time()
+    end = pd.Timestamp(year=2000, month=1, day=1, hour=end_hour, minute=end_min).time()
+    mask = (times >= start) & (times <= end)
+    return pd.Series(mask.astype(int), index=index)
 
 
-def is_in_ny_opening_range(dt: datetime) -> bool:
-    """Check if time is in NY opening range (9-10 AM)"""
-    return dt.hour == 9
+def _low_high_session_detector(df: pd.DataFrame, on_session: pd.Series) -> SessionLevels:
+    high_series = pd.Series(np.nan, index=df.index)
+    low_series = pd.Series(np.nan, index=df.index)
+    time_series = pd.Series(np.nan, index=df.index)
 
-
-def is_in_ny_trading_time(dt: datetime) -> bool:
-    """Check if time is in NY trading time (10-11 AM)"""
-    return dt.hour == 10
-
-
-def detect_fvg_simple(df: pd.DataFrame, start_idx: int, end_idx: int) -> Tuple[List[FVG], List[FVG]]:
-    """
-    Detect Fair Value Gaps in a range
-
-    Returns: (bullish_fvgs, bearish_fvgs)
-    """
-    bullish_fvgs = []
-    bearish_fvgs = []
-
-    for i in range(start_idx + 2, end_idx):
-        if i >= len(df):
-            break
-
-        # Bullish FVG: current low > high[2]
-        if df.iloc[i]['low'] > df.iloc[i-2]['high']:
-            fvg = FVG(
-                start_idx=i-2,
-                end_idx=i,
-                top=df.iloc[i]['low'],
-                bottom=df.iloc[i-2]['high'],
-                is_bullish=True,
-                mitigated=False
-            )
-            bullish_fvgs.append(fvg)
-
-        # Bearish FVG: current high < low[2]
-        if df.iloc[i]['high'] < df.iloc[i-2]['low']:
-            fvg = FVG(
-                start_idx=i-2,
-                end_idx=i,
-                top=df.iloc[i-2]['low'],
-                bottom=df.iloc[i]['high'],
-                is_bullish=False,
-                mitigated=False
-            )
-            bearish_fvgs.append(fvg)
-
-    return bullish_fvgs, bearish_fvgs
-
-
-def detect_cisd_level(df: pd.DataFrame, break_idx: int, is_high_break: bool, bar_back_check: int = 5) -> Optional[CISDLevel]:
-    """
-    Detect CISD (Change in State of Delivery) level
-
-    For high break: Look back for bearish candle's open
-    For low break: Look back for bullish candle's open
-    """
-    if break_idx < bar_back_check:
-        return None
-
-    for i in range(1, bar_back_check + 1):
-        idx = break_idx - i
-        if idx < 0:
-            continue
-
-        body = df.iloc[idx]['close'] - df.iloc[idx]['open']
-
-        # High break → look for bearish candle (body < 0)
-        if is_high_break and body < 0:
-            # Use open of this or previous bearish candle (minimum)
-            if i > 1 and idx > 0:
-                body_prev = df.iloc[idx-1]['close'] - df.iloc[idx-1]['open']
-                if body_prev < 0:
-                    price = min(df.iloc[idx]['open'], df.iloc[idx-1]['open'])
-                    source_idx = idx if df.iloc[idx]['open'] <= df.iloc[idx-1]['open'] else idx - 1
-                else:
-                    price = df.iloc[idx]['open']
-                    source_idx = idx
-            else:
-                price = df.iloc[idx]['open']
-                source_idx = idx
-
-            return CISDLevel(
-                price=price,
-                index=source_idx,
-                is_bearish=True,
-                triggered=False
-            )
-
-        # Low break → look for bullish candle (body > 0)
-        if not is_high_break and body > 0:
-            # Use open of this or previous bullish candle (maximum)
-            if i > 1 and idx > 0:
-                body_prev = df.iloc[idx-1]['close'] - df.iloc[idx-1]['open']
-                if body_prev > 0:
-                    price = max(df.iloc[idx]['open'], df.iloc[idx-1]['open'])
-                    source_idx = idx if df.iloc[idx]['open'] >= df.iloc[idx-1]['open'] else idx - 1
-                else:
-                    price = df.iloc[idx]['open']
-                    source_idx = idx
-            else:
-                price = df.iloc[idx]['open']
-                source_idx = idx
-
-            return CISDLevel(
-                price=price,
-                index=source_idx,
-                is_bearish=False,
-                triggered=False
-            )
-
-    return None
-
-
-def detect_order_block_simple(df: pd.DataFrame, cisd_level: CISDLevel, trading_start: int) -> Optional[OrderBlock]:
-    """
-    Simplified order block detection around CISD level
-
-    For bearish: Use high of the candle at/near CISD
-    For bullish: Use low of the candle at/near CISD
-    """
-    if cisd_level is None:
-        return None
-
-    idx = cisd_level.index
-    if idx >= len(df):
-        return None
-
-    # Bearish Order Block (Supply)
-    if cisd_level.is_bearish:
-        # Find the high and create supply zone
-        high = df.iloc[idx]['high']
-        low = df.iloc[idx]['low']
-
-        return OrderBlock(
-            start_idx=idx,
-            end_idx=idx + 60,  # Extend for 60 bars
-            top=high,
-            bottom=cisd_level.price,  # CISD price to high
-            is_demand=False,
-            mitigated=False,
-            created_at=trading_start
-        )
-
-    # Bullish Order Block (Demand)
-    else:
-        # Find the low and create demand zone
-        high = df.iloc[idx]['high']
-        low = df.iloc[idx]['low']
-
-        return OrderBlock(
-            start_idx=idx,
-            end_idx=idx + 60,  # Extend for 60 bars
-            top=cisd_level.price,  # CISD price to low
-            bottom=low,
-            is_demand=True,
-            mitigated=False,
-            created_at=trading_start
-        )
-
-
-def detect_tradingfinder_silver_bullet(
-    df: pd.DataFrame,
-    bar_back_check: int = 5,
-    show_order_blocks: bool = True,
-    show_fvgs: bool = True
-) -> dict:
-    """
-    Detect TradingFinder Silver Bullet setups for 10-11 AM NY Time
-
-    Args:
-        df: DataFrame with OHLC data and datetime index
-        bar_back_check: Bars to look back for CISD level
-        show_order_blocks: Include order blocks in results
-        show_fvgs: Include FVGs in results
-
-    Returns: Dictionary with sessions, signals, order blocks, FVGs, and CISD levels
-    """
-    print(f"Detecting TradingFinder Silver Bullet (10-11 AM NY Time)")
-
-    sessions = []
-    signals = []
-    all_order_blocks = []
-    all_fvgs = []
-    all_cisd_levels = []
-
-    # Track current session
-    current_session = None
-    session_start_idx = None
-    session_high = -float('inf')
-    session_low = float('inf')
-
-    # Track trading time
-    in_trading_time = False
-    trading_start_idx = None
-    high_break = False
-    low_break = False
-    high_break_idx = None
-    low_break_idx = None
+    current_high = 0.0
+    current_low = 0.0
+    current_time = np.nan
 
     for i in range(len(df)):
-        dt = df.index[i]
-        row = df.iloc[i]
+        prior_session = on_session.iloc[i - 1] if i > 0 else 0
+        session_now = on_session.iloc[i]
 
-        in_opening = is_in_ny_opening_range(dt)
-        in_trading = is_in_ny_trading_time(dt)
+        if prior_session == 0 and session_now == 1:
+            current_time = df.index[i].value
+            current_high = df["high"].iloc[i]
+            current_low = df["low"].iloc[i]
+        elif prior_session == 1 or session_now == 1:
+            current_high = max(current_high, df["high"].iloc[i])
+            current_low = min(current_low, df["low"].iloc[i])
 
-        # === OPENING RANGE (9-10 AM) ===
-        if in_opening:
-            if current_session is None:
-                # Start new session
-                current_session = Session(
-                    start_idx=i,
-                    end_idx=i,
-                    high=row['high'],
-                    low=row['low'],
-                    start_time=dt
-                )
-                session_start_idx = i
-                session_high = row['high']
-                session_low = row['low']
-            else:
-                # Update session high/low
-                session_high = max(session_high, row['high'])
-                session_low = min(session_low, row['low'])
-                current_session.end_idx = i
-                current_session.high = session_high
-                current_session.low = session_low
+        high_series.iloc[i] = current_high
+        low_series.iloc[i] = current_low
+        time_series.iloc[i] = current_time
 
-        # === TRADING TIME (10-11 AM) ===
-        if in_trading and current_session is not None:
-            if not in_trading_time:
-                # Start trading time
-                in_trading_time = True
-                trading_start_idx = i
-                high_break = False
-                low_break = False
-                high_break_idx = None
-                low_break_idx = None
+    return SessionLevels(
+        or_high=high_series,
+        or_low=low_series,
+        or_start_time=time_series,
+        or_range=on_session.copy(),
+        trading_range=pd.Series(np.nan, index=df.index),
+        high_break=pd.Series(False, index=df.index),
+        low_break=pd.Series(False, index=df.index),
+    )
 
-            # Detect high break
-            if not high_break and row['high'] > current_session.high:
-                high_break = True
-                high_break_idx = i
 
-            # Detect low break
-            if not low_break and row['low'] < current_session.low:
-                low_break = True
-                low_break_idx = i
+def _fvg_detector(
+    df: pd.DataFrame,
+    filter_on: bool,
+    filter_type: str,
+) -> FVGDetection:
+    atr = _atr(df) if filter_on else None
+    multipliers = {
+        "Very Aggressive": 0.0,
+        "Aggressive": 0.5,
+        "Defensive": 0.7,
+        "Very Defensive": 1.0,
+    }
+    multiplier = multipliers.get(filter_type, 0.7)
 
-        # === END OF TRADING TIME ===
-        if not in_trading and not in_opening and in_trading_time:
-            # Trading time ended, process the setup
-            in_trading_time = False
+    demand_condition = pd.Series(False, index=df.index)
+    supply_condition = pd.Series(False, index=df.index)
+    demand_distal = pd.Series(np.nan, index=df.index)
+    demand_proximal = pd.Series(np.nan, index=df.index)
+    supply_distal = pd.Series(np.nan, index=df.index)
+    supply_proximal = pd.Series(np.nan, index=df.index)
+    demand_bar = pd.Series(0, index=df.index)
+    supply_bar = pd.Series(0, index=df.index)
 
-            if current_session is not None:
-                sessions.append(current_session)
+    for i in range(2, len(df)):
+        high_2 = df["high"].iloc[i - 2]
+        low_2 = df["low"].iloc[i - 2]
+        high = df["high"].iloc[i]
+        low = df["low"].iloc[i]
+        if low > high_2:
+            width = low - high_2
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                    continue
+            demand_condition.iloc[i] = True
+            demand_distal.iloc[i] = high_2
+            demand_proximal.iloc[i] = low
+            demand_bar.iloc[i] = i
+        elif high < low_2:
+            width = low_2 - high
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                    continue
+            supply_condition.iloc[i] = True
+            supply_distal.iloc[i] = low_2
+            supply_proximal.iloc[i] = high
+            supply_bar.iloc[i] = i
 
-                # Determine signal type
-                cisd_level = None
-                order_block = None
-                fvg_list = []
+    return FVGDetection(
+        demand_condition=demand_condition,
+        demand_distal=demand_distal,
+        demand_proximal=demand_proximal,
+        demand_bar=demand_bar,
+        supply_condition=supply_condition,
+        supply_distal=supply_distal,
+        supply_proximal=supply_proximal,
+        supply_bar=supply_bar,
+    )
 
-                if high_break and not low_break:
-                    # Bearish setup: High broke, look for sell
-                    cisd_level = detect_cisd_level(df, high_break_idx, is_high_break=True, bar_back_check=bar_back_check)
 
-                    if cisd_level:
-                        all_cisd_levels.append(cisd_level)
+def _cisd_level_detector(
+    df: pd.DataFrame,
+    *,
+    cond_high: pd.Series,
+    cond_low: pd.Series,
+    trading_range: pd.Series,
+    fvg_detection: FVGDetection,
+    bar_back_check: int,
+    cisd_valid: int,
+) -> CISDOutputs:
+    body = df["close"] - df["open"]
 
-                        # Detect order block
-                        if show_order_blocks:
-                            order_block = detect_order_block_simple(df, cisd_level, trading_start_idx)
-                            if order_block:
-                                all_order_blocks.append(order_block)
+    bull_trigger = pd.Series(False, index=df.index)
+    bear_trigger = pd.Series(False, index=df.index)
+    fvg_bull_trigger = pd.Series(False, index=df.index)
+    fvg_bear_trigger = pd.Series(False, index=df.index)
+    bull_fvg_bar = pd.Series(0, index=df.index)
+    bear_fvg_bar = pd.Series(0, index=df.index)
+    bull_fvg_distal = pd.Series(0.0, index=df.index)
+    bear_fvg_distal = pd.Series(0.0, index=df.index)
+    bull_fvg_proximal = pd.Series(0.0, index=df.index)
+    bear_fvg_proximal = pd.Series(0.0, index=df.index)
+    bull_ob_index = pd.Series(np.nan, index=df.index)
+    bear_ob_index = pd.Series(np.nan, index=df.index)
+    cisd_high_level = pd.Series(np.nan, index=df.index)
+    cisd_low_level = pd.Series(np.nan, index=df.index)
+    cisd_high_index = pd.Series(np.nan, index=df.index)
+    cisd_low_index = pd.Series(np.nan, index=df.index)
 
-                        # Detect FVGs during trading time
-                        if show_fvgs and trading_start_idx:
-                            _, bearish_fvgs = detect_fvg_simple(df, trading_start_idx, i)
-                            fvg_list = bearish_fvgs
-                            all_fvgs.extend(bearish_fvgs)
+    permit_h_reset = True
+    permit_l_reset = True
+    prev_permit_h_reset = True
+    prev_permit_l_reset = True
 
-                    signal = SilverBulletSignal(
-                        session=current_session,
-                        high_break=True,
-                        low_break=False,
-                        cisd_level=cisd_level,
-                        order_block=order_block,
-                        fvg=fvg_list[0] if len(fvg_list) > 0 else None,
-                        signal_type='BEAR'
-                    )
-                    signals.append(signal)
+    fvg_bear_d: list[float] = []
+    fvg_bear_p: list[float] = []
+    fvg_bear_i: list[int] = []
 
-                elif low_break and not high_break:
-                    # Bullish setup: Low broke, look for buy
-                    cisd_level = detect_cisd_level(df, low_break_idx, is_high_break=False, bar_back_check=bar_back_check)
+    fvg_bull_d: list[float] = []
+    fvg_bull_p: list[float] = []
+    fvg_bull_i: list[int] = []
 
-                    if cisd_level:
-                        all_cisd_levels.append(cisd_level)
+    high_ob = None
+    low_ob = None
+    bear_i = None
+    bull_i = None
 
-                        # Detect order block
-                        if show_order_blocks:
-                            order_block = detect_order_block_simple(df, cisd_level, trading_start_idx)
-                            if order_block:
-                                all_order_blocks.append(order_block)
+    bear_fvg_idx = 0
+    bull_fvg_idx = 0
+    bear_fvg_d = 0.0
+    bear_fvg_p = 0.0
+    bull_fvg_d = 0.0
+    bull_fvg_p = 0.0
 
-                        # Detect FVGs during trading time
-                        if show_fvgs and trading_start_idx:
-                            bullish_fvgs, _ = detect_fvg_simple(df, trading_start_idx, i)
-                            fvg_list = bullish_fvgs
-                            all_fvgs.extend(bullish_fvgs)
+    current_cisd_high = np.nan
+    current_cisd_low = np.nan
+    current_cisd_high_idx = np.nan
+    current_cisd_low_idx = np.nan
 
-                    signal = SilverBulletSignal(
-                        session=current_session,
-                        high_break=False,
-                        low_break=True,
-                        cisd_level=cisd_level,
-                        order_block=order_block,
-                        fvg=fvg_list[0] if len(fvg_list) > 0 else None,
-                        signal_type='BULL'
-                    )
-                    signals.append(signal)
+    for i in range(len(df)):
+        if i >= 2 and trading_range.iloc[i - 1] == 0 and trading_range.iloc[i - 2] == 1:
+            bear_fvg_idx = 0
+            bear_fvg_d = 0.0
+            bear_fvg_p = 0.0
+            bull_fvg_idx = 0
+            bull_fvg_d = 0.0
+            bull_fvg_p = 0.0
+            high_ob = None
+            low_ob = None
+            bear_i = None
+            bull_i = None
+            fvg_bear_d.clear()
+            fvg_bear_p.clear()
+            fvg_bear_i.clear()
+            fvg_bull_d.clear()
+            fvg_bull_p.clear()
+            fvg_bull_i.clear()
+            current_cisd_high = np.nan
+            current_cisd_low = np.nan
+            current_cisd_high_idx = np.nan
+            current_cisd_low_idx = np.nan
 
-            current_session = None
+        if i > 0 and trading_range.iloc[i - 1] == 0 and trading_range.iloc[i] == 1:
+            high_ob = df["high"].iloc[i]
+            bear_i = i
+            low_ob = df["low"].iloc[i]
+            bull_i = i
 
-        # Check CISD level triggers
-        for cisd in all_cisd_levels:
-            if not cisd.triggered:
-                # Bearish CISD: triggered when close <= level
-                if cisd.is_bearish and row['close'] <= cisd.price:
-                    cisd.triggered = True
-                    cisd.trigger_idx = i
-                # Bullish CISD: triggered when close >= level
-                elif not cisd.is_bearish and row['close'] >= cisd.price:
-                    cisd.triggered = True
-                    cisd.trigger_idx = i
+        if i > 0 and trading_range.iloc[i - 1] == 1:
+            if high_ob is not None and df["high"].iloc[i] > high_ob:
+                high_ob = df["high"].iloc[i]
+                bear_i = i
+            if low_ob is not None and df["low"].iloc[i] < low_ob:
+                low_ob = df["low"].iloc[i]
+                bull_i = i
 
-        # Check order block mitigation
-        for ob in all_order_blocks:
-            if not ob.mitigated and i > ob.created_at:
-                # Demand OB: mitigated if price goes below bottom
-                if ob.is_demand and row['low'] < ob.bottom:
-                    ob.mitigated = True
-                # Supply OB: mitigated if price goes above top
-                elif not ob.is_demand and row['high'] > ob.top:
-                    ob.mitigated = True
+        if cond_high.iloc[i]:
+            permit_h_set = True
+            for j in range(1, bar_back_check + 1):
+                idx = i - j
+                if idx < 0 or not permit_h_set:
+                    continue
+                if body.iloc[idx] < 0:
+                    permit_h_reset = True
+                    if bar_back_check > 1 and j > 1:
+                        open_1 = df["open"].iloc[i - j + 1]
+                        open_2 = df["open"].iloc[i - j + 2]
+                        current_cisd_high = min(open_1, open_2)
+                        current_cisd_high_idx = i - j + (2 if open_2 < open_1 else 1)
+                    else:
+                        current_cisd_high = df["open"].iloc[i]
+                        current_cisd_high_idx = i
+                    permit_h_set = False
 
-        # Check FVG mitigation
-        for fvg in all_fvgs:
-            if not fvg.mitigated and i > fvg.end_idx:
-                # Bullish FVG: mitigated if price goes below bottom
-                if fvg.is_bullish and row['low'] < fvg.bottom:
-                    fvg.mitigated = True
-                # Bearish FVG: mitigated if price goes above top
-                elif not fvg.is_bullish and row['high'] > fvg.top:
-                    fvg.mitigated = True
+        if cond_low.iloc[i]:
+            permit_l_set = True
+            for j in range(1, bar_back_check + 1):
+                idx = i - j
+                if idx < 0 or not permit_l_set:
+                    continue
+                if body.iloc[idx] > 0:
+                    permit_l_reset = True
+                    if bar_back_check > 1 and j > 1:
+                        open_1 = df["open"].iloc[i - j + 1]
+                        open_2 = df["open"].iloc[i - j + 2]
+                        current_cisd_low = max(open_1, open_2)
+                        current_cisd_low_idx = i - j + (2 if open_2 > open_1 else 1)
+                    else:
+                        current_cisd_low = df["open"].iloc[i]
+                        current_cisd_low_idx = i
+                    permit_l_set = False
 
-    print(f"Detected {len(sessions)} opening range sessions")
-    print(f"Generated {len(signals)} Silver Bullet signals")
-    print(f"  - Bullish: {len([s for s in signals if s.signal_type == 'BULL'])}")
-    print(f"  - Bearish: {len([s for s in signals if s.signal_type == 'BEAR'])}")
-    print(f"Order Blocks: {len(all_order_blocks)}")
-    print(f"FVGs: {len(all_fvgs)}")
-    print(f"CISD Levels: {len(all_cisd_levels)}")
+        cisd_high_level.iloc[i] = current_cisd_high
+        cisd_low_level.iloc[i] = current_cisd_low
+        cisd_high_index.iloc[i] = current_cisd_high_idx
+        cisd_low_index.iloc[i] = current_cisd_low_idx
+
+        if permit_h_reset and trading_range.iloc[i] == 1:
+            if fvg_detection.supply_condition.iloc[i]:
+                fvg_bear_i.append(int(fvg_detection.supply_bar.iloc[i]))
+                fvg_bear_d.append(float(fvg_detection.supply_distal.iloc[i]))
+                fvg_bear_p.append(float(fvg_detection.supply_proximal.iloc[i]))
+            if fvg_bear_i:
+                if df["high"].iloc[i] > fvg_bear_p[-1]:
+                    fvg_bear_i.pop()
+                    fvg_bear_d.pop()
+                    fvg_bear_p.pop()
+
+            if not pd.isna(current_cisd_high) and i - current_cisd_high_idx <= cisd_valid:
+                if df["close"].iloc[i] <= current_cisd_high:
+                    permit_h_reset = False
+
+        if permit_l_reset and trading_range.iloc[i] == 1:
+            if fvg_detection.demand_condition.iloc[i]:
+                fvg_bull_i.append(int(fvg_detection.demand_bar.iloc[i]))
+                fvg_bull_d.append(float(fvg_detection.demand_distal.iloc[i]))
+                fvg_bull_p.append(float(fvg_detection.demand_proximal.iloc[i]))
+            if fvg_bull_i:
+                if df["low"].iloc[i] < fvg_bull_p[-1]:
+                    fvg_bull_i.pop()
+                    fvg_bull_d.pop()
+                    fvg_bull_p.pop()
+
+            if not pd.isna(current_cisd_low) and i - current_cisd_low_idx <= cisd_valid:
+                if df["close"].iloc[i] >= current_cisd_low:
+                    permit_l_reset = False
+
+        if trading_range.iloc[i] == 1:
+            if fvg_bull_i:
+                bull_fvg_idx = fvg_bull_i[-1]
+                bull_fvg_d = fvg_bull_d[-1]
+                bull_fvg_p = fvg_bull_p[-1]
+            if fvg_bear_i:
+                bear_fvg_idx = fvg_bear_i[-1]
+                bear_fvg_d = fvg_bear_d[-1]
+                bear_fvg_p = fvg_bear_p[-1]
+
+        if prev_permit_h_reset and not permit_h_reset:
+            bear_trigger.iloc[i] = True
+            if fvg_bear_i and bear_fvg_idx != 0:
+                fvg_bear_trigger.iloc[i] = True
+        if prev_permit_l_reset and not permit_l_reset:
+            bull_trigger.iloc[i] = True
+            if fvg_bull_i and bull_fvg_idx != 0:
+                fvg_bull_trigger.iloc[i] = True
+
+        prev_permit_h_reset = permit_h_reset
+        prev_permit_l_reset = permit_l_reset
+
+        bull_fvg_bar.iloc[i] = bull_fvg_idx
+        bear_fvg_bar.iloc[i] = bear_fvg_idx
+        bull_fvg_distal.iloc[i] = bull_fvg_d
+        bear_fvg_distal.iloc[i] = bear_fvg_d
+        bull_fvg_proximal.iloc[i] = bull_fvg_p
+        bear_fvg_proximal.iloc[i] = bear_fvg_p
+        bull_ob_index.iloc[i] = bull_i if bull_i is not None else np.nan
+        bear_ob_index.iloc[i] = bear_i if bear_i is not None else np.nan
+
+    return CISDOutputs(
+        bull_trigger=bull_trigger,
+        bear_trigger=bear_trigger,
+        fvg_bull_trigger=fvg_bull_trigger,
+        fvg_bear_trigger=fvg_bear_trigger,
+        bull_fvg_bar=bull_fvg_bar,
+        bear_fvg_bar=bear_fvg_bar,
+        bull_fvg_distal=bull_fvg_distal,
+        bear_fvg_distal=bear_fvg_distal,
+        bull_fvg_proximal=bull_fvg_proximal,
+        bear_fvg_proximal=bear_fvg_proximal,
+        bull_ob_index=bull_ob_index,
+        bear_ob_index=bear_ob_index,
+        cisd_high_level=cisd_high_level,
+        cisd_low_level=cisd_low_level,
+        cisd_high_index=cisd_high_index,
+        cisd_low_index=cisd_low_index,
+    )
+
+
+def calculate_tradingfinder_silver_bullet(
+    df: pd.DataFrame,
+    *,
+    fvg_filter: bool = False,
+    fvg_filter_type: str = "Defensive",
+    bar_back_check: int = 120,
+    cisd_valid: int = 90,
+    ny_or_session: str = "0900-1000",
+    ny_trading_session: str = "1000-1100",
+) -> Dict[str, object]:
+    """Run the TradingFinder Silver Bullet calculation."""
+    or_range = _session_mask(df.index, ny_or_session, "America/New_York")
+    trading_range = _session_mask(df.index, ny_trading_session, "America/New_York")
+
+    session_levels = _low_high_session_detector(df, or_range)
+    session_levels.trading_range = trading_range
+
+    high_break = pd.Series(False, index=df.index)
+    low_break = pd.Series(False, index=df.index)
+
+    for i in range(len(df)):
+        if trading_range.iloc[i] == 0:
+            high_break.iloc[i] = False
+            low_break.iloc[i] = False
+            continue
+
+        if i > 0 and high_break.iloc[i - 1]:
+            high_break.iloc[i] = True
+        elif df["high"].iloc[i] > session_levels.or_high.iloc[i]:
+            high_break.iloc[i] = True
+
+        if i > 0 and low_break.iloc[i - 1]:
+            low_break.iloc[i] = True
+        elif df["low"].iloc[i] < session_levels.or_low.iloc[i]:
+            low_break.iloc[i] = True
+
+    session_levels.high_break = high_break
+    session_levels.low_break = low_break
+
+    cond_high = (trading_range == 1) & high_break & (~high_break.shift(1).fillna(False)) & (~low_break)
+    cond_low = (trading_range == 1) & low_break & (~low_break.shift(1).fillna(False)) & (~high_break)
+
+    fvg_detection = _fvg_detector(df, fvg_filter, fvg_filter_type)
+
+    cisd_outputs = _cisd_level_detector(
+        df,
+        cond_high=cond_high,
+        cond_low=cond_low,
+        trading_range=trading_range,
+        fvg_detection=fvg_detection,
+        bar_back_check=bar_back_check,
+        cisd_valid=cisd_valid,
+    )
 
     return {
-        'sessions': sessions,
-        'signals': signals,
-        'order_blocks': all_order_blocks,
-        'fvgs': all_fvgs,
-        'cisd_levels': all_cisd_levels
+        "session_levels": session_levels,
+        "fvg_detection": fvg_detection,
+        "cisd": cisd_outputs,
     }
 
 
 if __name__ == "__main__":
-    # Test with sample data
-    df = pd.read_csv("PEPPERSTONE_XAUUSD, 5.csv")
-    df['datetime'] = pd.to_datetime(df['time'])
-    df = df.set_index('datetime').sort_index()
+    data = pd.read_csv("PEPPERSTONE_XAUUSD, 5.csv")
+    data["datetime"] = pd.to_datetime(data["time"])
+    data = data.set_index("datetime").sort_index()
 
-    results = detect_tradingfinder_silver_bullet(
-        df,
-        bar_back_check=5,
-        show_order_blocks=True,
-        show_fvgs=True
+    results = calculate_tradingfinder_silver_bullet(
+        data,
+        fvg_filter=False,
+        fvg_filter_type="Defensive",
+        bar_back_check=120,
+        cisd_valid=90,
     )
 
-    print(f"\nResults Summary:")
-    print(f"  Sessions: {len(results['sessions'])}")
-    print(f"  Signals: {len(results['signals'])}")
-    print(f"  Order Blocks: {len(results['order_blocks'])}")
-    print(f"  FVGs: {len(results['fvgs'])}")
-    print(f"  CISD Levels: {len(results['cisd_levels'])}")
+    print("Results summary:")
+    print(results["session_levels"].high_break.tail())

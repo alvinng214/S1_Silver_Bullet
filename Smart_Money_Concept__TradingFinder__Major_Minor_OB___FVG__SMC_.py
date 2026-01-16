@@ -1,212 +1,442 @@
+"""Smart Money Concept [TradingFinder] Major Minor OB + FVG (SMC).
+
+Python translation focused on the Pine logic flow:
+- Pivot-based zigzag for major/minor structure.
+- BoS/ChoCh detection with external/internal trend tracking.
+- Order block trigger indices for major ChoCh/BoS events.
+- FVG detection with optional width filtering.
+- Liquidity line detection from static/dynamic pivots.
 """
-Fair Value Gap (FVG) Detection - Python translation of Smart Money Concept FVG
 
-A Fair Value Gap is an imbalance or inefficiency in the market created by rapid price movement.
+from __future__ import annotations
 
-Bullish FVG: Gap between high[2] and low[0] when there's no overlap
-Bearish FVG: Gap between low[2] and high[0] when there's no overlap
-
-These gaps often act as magnets for price to return and "fill" them.
-"""
-
-import pandas as pd
-import numpy as np
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 
 
 @dataclass
-class FVG:
-    """Represents a Fair Value Gap"""
-    is_bullish: bool
-    top: float
-    bottom: float
-    start_idx: int
-    end_idx: int
-    created_at: int
-    mitigated: bool = False
-    mitigation_idx: int = None
-
-    def contains_price(self, price: float) -> bool:
-        """Check if price is within the FVG zone"""
-        return self.bottom <= price <= self.top
-
-    def get_width(self) -> float:
-        """Get the width of the FVG"""
-        return self.top - self.bottom
+class FVGDetection:
+    demand_condition: pd.Series
+    demand_distal: pd.Series
+    demand_proximal: pd.Series
+    demand_bar: pd.Series
+    supply_condition: pd.Series
+    supply_distal: pd.Series
+    supply_proximal: pd.Series
+    supply_bar: pd.Series
 
 
-def detect_fvg(df, filter_type='Defensive'):
-    """
-    Detect Fair Value Gaps in the price data.
+@dataclass
+class LiquidityLevels:
+    static_high: pd.Series
+    static_low: pd.Series
+    dynamic_high: pd.Series
+    dynamic_low: pd.Series
 
-    FVG Detection Logic:
-    - Bullish FVG: high[i-2] < low[i] (there's a gap up)
-    - Bearish FVG: low[i-2] > high[i] (there's a gap down)
 
-    Args:
-        df: DataFrame with OHLC data and 'index' column
-        filter_type: Filter based on FVG width
-            'Very Aggressive': No filter, show all FVGs
-            'Aggressive': Filter FVGs smaller than 0.5 ATR
-            'Defensive': Filter FVGs smaller than 0.7 ATR
-            'Very Defensive': Filter FVGs smaller than 1.0 ATR
+@dataclass
+class StructureOutputs:
+    major_high_level: pd.Series
+    major_low_level: pd.Series
+    major_high_index: pd.Series
+    major_low_index: pd.Series
+    minor_high_level: pd.Series
+    minor_low_level: pd.Series
+    minor_high_index: pd.Series
+    minor_low_index: pd.Series
+    external_trend: pd.Series
+    internal_trend: pd.Series
+    bullish_major_bos: pd.Series
+    bearish_major_bos: pd.Series
+    bullish_major_choch: pd.Series
+    bearish_major_choch: pd.Series
+    bullish_minor_bos: pd.Series
+    bearish_minor_bos: pd.Series
+    bullish_minor_choch: pd.Series
+    bearish_minor_choch: pd.Series
+    bu_mch_main_trigger: pd.Series
+    bu_mch_sub_trigger: pd.Series
+    bu_mbos_trigger: pd.Series
+    be_mch_main_trigger: pd.Series
+    be_mch_sub_trigger: pd.Series
+    be_mbos_trigger: pd.Series
+    bu_mch_main_index: pd.Series
+    bu_mch_sub_index: pd.Series
+    bu_mbos_index: pd.Series
+    be_mch_main_index: pd.Series
+    be_mch_sub_index: pd.Series
+    be_mbos_index: pd.Series
 
-    Returns:
-        List of FVG objects
-    """
-    fvgs = []
 
-    # Calculate ATR for filtering if needed
-    if filter_type != 'Very Aggressive':
-        df['tr'] = np.maximum(
-            df['high'] - df['low'],
-            np.maximum(
-                abs(df['high'] - df['close'].shift(1)),
-                abs(df['low'] - df['close'].shift(1))
-            )
-        )
-        atr = df['tr'].rolling(14).mean()
+def _pivot_high(series: pd.Series, length: int) -> pd.Series:
+    pivots = pd.Series(False, index=series.index)
+    for i in range(length, len(series) - length):
+        window = series.iloc[i - length : i + length + 1]
+        if series.iloc[i] == window.max():
+            pivots.iloc[i] = True
+    return pivots
 
-        # Set filter threshold based on type
-        filter_multipliers = {
-            'Aggressive': 0.5,
-            'Defensive': 0.7,
-            'Very Defensive': 1.0
-        }
-        filter_mult = filter_multipliers.get(filter_type, 0.7)
-    else:
-        atr = None
-        filter_mult = 0
+
+def _pivot_low(series: pd.Series, length: int) -> pd.Series:
+    pivots = pd.Series(False, index=series.index)
+    for i in range(length, len(series) - length):
+        window = series.iloc[i - length : i + length + 1]
+        if series.iloc[i] == window.min():
+            pivots.iloc[i] = True
+    return pivots
+
+
+def _atr(df: pd.DataFrame, length: int = 55) -> pd.Series:
+    tr = np.maximum(
+        df["high"] - df["low"],
+        np.maximum(
+            (df["high"] - df["close"].shift(1)).abs(),
+            (df["low"] - df["close"].shift(1)).abs(),
+        ),
+    )
+    return tr.rolling(length).mean()
+
+
+def _fvg_detector(
+    df: pd.DataFrame,
+    filter_on: bool,
+    filter_type: str,
+) -> FVGDetection:
+    atr = _atr(df) if filter_on else None
+    multipliers = {
+        "Very Aggressive": 0.0,
+        "Aggressive": 0.5,
+        "Defensive": 0.7,
+        "Very Defensive": 1.0,
+    }
+    multiplier = multipliers.get(filter_type, 0.7)
+
+    demand_condition = pd.Series(False, index=df.index)
+    supply_condition = pd.Series(False, index=df.index)
+    demand_distal = pd.Series(np.nan, index=df.index)
+    demand_proximal = pd.Series(np.nan, index=df.index)
+    supply_distal = pd.Series(np.nan, index=df.index)
+    supply_proximal = pd.Series(np.nan, index=df.index)
+    demand_bar = pd.Series(0, index=df.index)
+    supply_bar = pd.Series(0, index=df.index)
 
     for i in range(2, len(df)):
-        # Bullish FVG: Gap between high[i-2] and low[i]
-        if df['high'].iloc[i-2] < df['low'].iloc[i]:
-            gap_top = df['low'].iloc[i]
-            gap_bottom = df['high'].iloc[i-2]
-            gap_width = gap_top - gap_bottom
-
-            # Apply filter if needed
-            if atr is not None:
-                min_width = atr.iloc[i] * filter_mult
-                if gap_width < min_width:
+        high_2 = df["high"].iloc[i - 2]
+        low_2 = df["low"].iloc[i - 2]
+        high = df["high"].iloc[i]
+        low = df["low"].iloc[i]
+        if low > high_2:
+            width = low - high_2
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
                     continue
-
-            fvg = FVG(
-                is_bullish=True,
-                top=gap_top,
-                bottom=gap_bottom,
-                start_idx=int(df['index'].iloc[i-1]),
-                end_idx=int(df['index'].iloc[i]),
-                created_at=int(df['index'].iloc[i])
-            )
-            fvgs.append(fvg)
-
-        # Bearish FVG: Gap between low[i-2] and high[i]
-        elif df['low'].iloc[i-2] > df['high'].iloc[i]:
-            gap_top = df['low'].iloc[i-2]
-            gap_bottom = df['high'].iloc[i]
-            gap_width = gap_top - gap_bottom
-
-            # Apply filter if needed
-            if atr is not None:
-                min_width = atr.iloc[i] * filter_mult
-                if gap_width < min_width:
+            demand_condition.iloc[i] = True
+            demand_distal.iloc[i] = high_2
+            demand_proximal.iloc[i] = low
+            demand_bar.iloc[i] = i
+        elif high < low_2:
+            width = low_2 - high
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
                     continue
+            supply_condition.iloc[i] = True
+            supply_distal.iloc[i] = low_2
+            supply_proximal.iloc[i] = high
+            supply_bar.iloc[i] = i
 
-            fvg = FVG(
-                is_bullish=False,
-                top=gap_top,
-                bottom=gap_bottom,
-                start_idx=int(df['index'].iloc[i-1]),
-                end_idx=int(df['index'].iloc[i]),
-                created_at=int(df['index'].iloc[i])
-            )
-            fvgs.append(fvg)
+    return FVGDetection(
+        demand_condition=demand_condition,
+        demand_distal=demand_distal,
+        demand_proximal=demand_proximal,
+        demand_bar=demand_bar,
+        supply_condition=supply_condition,
+        supply_distal=supply_distal,
+        supply_proximal=supply_proximal,
+        supply_bar=supply_bar,
+    )
 
-    return fvgs
+
+def _liquidity_levels(
+    df: pd.DataFrame,
+    static_period: int,
+    dynamic_period: int,
+    static_sensitivity: float,
+    dynamic_sensitivity: float,
+) -> LiquidityLevels:
+    static_high = pd.Series(np.nan, index=df.index)
+    static_low = pd.Series(np.nan, index=df.index)
+    dynamic_high = pd.Series(np.nan, index=df.index)
+    dynamic_low = pd.Series(np.nan, index=df.index)
+
+    static_high_pivot = _pivot_high(df["high"], static_period)
+    static_low_pivot = _pivot_low(df["low"], static_period)
+    dynamic_high_pivot = _pivot_high(df["high"], dynamic_period)
+    dynamic_low_pivot = _pivot_low(df["low"], dynamic_period)
+
+    last_static_high = np.nan
+    last_static_low = np.nan
+    last_dynamic_high = np.nan
+    last_dynamic_low = np.nan
+
+    for i in range(len(df)):
+        if static_high_pivot.iloc[i]:
+            level = df["high"].iloc[i]
+            if np.isnan(last_static_high) or abs(level - last_static_high) / level >= static_sensitivity:
+                last_static_high = level
+        if static_low_pivot.iloc[i]:
+            level = df["low"].iloc[i]
+            if np.isnan(last_static_low) or abs(level - last_static_low) / level >= static_sensitivity:
+                last_static_low = level
+        if dynamic_high_pivot.iloc[i]:
+            level = df["high"].iloc[i]
+            if np.isnan(last_dynamic_high) or abs(level - last_dynamic_high) / level >= dynamic_sensitivity:
+                last_dynamic_high = level
+        if dynamic_low_pivot.iloc[i]:
+            level = df["low"].iloc[i]
+            if np.isnan(last_dynamic_low) or abs(level - last_dynamic_low) / level >= dynamic_sensitivity:
+                last_dynamic_low = level
+
+        static_high.iloc[i] = last_static_high
+        static_low.iloc[i] = last_static_low
+        dynamic_high.iloc[i] = last_dynamic_high
+        dynamic_low.iloc[i] = last_dynamic_low
+
+    return LiquidityLevels(
+        static_high=static_high,
+        static_low=static_low,
+        dynamic_high=dynamic_high,
+        dynamic_low=dynamic_low,
+    )
 
 
-def extend_fvgs(fvgs, df, max_extension=100):
-    """
-    Extend FVGs forward and mark them as mitigated when filled.
+def calculate_smc_tradingfinder(
+    df: pd.DataFrame,
+    *,
+    pivot_period: int = 5,
+    fvg_filter: bool = True,
+    fvg_filter_type: str = "Very Defensive",
+    static_pivot_period: int = 8,
+    dynamic_pivot_period: int = 3,
+    static_sensitivity: float = 0.30,
+    dynamic_sensitivity: float = 1.00,
+) -> Dict[str, object]:
+    """Calculate Smart Money Concept structure, OB triggers, FVG, and liquidity outputs."""
+    high_pivot = _pivot_high(df["high"], pivot_period)
+    low_pivot = _pivot_low(df["low"], pivot_period)
 
-    A FVG is mitigated when:
-    - Bullish FVG: Price closes below the bottom of the gap
-    - Bearish FVG: Price closes above the top of the gap
+    major_high_level = pd.Series(np.nan, index=df.index)
+    major_low_level = pd.Series(np.nan, index=df.index)
+    major_high_index = pd.Series(np.nan, index=df.index)
+    major_low_index = pd.Series(np.nan, index=df.index)
+    minor_high_level = pd.Series(np.nan, index=df.index)
+    minor_low_level = pd.Series(np.nan, index=df.index)
+    minor_high_index = pd.Series(np.nan, index=df.index)
+    minor_low_index = pd.Series(np.nan, index=df.index)
 
-    Args:
-        fvgs: List of FVG objects
-        df: DataFrame with OHLC data
-        max_extension: Maximum bars to extend
+    external_trend = pd.Series("No Trend", index=df.index)
+    internal_trend = pd.Series("No Trend", index=df.index)
 
-    Returns:
-        Updated list of FVG objects
-    """
-    for fvg in fvgs:
-        # Start from the bar after FVG was created
-        start_search = fvg.created_at + 1
-        end_search = min(start_search + max_extension, len(df))
+    bullish_major_bos = pd.Series(False, index=df.index)
+    bearish_major_bos = pd.Series(False, index=df.index)
+    bullish_major_choch = pd.Series(False, index=df.index)
+    bearish_major_choch = pd.Series(False, index=df.index)
+    bullish_minor_bos = pd.Series(False, index=df.index)
+    bearish_minor_bos = pd.Series(False, index=df.index)
+    bullish_minor_choch = pd.Series(False, index=df.index)
+    bearish_minor_choch = pd.Series(False, index=df.index)
 
-        for i in range(start_search, end_search):
-            if i >= len(df):
-                break
+    bu_mch_main_trigger = pd.Series(False, index=df.index)
+    bu_mch_sub_trigger = pd.Series(False, index=df.index)
+    bu_mbos_trigger = pd.Series(False, index=df.index)
+    be_mch_main_trigger = pd.Series(False, index=df.index)
+    be_mch_sub_trigger = pd.Series(False, index=df.index)
+    be_mbos_trigger = pd.Series(False, index=df.index)
 
-            bar_idx = int(df['index'].iloc[i])
-            close = df['close'].iloc[i]
-            low = df['low'].iloc[i]
-            high = df['high'].iloc[i]
+    bu_mch_main_index = pd.Series(np.nan, index=df.index)
+    bu_mch_sub_index = pd.Series(np.nan, index=df.index)
+    bu_mbos_index = pd.Series(np.nan, index=df.index)
+    be_mch_main_index = pd.Series(np.nan, index=df.index)
+    be_mch_sub_index = pd.Series(np.nan, index=df.index)
+    be_mbos_index = pd.Series(np.nan, index=df.index)
 
-            # Check if FVG is mitigated
-            if fvg.is_bullish:
-                # Bullish FVG is mitigated if price closes below bottom
-                if close < fvg.bottom:
-                    fvg.mitigated = True
-                    fvg.mitigation_idx = bar_idx
-                    fvg.end_idx = bar_idx
-                    break
-                # Extend if price is near or in the FVG
-                elif low <= fvg.top:
-                    fvg.end_idx = bar_idx
+    last_major_high = np.nan
+    last_major_low = np.nan
+    last_major_high_idx = np.nan
+    last_major_low_idx = np.nan
+    last_minor_high = np.nan
+    last_minor_low = np.nan
+    last_minor_high_idx = np.nan
+    last_minor_low_idx = np.nan
+
+    last_pivot_type = None
+    last_pivot_value = np.nan
+    last_pivot_index = np.nan
+    last_high_value = np.nan
+    last_low_value = np.nan
+
+    lock_break_major = np.nan
+    lock_break_minor = np.nan
+
+    for i in range(len(df)):
+        if high_pivot.iloc[i]:
+            if last_high_value is np.nan or df["high"].iloc[i] > last_high_value:
+                pivot_type = "HH"
             else:
-                # Bearish FVG is mitigated if price closes above top
-                if close > fvg.top:
-                    fvg.mitigated = True
-                    fvg.mitigation_idx = bar_idx
-                    fvg.end_idx = bar_idx
-                    break
-                # Extend if price is near or in the FVG
-                elif high >= fvg.bottom:
-                    fvg.end_idx = bar_idx
+                pivot_type = "LH"
+            last_high_value = df["high"].iloc[i]
+            last_pivot_type = pivot_type
+            last_pivot_value = df["high"].iloc[i]
+            last_pivot_index = i
+            last_minor_high = df["high"].iloc[i]
+            last_minor_high_idx = i
+            if np.isnan(last_major_high) or pivot_type == "HH":
+                last_major_high = df["high"].iloc[i]
+                last_major_high_idx = i
 
-    return fvgs
+        if low_pivot.iloc[i]:
+            if last_low_value is np.nan or df["low"].iloc[i] < last_low_value:
+                pivot_type = "LL"
+            else:
+                pivot_type = "HL"
+            last_low_value = df["low"].iloc[i]
+            last_pivot_type = pivot_type
+            last_pivot_value = df["low"].iloc[i]
+            last_pivot_index = i
+            last_minor_low = df["low"].iloc[i]
+            last_minor_low_idx = i
+            if np.isnan(last_major_low) or pivot_type == "LL":
+                last_major_low = df["low"].iloc[i]
+                last_major_low_idx = i
 
+        major_high_level.iloc[i] = last_major_high
+        major_low_level.iloc[i] = last_major_low
+        major_high_index.iloc[i] = last_major_high_idx
+        major_low_index.iloc[i] = last_major_low_idx
+        minor_high_level.iloc[i] = last_minor_high
+        minor_low_level.iloc[i] = last_minor_low
+        minor_high_index.iloc[i] = last_minor_high_idx
+        minor_low_index.iloc[i] = last_minor_low_idx
 
-def calculate_fvgs_for_chart(df, show_demand=True, show_supply=True, filter_type='Defensive'):
-    """
-    Calculate FVGs for display on chart.
+        if not np.isnan(last_major_high) and df["close"].iloc[i] > last_major_high and lock_break_major != last_major_high_idx:
+            if external_trend.iloc[i - 1] in ("No Trend", "Up Trend") if i > 0 else True:
+                bullish_major_bos.iloc[i] = True
+                external_trend.iloc[i] = "Up Trend"
+            else:
+                bullish_major_choch.iloc[i] = True
+                external_trend.iloc[i] = "Up Trend"
+            lock_break_major = last_major_high_idx
 
-    Args:
-        df: DataFrame with OHLC data and 'index' column
-        show_demand: Whether to show bullish FVGs
-        show_supply: Whether to show bearish FVGs
-        filter_type: FVG filter type
+        if not np.isnan(last_major_low) and df["close"].iloc[i] < last_major_low and lock_break_major != last_major_low_idx:
+            if external_trend.iloc[i - 1] in ("No Trend", "Down Trend") if i > 0 else True:
+                bearish_major_bos.iloc[i] = True
+                external_trend.iloc[i] = "Down Trend"
+            else:
+                bearish_major_choch.iloc[i] = True
+                external_trend.iloc[i] = "Down Trend"
+            lock_break_major = last_major_low_idx
 
-    Returns:
-        Dictionary with bullish and bearish FVGs
-    """
-    # Detect all FVGs
-    all_fvgs = detect_fvg(df, filter_type=filter_type)
+        if i > 0 and external_trend.iloc[i] == "No Trend":
+            external_trend.iloc[i] = external_trend.iloc[i - 1]
 
-    # Extend FVGs forward
-    all_fvgs = extend_fvgs(all_fvgs, df, max_extension=150)
+        if not np.isnan(last_minor_high) and df["close"].iloc[i] > last_minor_high and lock_break_minor != last_minor_high_idx:
+            if internal_trend.iloc[i - 1] in ("No Trend", "Up Trend") if i > 0 else True:
+                bullish_minor_bos.iloc[i] = True
+                internal_trend.iloc[i] = "Up Trend"
+            else:
+                bullish_minor_choch.iloc[i] = True
+                internal_trend.iloc[i] = "Up Trend"
+            lock_break_minor = last_minor_high_idx
 
-    # Split into bullish and bearish
-    bullish_fvgs = [fvg for fvg in all_fvgs if fvg.is_bullish and show_demand]
-    bearish_fvgs = [fvg for fvg in all_fvgs if not fvg.is_bullish and show_supply]
+        if not np.isnan(last_minor_low) and df["close"].iloc[i] < last_minor_low and lock_break_minor != last_minor_low_idx:
+            if internal_trend.iloc[i - 1] in ("No Trend", "Down Trend") if i > 0 else True:
+                bearish_minor_bos.iloc[i] = True
+                internal_trend.iloc[i] = "Down Trend"
+            else:
+                bearish_minor_choch.iloc[i] = True
+                internal_trend.iloc[i] = "Down Trend"
+            lock_break_minor = last_minor_low_idx
+
+        if i > 0 and internal_trend.iloc[i] == "No Trend":
+            internal_trend.iloc[i] = internal_trend.iloc[i - 1]
+
+        if bullish_major_choch.iloc[i]:
+            bu_mch_main_trigger.iloc[i] = True
+            bu_mch_main_index.iloc[i] = last_major_low_idx
+            if not np.isnan(last_minor_low_idx) and last_minor_low_idx != last_major_low_idx:
+                bu_mch_sub_trigger.iloc[i] = True
+                bu_mch_sub_index.iloc[i] = last_minor_low_idx
+
+        if bullish_major_bos.iloc[i]:
+            bu_mbos_trigger.iloc[i] = True
+            bu_mbos_index.iloc[i] = last_pivot_index
+
+        if bearish_major_choch.iloc[i]:
+            be_mch_main_trigger.iloc[i] = True
+            be_mch_main_index.iloc[i] = last_major_high_idx
+            if not np.isnan(last_minor_high_idx) and last_minor_high_idx != last_major_high_idx:
+                be_mch_sub_trigger.iloc[i] = True
+                be_mch_sub_index.iloc[i] = last_minor_high_idx
+
+        if bearish_major_bos.iloc[i]:
+            be_mbos_trigger.iloc[i] = True
+            be_mbos_index.iloc[i] = last_pivot_index
+
+    fvg_detection = _fvg_detector(df, fvg_filter, fvg_filter_type)
+    liquidity = _liquidity_levels(
+        df,
+        static_period=static_pivot_period,
+        dynamic_period=dynamic_pivot_period,
+        static_sensitivity=static_sensitivity,
+        dynamic_sensitivity=dynamic_sensitivity,
+    )
+
+    structure = StructureOutputs(
+        major_high_level=major_high_level,
+        major_low_level=major_low_level,
+        major_high_index=major_high_index,
+        major_low_index=major_low_index,
+        minor_high_level=minor_high_level,
+        minor_low_level=minor_low_level,
+        minor_high_index=minor_high_index,
+        minor_low_index=minor_low_index,
+        external_trend=external_trend,
+        internal_trend=internal_trend,
+        bullish_major_bos=bullish_major_bos,
+        bearish_major_bos=bearish_major_bos,
+        bullish_major_choch=bullish_major_choch,
+        bearish_major_choch=bearish_major_choch,
+        bullish_minor_bos=bullish_minor_bos,
+        bearish_minor_bos=bearish_minor_bos,
+        bullish_minor_choch=bullish_minor_choch,
+        bearish_minor_choch=bearish_minor_choch,
+        bu_mch_main_trigger=bu_mch_main_trigger,
+        bu_mch_sub_trigger=bu_mch_sub_trigger,
+        bu_mbos_trigger=bu_mbos_trigger,
+        be_mch_main_trigger=be_mch_main_trigger,
+        be_mch_sub_trigger=be_mch_sub_trigger,
+        be_mbos_trigger=be_mbos_trigger,
+        bu_mch_main_index=bu_mch_main_index,
+        bu_mch_sub_index=bu_mch_sub_index,
+        bu_mbos_index=bu_mbos_index,
+        be_mch_main_index=be_mch_main_index,
+        be_mch_sub_index=be_mch_sub_index,
+        be_mbos_index=be_mbos_index,
+    )
 
     return {
-        'bullish': bullish_fvgs,
-        'bearish': bearish_fvgs,
-        'all': all_fvgs
+        "structure": structure,
+        "fvg": fvg_detection,
+        "liquidity": liquidity,
     }
+
+
+if __name__ == "__main__":
+    data = pd.read_csv("PEPPERSTONE_XAUUSD, 5.csv")
+    data["datetime"] = pd.to_datetime(data["time"])
+    data = data.set_index("datetime").sort_index()
+
+    results = calculate_smc_tradingfinder(data)
+    print(results["structure"].external_trend.tail())
