@@ -12,6 +12,7 @@ This module mirrors the Pine Script logic by:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Dict
 from typing import Dict, List
 
 import numpy as np
@@ -156,6 +157,15 @@ def _fvg_detector(
     filter_on: bool,
     filter_type: str,
 ) -> FVGDetection:
+    atr = _atr(df) if filter_on else None
+    multipliers = {
+        "Very Aggressive": 0.0,
+        "Aggressive": 0.5,
+        "Defensive": 0.7,
+        "Very Defensive": 1.0,
+    }
+    multiplier = multipliers.get(filter_type, 0.7)
+
     atr = _atr(df, length=55)
     demand_condition = pd.Series(False, index=df.index)
     supply_condition = pd.Series(False, index=df.index)
@@ -165,6 +175,17 @@ def _fvg_detector(
     supply_proximal = pd.Series(np.nan, index=df.index)
     demand_bar = pd.Series(0, index=df.index)
     supply_bar = pd.Series(0, index=df.index)
+
+    for i in range(2, len(df)):
+        high_2 = df["high"].iloc[i - 2]
+        low_2 = df["low"].iloc[i - 2]
+        high = df["high"].iloc[i]
+        low = df["low"].iloc[i]
+        if low > high_2:
+            width = low - high_2
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                    continue
     highs = df["high"]
     lows = df["low"]
     opens = df["open"]
@@ -236,6 +257,11 @@ def _fvg_detector(
             demand_distal.iloc[i] = high_2
             demand_proximal.iloc[i] = low
             demand_bar.iloc[i] = i
+        elif high < low_2:
+            width = low_2 - high
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                    continue
         if s_condition:
             supply_condition.iloc[i] = True
             supply_distal.iloc[i] = low_2
@@ -758,6 +784,28 @@ def _cisd_level_detector(
     current_cisd_low_idx = np.nan
 
     for i in range(len(df)):
+        if i >= 2 and trading_range.iloc[i - 1] == 0 and trading_range.iloc[i - 2] == 1:
+            bear_fvg_idx = 0
+            bear_fvg_d = 0.0
+            bear_fvg_p = 0.0
+            bull_fvg_idx = 0
+            bull_fvg_d = 0.0
+            bull_fvg_p = 0.0
+            high_ob = None
+            low_ob = None
+            bear_i = None
+            bull_i = None
+            fvg_bear_d.clear()
+            fvg_bear_p.clear()
+            fvg_bear_i.clear()
+            fvg_bull_d.clear()
+            fvg_bull_p.clear()
+            fvg_bull_i.clear()
+            current_cisd_high = np.nan
+            current_cisd_low = np.nan
+            current_cisd_high_idx = np.nan
+            current_cisd_low_idx = np.nan
+
         if i > 0 and trading_range.iloc[i - 1] == 0 and trading_range.iloc[i] == 1:
             high_ob = df["high"].iloc[i]
             bear_i = i
@@ -781,6 +829,13 @@ def _cisd_level_detector(
                 if body.iloc[idx] < 0:
                     permit_h_reset = True
                     if bar_back_check > 1 and j > 1:
+                        open_1 = df["open"].iloc[i - j + 1]
+                        open_2 = df["open"].iloc[i - j + 2]
+                        current_cisd_high = min(open_1, open_2)
+                        current_cisd_high_idx = i - j + (2 if open_2 < open_1 else 1)
+                    else:
+                        current_cisd_high = df["open"].iloc[i]
+                        current_cisd_high_idx = i
                         open_1 = df["open"].iloc[i - j - 1]
                         open_2 = df["open"].iloc[i - j - 2]
                         current_cisd_high = min(open_1, open_2)
@@ -799,6 +854,13 @@ def _cisd_level_detector(
                 if body.iloc[idx] > 0:
                     permit_l_reset = True
                     if bar_back_check > 1 and j > 1:
+                        open_1 = df["open"].iloc[i - j + 1]
+                        open_2 = df["open"].iloc[i - j + 2]
+                        current_cisd_low = max(open_1, open_2)
+                        current_cisd_low_idx = i - j + (2 if open_2 > open_1 else 1)
+                    else:
+                        current_cisd_low = df["open"].iloc[i]
+                        current_cisd_low_idx = i
                         open_1 = df["open"].iloc[i - j - 1]
                         open_2 = df["open"].iloc[i - j - 2]
                         current_cisd_low = max(open_1, open_2)
@@ -948,6 +1010,14 @@ def calculate_tradingfinder_silver_bullet(
             low_break.iloc[i] = False
             continue
 
+        if i > 0 and high_break.iloc[i - 1]:
+            high_break.iloc[i] = True
+        elif df["high"].iloc[i] > session_levels.or_high.iloc[i]:
+            high_break.iloc[i] = True
+
+        if i > 0 and low_break.iloc[i - 1]:
+            low_break.iloc[i] = True
+        elif df["low"].iloc[i] < session_levels.or_low.iloc[i]:
         if df["high"].iloc[i] > session_levels.or_high.iloc[i]:
             high_break.iloc[i] = True
         if df["low"].iloc[i] < session_levels.or_low.iloc[i]:

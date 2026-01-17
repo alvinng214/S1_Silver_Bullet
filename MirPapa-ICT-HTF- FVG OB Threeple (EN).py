@@ -23,19 +23,14 @@ import pandas as pd
 class BoxData:
     name: str
     is_bullish: bool
-    breach_mode: str
     top: float
     bottom: float
-    mid: float
     start_index: int
     end_index: int
     timeframe: str
     htf_bar_index: int
-    top_breached: bool = False
-    bottom_breached: bool = False
     is_active: bool = True
     close_count: int = 0
-    created_bar: int = 0
 
 
 @dataclass
@@ -212,8 +207,6 @@ def _is_fob_condition(name: str, is_bullish: bool, high2: float, low: float, low
 def _process_box_datas(
     boxes: List[BoxData],
     close_count: int,
-    high_price: float,
-    low_price: float,
     close_price: float,
     bar_index: int,
 ) -> None:
@@ -221,53 +214,12 @@ def _process_box_datas(
         if not box.is_active:
             continue
         box.end_index = bar_index
-        breach_mode = box.breach_mode.lower()
-        if breach_mode == "directionalhighlow":
-            if box.is_bullish:
-                if high_price > box.top:
-                    box.top_breached = True
-                if box.top_breached and low_price < box.bottom:
-                    box.close_count += 1
-                    box.top_breached = False
-                    box.bottom_breached = False
-            else:
-                if low_price < box.bottom:
-                    box.bottom_breached = True
-                if box.bottom_breached and high_price > box.top:
-                    box.close_count += 1
-                    box.top_breached = False
-                    box.bottom_breached = False
-        elif breach_mode == "directionalclose":
-            if box.is_bullish:
-                if close_price > box.top:
-                    box.top_breached = True
-                if box.top_breached and close_price < box.bottom:
-                    box.close_count += 1
-                    box.top_breached = False
-                    box.bottom_breached = False
-            else:
-                if close_price < box.bottom:
-                    box.bottom_breached = True
-                if box.bottom_breached and close_price > box.top:
-                    box.close_count += 1
-                    box.top_breached = False
-                    box.bottom_breached = False
-        elif breach_mode == "sobclose":
-            if box.is_bullish and close_price < box.bottom:
-                box.close_count += 1
-            if not box.is_bullish and close_price > box.top:
+        if box.is_bullish:
+            if close_price < box.bottom:
                 box.close_count += 1
         else:
-            new_top = box.top_breached or (high_price > box.top)
-            new_bottom = box.bottom_breached or (low_price < box.bottom)
-            if new_top and new_bottom and not (box.top_breached and box.bottom_breached):
+            if close_price > box.top:
                 box.close_count += 1
-                box.top_breached = False
-                box.bottom_breached = False
-            else:
-                box.top_breached = new_top
-                box.bottom_breached = new_bottom
-
         if box.close_count >= close_count:
             box.is_active = False
 
@@ -297,20 +249,15 @@ def _create_box_data(
         return False, None
     top = max(low2, high2)
     bottom = min(low2, high2)
-    breach_mode = "directionalHighLow" if name in {"fob", "rb", "custom"} else "both"
-    mid = (top + bottom) * 0.5
     return True, BoxData(
         name=name,
         is_bullish=is_bullish,
-        breach_mode=breach_mode,
         top=top,
         bottom=bottom,
-        mid=mid,
         start_index=start_index,
         end_index=start_index,
         timeframe=timeframe,
         htf_bar_index=htf_bar_index,
-        created_bar=start_index,
     )
 
 
@@ -366,60 +313,16 @@ def calculate_fvg_ob_threeple(
     last_current_tf_fob_bull: bool = False
 
     for bar_index, (timestamp, row) in enumerate(df.iterrows()):
-        high_price = float(row["high"])
-        low_price = float(row["low"])
         close_price = float(row["close"])
         if high_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, high_tf):
-            _process_box_datas(
-                high_tf_boxes_bull,
-                high_tf_settings.close_count,
-                high_price,
-                low_price,
-                close_price,
-                bar_index,
-            )
-            _process_box_datas(
-                high_tf_boxes_bear,
-                high_tf_settings.close_count,
-                high_price,
-                low_price,
-                close_price,
-                bar_index,
-            )
+            _process_box_datas(high_tf_boxes_bull, high_tf_settings.close_count, close_price, bar_index)
+            _process_box_datas(high_tf_boxes_bear, high_tf_settings.close_count, close_price, bar_index)
         if mid_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, mid_tf):
-            _process_box_datas(
-                mid_tf_boxes_bull,
-                mid_tf_settings.close_count,
-                high_price,
-                low_price,
-                close_price,
-                bar_index,
-            )
-            _process_box_datas(
-                mid_tf_boxes_bear,
-                mid_tf_settings.close_count,
-                high_price,
-                low_price,
-                close_price,
-                bar_index,
-            )
+            _process_box_datas(mid_tf_boxes_bull, mid_tf_settings.close_count, close_price, bar_index)
+            _process_box_datas(mid_tf_boxes_bear, mid_tf_settings.close_count, close_price, bar_index)
         if current_tf_settings.use_box:
-            _process_box_datas(
-                current_tf_boxes_bull,
-                current_tf_settings.close_count,
-                high_price,
-                low_price,
-                close_price,
-                bar_index,
-            )
-            _process_box_datas(
-                current_tf_boxes_bear,
-                current_tf_settings.close_count,
-                high_price,
-                low_price,
-                close_price,
-                bar_index,
-            )
+            _process_box_datas(current_tf_boxes_bull, current_tf_settings.close_count, close_price, bar_index)
+            _process_box_datas(current_tf_boxes_bear, current_tf_settings.close_count, close_price, bar_index)
 
         if enable_cleanup and bar_index % 20 == 0:
             _cleanup_box_array(high_tf_boxes_bull, max_boxes)

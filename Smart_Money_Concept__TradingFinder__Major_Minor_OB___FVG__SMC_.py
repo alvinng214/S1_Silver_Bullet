@@ -152,6 +152,15 @@ def _fvg_detector(
     filter_on: bool,
     filter_type: str,
 ) -> FVGDetection:
+    atr = _atr(df) if filter_on else None
+    multipliers = {
+        "Very Aggressive": 0.0,
+        "Aggressive": 0.5,
+        "Defensive": 0.7,
+        "Very Defensive": 1.0,
+    }
+    multiplier = multipliers.get(filter_type, 0.7)
+
     atr = _atr(df, length=55)
     demand_condition = pd.Series(False, index=df.index)
     supply_condition = pd.Series(False, index=df.index)
@@ -162,6 +171,16 @@ def _fvg_detector(
     demand_bar = pd.Series(0, index=df.index)
     supply_bar = pd.Series(0, index=df.index)
 
+    for i in range(2, len(df)):
+        high_2 = df["high"].iloc[i - 2]
+        low_2 = df["low"].iloc[i - 2]
+        high = df["high"].iloc[i]
+        low = df["low"].iloc[i]
+        if low > high_2:
+            width = low - high_2
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                    continue
     highs = df["high"]
     lows = df["low"]
     opens = df["open"]
@@ -233,6 +252,11 @@ def _fvg_detector(
             demand_distal.iloc[i] = high_2
             demand_proximal.iloc[i] = low
             demand_bar.iloc[i] = i
+        elif high < low_2:
+            width = low_2 - high
+            if filter_on and atr is not None:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                    continue
         if s_condition:
             supply_condition.iloc[i] = True
             supply_distal.iloc[i] = low_2
@@ -313,6 +337,22 @@ def _liquidity_levels(
     last_dynamic_low = np.nan
 
     for i in range(len(df)):
+        if static_high_pivot.iloc[i]:
+            level = df["high"].iloc[i]
+            if np.isnan(last_static_high) or abs(level - last_static_high) / level >= static_sensitivity:
+                last_static_high = level
+        if static_low_pivot.iloc[i]:
+            level = df["low"].iloc[i]
+            if np.isnan(last_static_low) or abs(level - last_static_low) / level >= static_sensitivity:
+                last_static_low = level
+        if dynamic_high_pivot.iloc[i]:
+            level = df["high"].iloc[i]
+            if np.isnan(last_dynamic_high) or abs(level - last_dynamic_high) / level >= dynamic_sensitivity:
+                last_dynamic_high = level
+        if dynamic_low_pivot.iloc[i]:
+            level = df["low"].iloc[i]
+            if np.isnan(last_dynamic_low) or abs(level - last_dynamic_low) / level >= dynamic_sensitivity:
+                last_dynamic_low = level
         if not np.isnan(stsh_ic.iloc[i]) and stsh_ic.iloc[i] != stsh_ic.shift(1).iloc[i]:
             if stsh_vc.iloc[i] <= stsh_vp.iloc[i] and (stsh_ic.iloc[i] - stsh_ip.iloc[i]) >= 8:
                 atr_idx = max(i - static_period, 0)
