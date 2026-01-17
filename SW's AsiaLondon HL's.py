@@ -4,7 +4,8 @@ Mirrors the Pine Script logic:
 - Tracks Asia/London/NY/Sydney session highs/lows in LA time with optional offset.
 - Freezes session ranges when the next session starts and anchors lines at the bar of the extreme.
 - Builds Previous Day High/Low from a custom trading day (15:00 -> 14:00 LA time).
-- Emits data structures for session lines, PDH/PDL/mid, and vertical line markers.
+    - Emits data structures for session lines, PDH/PDL/mid, session-start vertical pins, and
+      market/custom vertical line markers.
 """
 
 from __future__ import annotations
@@ -44,6 +45,10 @@ class PDLevels:
     low_time: Optional[pd.Timestamp]
     mid: Optional[float]
     start_time: Optional[pd.Timestamp]
+    left_bar_time: Optional[pd.Timestamp] = None
+    start_line_time: Optional[pd.Timestamp] = None
+    start_line_low: Optional[float] = None
+    start_line_high: Optional[float] = None
 
 
 @dataclass
@@ -77,11 +82,21 @@ class CustomVerticalState:
 
 
 @dataclass
+class SessionMarker:
+    session: str
+    start_time: pd.Timestamp
+    low: Optional[float]
+    high: Optional[float]
+    frozen_at: Optional[pd.Timestamp] = None
+
+
+@dataclass
 class AsiaLondonOutputs:
     session_lines: List[SessionLine]
     pd_levels: PDLevels
     vertical_lines: List[VerticalLine]
     custom_vertical_lines: List[VerticalLine]
+    session_markers: List[SessionMarker]
 
 
 def _ensure_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -89,6 +104,12 @@ def _ensure_index(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df.index = pd.to_datetime(df.index)
     return df
+
+
+def _to_la(ts: pd.Timestamp) -> pd.Timestamp:
+    if ts.tzinfo is None:
+        return ts.tz_localize("America/Los_Angeles")
+    return ts.tz_convert("America/Los_Angeles")
 
 
 def _session_window(
@@ -122,6 +143,8 @@ def _maybe_freeze(
     session: str,
     end_time: pd.Timestamp,
     lines: List[SessionLine],
+    markers: List[SessionMarker],
+    show_start_vl: bool,
 ) -> None:
     if not next_session_started or state.frozen:
         return
@@ -151,6 +174,16 @@ def _maybe_freeze(
             frozen=True,
         )
     )
+    if show_start_vl and state.start_time is not None:
+        markers.append(
+            SessionMarker(
+                session=session,
+                start_time=state.start_time,
+                low=state.live_low,
+                high=state.live_high,
+                frozen_at=end_time,
+            )
+        )
     state.frozen = True
 
 
@@ -163,14 +196,21 @@ def calculate_asia_london_levels(
     ny_enabled: bool = True,
     sydney_enabled: bool = False,
     pdhl_enabled: bool = True,
+    pdhl_show_start_vl: bool = True,
     pd_mid_enabled: bool = False,
     vert_lines_enabled: bool = True,
+    asia_show_start_vl: bool = True,
+    london_show_start_vl: bool = True,
+    ny_show_start_vl: bool = True,
+    sydney_show_start_vl: bool = True,
     cv_label_offset: float = 100.0,
     custom_verticals: Optional[List[CustomVerticalConfig]] = None,
 ) -> AsiaLondonOutputs:
     df = _ensure_index(df)
+    la_index = df.index.map(_to_la)
 
     session_lines: List[SessionLine] = []
+    session_markers: List[SessionMarker] = []
 
     asia = SessionState()
     london = SessionState()
@@ -206,25 +246,58 @@ def calculate_asia_london_levels(
     }
 
     for idx, ts in enumerate(df.index):
-        asia_start, asia_end = _session_window(ts, 17, 2, timezone_offset)
-        london_start, london_end = _session_window(ts, 0, 9, timezone_offset)
-        ny_start, ny_end = _session_window(ts, 5, 14, timezone_offset, start_minute=30)
-        sydney_start, sydney_end = _session_window(ts, 15, 0, timezone_offset)
+        la_ts = la_index[idx]
+        asia_start, asia_end = _session_window(la_ts, 17, 2, timezone_offset)
+        london_start, london_end = _session_window(la_ts, 0, 9, timezone_offset)
+        ny_start, ny_end = _session_window(la_ts, 5, 14, timezone_offset, start_minute=30)
+        sydney_start, sydney_end = _session_window(la_ts, 15, 0, timezone_offset)
 
-        asia_session = asia_enabled and _in_session(ts, asia_start, asia_end)
-        london_session = london_enabled and _in_session(ts, london_start, london_end)
-        ny_session = ny_enabled and _in_session(ts, ny_start, ny_end)
-        sydney_session = sydney_enabled and _in_session(ts, sydney_start, sydney_end)
+        asia_session = asia_enabled and _in_session(la_ts, asia_start, asia_end)
+        london_session = london_enabled and _in_session(la_ts, london_start, london_end)
+        ny_session = ny_enabled and _in_session(la_ts, ny_start, ny_end)
+        sydney_session = sydney_enabled and _in_session(la_ts, sydney_start, sydney_end)
 
         asia_started = asia_session and not prev_flags["asia"]
         london_started = london_session and not prev_flags["london"]
         ny_started = ny_session and not prev_flags["ny"]
         sydney_started = sydney_session and not prev_flags["sydney"]
 
-        _maybe_freeze(asia, london_started, "Asia", ts, session_lines)
-        _maybe_freeze(london, ny_started, "London", ts, session_lines)
-        _maybe_freeze(ny, sydney_started, "NY", ts, session_lines)
-        _maybe_freeze(sydney, asia_started, "Sydney", ts, session_lines)
+        _maybe_freeze(
+            asia,
+            london_started,
+            "Asia",
+            ts,
+            session_lines,
+            session_markers,
+            asia_show_start_vl,
+        )
+        _maybe_freeze(
+            london,
+            ny_started,
+            "London",
+            ts,
+            session_lines,
+            session_markers,
+            london_show_start_vl,
+        )
+        _maybe_freeze(
+            ny,
+            sydney_started,
+            "NY",
+            ts,
+            session_lines,
+            session_markers,
+            ny_show_start_vl,
+        )
+        _maybe_freeze(
+            sydney,
+            asia_started,
+            "Sydney",
+            ts,
+            session_lines,
+            session_markers,
+            sydney_show_start_vl,
+        )
 
         if asia_started:
             asia.frozen = False
@@ -284,8 +357,9 @@ def calculate_asia_london_levels(
                 sydney.live_low = df["low"].iloc[idx]
                 sydney.low_time = ts
 
-        sess_start, sess_end = _session_window(ts, 15, 14, timezone_offset)
-        new_session_start = idx > 0 and df.index[idx - 1] < sess_start <= ts
+        sess_start, sess_end = _session_window(la_ts, 15, 14, timezone_offset)
+        prev_la = la_index[idx - 1] if idx > 0 else la_ts
+        new_session_start = idx > 0 and prev_la < sess_start <= la_ts
         if new_session_start:
             prev_session_high = session_high
             prev_session_low = session_low
@@ -296,8 +370,10 @@ def calculate_asia_london_levels(
             session_high_time = ts
             session_low_time = ts
             pd_start_time = sess_start - pd.Timedelta(days=1)
+            if df.index.tz is not None:
+                pd_start_time = pd_start_time.tz_convert(df.index.tz)
         else:
-            if sess_start <= ts < sess_end:
+            if sess_start <= la_ts < sess_end:
                 if session_high is None or df["high"].iloc[idx] > session_high:
                     session_high = df["high"].iloc[idx]
                     session_high_time = ts
@@ -316,32 +392,40 @@ def calculate_asia_london_levels(
             if not config.enabled:
                 custom_states[idx_cfg] = CustomVerticalState()
                 continue
-            base_date = ts.normalize()
+            base_date = la_ts.normalize()
             if custom_states[idx_cfg].last_date != base_date:
                 custom_states[idx_cfg] = CustomVerticalState(last_date=base_date)
             ts_custom = base_date + pd.Timedelta(
                 hours=config.hour + timezone_offset, minutes=config.minute
             )
-            prev_ts = df.index[idx - 1] if idx > 0 else ts
-            if prev_ts < ts_custom <= ts:
+            prev_ts = la_index[idx - 1] if idx > 0 else la_ts
+            if prev_ts < ts_custom <= la_ts:
                 custom_states[idx_cfg].anchor_high = df["high"].iloc[idx]
-            anchor_high = custom_states[idx_cfg].anchor_high
-            custom_vertical_lines.append(
-                VerticalLine(
-                    timestamp=ts_custom,
-                    label=config.label,
-                    color=config.color,
-                    thickness=config.thickness,
-                    text_color=config.text_color,
-                    opacity=config.opacity,
-                    anchor_high=anchor_high,
-                    label_offset=cv_label_offset,
+                custom_vertical_lines.append(
+                    VerticalLine(
+                        timestamp=ts_custom,
+                        label=config.label,
+                        color=config.color,
+                        thickness=config.thickness,
+                        text_color=config.text_color,
+                        opacity=config.opacity,
+                        anchor_high=custom_states[idx_cfg].anchor_high,
+                        label_offset=cv_label_offset,
+                    )
                 )
-            )
 
     pd_mid = None
     if pdhl_enabled and prev_session_high is not None and prev_session_low is not None:
         pd_mid = (prev_session_high + prev_session_low) / 2
+
+    left_bar_time = None
+    if prev_session_high_time is not None or prev_session_low_time is not None:
+        if prev_session_high_time is None:
+            left_bar_time = prev_session_low_time
+        elif prev_session_low_time is None:
+            left_bar_time = prev_session_high_time
+        else:
+            left_bar_time = min(prev_session_high_time, prev_session_low_time)
 
     pd_levels = PDLevels(
         high=prev_session_high if pdhl_enabled else None,
@@ -350,6 +434,25 @@ def calculate_asia_london_levels(
         low_time=prev_session_low_time,
         mid=pd_mid if pd_mid_enabled else None,
         start_time=pd_start_time if pdhl_enabled else None,
+        left_bar_time=left_bar_time,
+        start_line_time=pd_start_time
+        if pdhl_enabled
+        and pdhl_show_start_vl
+        and prev_session_high is not None
+        and prev_session_low is not None
+        else None,
+        start_line_low=prev_session_low
+        if pdhl_enabled
+        and pdhl_show_start_vl
+        and prev_session_high is not None
+        and prev_session_low is not None
+        else None,
+        start_line_high=prev_session_high
+        if pdhl_enabled
+        and pdhl_show_start_vl
+        and prev_session_high is not None
+        and prev_session_low is not None
+        else None,
     )
 
     last_ts = df.index[-1] if not df.empty else pd.Timestamp.min
@@ -390,7 +493,7 @@ def calculate_asia_london_levels(
     _add_live(sydney, "Sydney")
 
     if vert_lines_enabled and not df.empty:
-        unique_dates = pd.Series(df.index.normalize()).unique()
+        unique_dates = pd.Series(la_index.normalize()).unique()
 
         def _vl(base_date: pd.Timestamp, hour: int, minute: int, label: str, color: str) -> None:
             ts = base_date + pd.Timedelta(hours=hour + timezone_offset, minutes=minute)
@@ -415,4 +518,5 @@ def calculate_asia_london_levels(
         pd_levels=pd_levels,
         vertical_lines=vertical_lines,
         custom_vertical_lines=custom_vertical_lines,
+        session_markers=session_markers,
     )

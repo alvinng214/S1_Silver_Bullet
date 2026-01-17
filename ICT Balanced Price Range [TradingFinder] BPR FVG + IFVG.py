@@ -166,36 +166,25 @@ def build_bprs(
     ifvgs: List[IFVGZone],
     validity: int,
 ) -> List[BPRZone]:
-    """Build BPRs from overlapping FVG/IFVG pairs."""
+    """Build BPRs from overlapping FVG/IFVG pairs in the same direction."""
     zones: List[BPRZone] = []
     for fvg in fvgs:
         for ifvg in ifvgs:
-            if fvg.direction == "bullish" and ifvg.direction == "bearish":
-                overlap = _overlap(fvg.distal, fvg.proximal, ifvg.distal, ifvg.proximal)
-                if overlap:
-                    low, high = overlap
-                    zones.append(
-                        BPRZone(
-                            direction="bullish",
-                            distal=low,
-                            proximal=high,
-                            index=max(fvg.index, ifvg.index),
-                            valid_until=max(fvg.index, ifvg.index) + validity,
-                        )
-                    )
-            if fvg.direction == "bearish" and ifvg.direction == "bullish":
-                overlap = _overlap(fvg.distal, fvg.proximal, ifvg.distal, ifvg.proximal)
-                if overlap:
-                    low, high = overlap
-                    zones.append(
-                        BPRZone(
-                            direction="bearish",
-                            distal=low,
-                            proximal=high,
-                            index=max(fvg.index, ifvg.index),
-                            valid_until=max(fvg.index, ifvg.index) + validity,
-                        )
-                    )
+            if fvg.direction != ifvg.direction:
+                continue
+            overlap = _overlap(fvg.distal, fvg.proximal, ifvg.distal, ifvg.proximal)
+            if not overlap:
+                continue
+            low, high = overlap
+            zones.append(
+                BPRZone(
+                    direction=fvg.direction,
+                    distal=low,
+                    proximal=high,
+                    index=max(fvg.index, ifvg.index),
+                    valid_until=max(fvg.index, ifvg.index) + validity,
+                )
+            )
     return zones
 
 

@@ -22,6 +22,9 @@ class Pivot:
     type: int  # 1 high, -1 low
     time: pd.Timestamp
     bar_index: int
+    break_of_structure_broken: bool = False
+    liquidity_broken: bool = False
+    change_of_character_broken: bool = False
 
 
 @dataclass
@@ -175,6 +178,73 @@ def _htf_pivots(df: pd.DataFrame, tf: str, left: int, right: int) -> Tuple[List[
     return piv_high_list, piv_low_list, closed_flags
 
 
+def _append_structure_pivot(structure_pivots: List[Pivot], pivot: Pivot, max_len: int = 5) -> None:
+    structure_pivots.insert(0, pivot)
+    if len(structure_pivots) > max_len:
+        structure_pivots.pop()
+
+
+def _detect_break_of_structure(structure_pivots: List[Pivot], trend: int, close: float) -> Optional[Pivot]:
+    if trend == 1:
+        for pivot in structure_pivots:
+            if pivot.type != 1 or pivot.break_of_structure_broken:
+                continue
+            if close > pivot.price:
+                pivot.break_of_structure_broken = True
+                return pivot
+    if trend == -1:
+        for pivot in structure_pivots:
+            if pivot.type != -1 or pivot.break_of_structure_broken:
+                continue
+            if close < pivot.price:
+                pivot.break_of_structure_broken = True
+                return pivot
+    return None
+
+
+def _detect_change_of_character(
+    structure_pivots: List[Pivot],
+    trend: int,
+    close: float,
+    prev_close: float,
+) -> Tuple[Optional[Pivot], int]:
+    if trend <= 0:
+        for pivot in structure_pivots:
+            if pivot.type != 1 or pivot.change_of_character_broken:
+                continue
+            if close > pivot.price and prev_close < pivot.price:
+                pivot.change_of_character_broken = True
+                remaining: List[Pivot] = []
+                for existing in structure_pivots:
+                    if existing.bar_index <= pivot.bar_index:
+                        continue
+                    existing.break_of_structure_broken = True
+                    remaining.append(existing)
+                for existing in remaining:
+                    if existing.bar_index != pivot.bar_index:
+                        existing.change_of_character_broken = False
+                structure_pivots[:] = remaining
+                return pivot, 1
+    if trend >= 0:
+        for pivot in structure_pivots:
+            if pivot.type != -1 or pivot.change_of_character_broken:
+                continue
+            if close < pivot.price and prev_close > pivot.price:
+                pivot.change_of_character_broken = True
+                remaining = []
+                for existing in structure_pivots:
+                    if existing.bar_index <= pivot.bar_index:
+                        continue
+                    existing.break_of_structure_broken = True
+                    remaining.append(existing)
+                for existing in remaining:
+                    if existing.bar_index != pivot.bar_index:
+                        existing.change_of_character_broken = False
+                structure_pivots[:] = remaining
+                return pivot, -1
+    return None, trend
+
+
 def calculate_liquidity_inducements(
     df: pd.DataFrame,
     *,
@@ -247,36 +317,30 @@ def calculate_liquidity_inducements(
         high = float(df["high"].iloc[i])
         low = float(df["low"].iloc[i])
         close = float(df["close"].iloc[i])
+        prev_close = float(df["close"].iloc[i - 1]) if i > 0 else close
 
         struct_high_val = structure_high.iloc[i]
         struct_low_val = structure_low.iloc[i]
         if not np.isnan(struct_high_val):
             pivot = Pivot(float(struct_high_val), 1, df.index[i - market_right], i - market_right)
-            structure_pivots.append(pivot)
+            _append_structure_pivot(structure_pivots, pivot)
         if not np.isnan(struct_low_val):
             pivot = Pivot(float(struct_low_val), -1, df.index[i - market_right], i - market_right)
-            structure_pivots.append(pivot)
+            _append_structure_pivot(structure_pivots, pivot)
 
-        last_high = next((p for p in reversed(structure_pivots) if p.type == 1), None)
-        last_low = next((p for p in reversed(structure_pivots) if p.type == -1), None)
+        last_high = next((p for p in structure_pivots if p.type == 1), None)
+        last_low = next((p for p in structure_pivots if p.type == -1), None)
 
-        if last_high and close > last_high.price and (i == 0 or df["close"].iloc[i - 1] <= last_high.price):
-            break_pivot = last_high
-            if trend != 1:
-                change_of_character = break_pivot
-            else:
-                break_of_structure = break_pivot
-            trend = 1
-            previous_structure_break_pivot = break_pivot
+        change_of_character, trend = _detect_change_of_character(structure_pivots, trend, close, prev_close)
+        if change_of_character:
+            break_of_structure = None
+            previous_structure_break_pivot = change_of_character
             previous_structure_break_index = i
-        if last_low and close < last_low.price and (i == 0 or df["close"].iloc[i - 1] >= last_low.price):
-            break_pivot = last_low
-            if trend != -1:
-                change_of_character = break_pivot
-            else:
-                break_of_structure = break_pivot
-            trend = -1
-            previous_structure_break_pivot = break_pivot
+
+        bos_pivot = _detect_break_of_structure(structure_pivots, trend, close)
+        if bos_pivot:
+            break_of_structure = bos_pivot
+            previous_structure_break_pivot = bos_pivot
             previous_structure_break_index = i
 
         if grabs_enabled and grab_closed[i] and grab_high_series[i]:

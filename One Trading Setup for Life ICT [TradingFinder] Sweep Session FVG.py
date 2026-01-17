@@ -73,6 +73,10 @@ class OBDrawingOutput:
     proximal: pd.Series
     distal: pd.Series
     index: pd.Series
+    alert_bb: pd.Series
+    proximal_bb: pd.Series
+    distal_bb: pd.Series
+    index_bb: pd.Series
 
 
 @dataclass
@@ -94,6 +98,13 @@ def _atr(df: pd.DataFrame, length: int = 55) -> pd.Series:
     return tr.rolling(length).mean()
 
 
+def _series_value(series: pd.Series, idx: int, offset: int) -> float:
+    target = idx - offset
+    if target < 0 or target >= len(series):
+        return float("nan")
+    return float(series.iloc[target])
+
+
 def _session_mask(index: pd.DatetimeIndex, session: str, tz: str) -> pd.Series:
     start_str, end_str = session.split("-")
     start_hour = int(start_str[:2])
@@ -113,15 +124,7 @@ def _fvg_detector(
     filter_on: bool,
     filter_type: str,
 ) -> FVGDetection:
-    atr = _atr(df) if filter_on else None
-    multipliers = {
-        "Very Aggressive": 0.0,
-        "Aggressive": 0.5,
-        "Defensive": 0.7,
-        "Very Defensive": 1.0,
-    }
-    multiplier = multipliers.get(filter_type, 0.7)
-
+    atr = _atr(df, length=55)
     demand_condition = pd.Series(False, index=df.index)
     supply_condition = pd.Series(False, index=df.index)
     demand_distal = pd.Series(np.nan, index=df.index)
@@ -130,26 +133,78 @@ def _fvg_detector(
     supply_proximal = pd.Series(np.nan, index=df.index)
     demand_bar = pd.Series(np.nan, index=df.index)
     supply_bar = pd.Series(np.nan, index=df.index)
+    highs = df["high"]
+    lows = df["low"]
+    opens = df["open"]
+    closes = df["close"]
 
     for i in range(2, len(df)):
-        high_2 = df["high"].iloc[i - 2]
-        low_2 = df["low"].iloc[i - 2]
-        high = df["high"].iloc[i]
-        low = df["low"].iloc[i]
-        if low > high_2:
-            width = low - high_2
-            if filter_on and atr is not None:
-                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
-                    continue
+        high_2 = highs.iloc[i - 2]
+        low_2 = lows.iloc[i - 2]
+        high = highs.iloc[i]
+        low = lows.iloc[i]
+        high_1 = highs.iloc[i - 1]
+        low_1 = lows.iloc[i - 1]
+
+        if not filter_on:
+            d_condition = low > high_2
+            s_condition = high < low_2
+        else:
+            atr_val = atr.iloc[i]
+            body_ratio_1 = abs((closes.iloc[i - 1] - opens.iloc[i - 1]) / (high_1 - low_1)) if high_1 != low_1 else 0.0
+            body_ratio_2 = abs((closes.iloc[i - 2] - opens.iloc[i - 2]) / (high_2 - low_2)) if high_2 != low_2 else 0.0
+            body_ratio_0 = abs((closes.iloc[i] - opens.iloc[i]) / (high - low)) if high != low else 0.0
+            if filter_type == "Very Aggressive":
+                d_condition = (low > high_2) and (high > high_1)
+                s_condition = (high < low_2) and (low_1 > low)
+            elif filter_type == "Aggressive":
+                d_condition = (low > high_2) and ((high_1 - low_1) >= (1.0 * atr_val)) and (high > high_1)
+                s_condition = (high < low_2) and ((high_1 - low_1) >= (1.0 * atr_val)) and (low_1 > low)
+            elif filter_type == "Defensive":
+                d_condition = (
+                    (low > high_2)
+                    and ((high_1 - low_1) >= (1.5 * atr_val))
+                    and (high > high_1)
+                    and (
+                        (closes.iloc[i - 2] - opens.iloc[i - 2] > 0 and closes.iloc[i - 1] - opens.iloc[i - 1] > 0)
+                        or body_ratio_1 > 0.7
+                    )
+                )
+                s_condition = (
+                    (high < low_2)
+                    and ((high_1 - low_1) >= (1.5 * atr_val))
+                    and (low_1 > low)
+                    and (
+                        (closes.iloc[i - 2] - opens.iloc[i - 2] < 0 and closes.iloc[i - 1] - opens.iloc[i - 1] < 0)
+                        or body_ratio_1 > 0.7
+                    )
+                )
+            else:
+                d_condition = (
+                    (low > high_2)
+                    and ((high_1 - low_1) >= (1.5 * atr_val))
+                    and (high > high_1)
+                    and (closes.iloc[i - 2] - opens.iloc[i - 2] > 0 and closes.iloc[i - 1] - opens.iloc[i - 1] > 0)
+                    and body_ratio_1 > 0.7
+                    and body_ratio_2 > 0.35
+                    and body_ratio_0 > 0.35
+                )
+                s_condition = (
+                    (high < low_2)
+                    and ((high_1 - low_1) >= (1.5 * atr_val))
+                    and (low_1 > low)
+                    and (closes.iloc[i - 2] - opens.iloc[i - 2] < 0 and closes.iloc[i - 1] - opens.iloc[i - 1] < 0)
+                    and body_ratio_1 > 0.7
+                    and body_ratio_2 > 0.35
+                    and body_ratio_0 > 0.35
+                )
+
+        if d_condition:
             demand_condition.iloc[i] = True
             demand_distal.iloc[i] = high_2
             demand_proximal.iloc[i] = low
             demand_bar.iloc[i] = i
-        elif high < low_2:
-            width = low_2 - high
-            if filter_on and atr is not None:
-                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
-                    continue
+        if s_condition:
             supply_condition.iloc[i] = True
             supply_distal.iloc[i] = low_2
             supply_proximal.iloc[i] = high
@@ -223,35 +278,288 @@ def _refine_ob(
     current_distal = np.nan
     current_proximal = np.nan
 
+    atr = _atr(df, length=55)
+    highs = df["high"]
+    lows = df["low"]
+    opens = df["open"]
+    closes = df["close"]
+    ranges = highs - lows
+    bodies = closes - opens
+
     for i in range(len(df)):
         if trigger.iloc[i]:
             idx = ob_index.iloc[i]
-            if not pd.isna(idx):
-                idx = int(idx)
-            else:
-                idx = i
-            if 0 <= idx < len(df):
-                open_i = float(df["open"].iloc[idx])
-                close_i = float(df["close"].iloc[idx])
-                high_i = float(df["high"].iloc[idx])
-                low_i = float(df["low"].iloc[idx])
+            idx = int(idx) if not pd.isna(idx) else i
+            pos_index = i - idx if (i - idx) < 4999 else 2
+            if idx < 0 or idx >= len(df):
+                continue
 
-                if direction == "Demand":
-                    distal = low_i
-                    if refine_on:
-                        proximal = max(open_i, close_i) if refine_mode == "Defensive" else high_i
-                    else:
-                        proximal = high_i
+            atr_val = atr.iloc[i]
+            range_pos = _series_value(ranges, i, pos_index)
+            body_pos = _series_value(bodies, i, pos_index)
+
+            def _min_val(series: pd.Series, offsets: List[int]) -> float:
+                values = [val for val in (_series_value(series, i, off) for off in offsets) if not np.isnan(val)]
+                return min(values) if values else float("nan")
+
+            def _max_val(series: pd.Series, offsets: List[int]) -> float:
+                values = [val for val in (_series_value(series, i, off) for off in offsets) if not np.isnan(val)]
+                return max(values) if values else float("nan")
+
+            if direction == "Demand" and i > 4:
+                offsets_full = [pos_index - 2, pos_index + 1, pos_index, pos_index - 1]
+                offsets_mid = [pos_index + 1, pos_index, pos_index - 1]
+                offsets_short = [pos_index + 1, pos_index]
+                if i > idx + 1:
+                    dmin_open = _min_val(opens, offsets_full)
+                    dmin_high = _min_val(highs, offsets_full)
+                    dmin_low = _min_val(lows, offsets_full)
+                    dmin_close = _min_val(closes, offsets_full)
+                    dmax_open = _max_val(opens, offsets_full)
+                    dmax_high = _max_val(highs, offsets_full)
+                    dmax_low = _max_val(lows, offsets_full)
+                    dmax_close = _max_val(closes, offsets_full)
+                elif i == idx + 1:
+                    dmin_open = _min_val(opens, offsets_mid)
+                    dmin_high = _min_val(highs, offsets_mid)
+                    dmin_low = _min_val(lows, offsets_mid)
+                    dmin_close = _min_val(closes, offsets_mid)
+                    dmax_open = _max_val(opens, offsets_mid)
+                    dmax_high = _max_val(highs, offsets_mid)
+                    dmax_low = _max_val(lows, offsets_mid)
+                    dmax_close = _max_val(closes, offsets_mid)
                 else:
-                    distal = high_i
-                    if refine_on:
-                        proximal = min(open_i, close_i) if refine_mode == "Defensive" else low_i
-                    else:
-                        proximal = low_i
+                    dmin_open = _min_val(opens, offsets_short)
+                    dmin_high = _min_val(highs, offsets_short)
+                    dmin_low = _min_val(lows, offsets_short)
+                    dmin_close = _min_val(closes, offsets_short)
+                    dmax_open = _max_val(opens, offsets_short)
+                    dmax_high = _max_val(highs, offsets_short)
+                    dmax_low = _max_val(lows, offsets_short)
+                    dmax_close = _max_val(closes, offsets_short)
 
-                current_index = idx
-                current_distal = distal
-                current_proximal = proximal
+                dpa = dmax_close
+                dda = dmin_low
+                if range_pos <= (atr_val * 0.5):
+                    dpa = _series_value(highs, i, pos_index)
+                    dda = dmin_low
+                elif (range_pos > (atr_val * 0.5)) and (range_pos <= atr_val):
+                    if body_pos >= 0:
+                        dpa = _series_value(closes, i, pos_index)
+                        dda = dmin_low
+                    else:
+                        dpa = _series_value(opens, i, pos_index)
+                        dda = dmin_low
+                elif range_pos > atr_val:
+                    if i > idx:
+                        low_next = _series_value(lows, i, pos_index + 1)
+                        high_pos = _series_value(highs, i, pos_index)
+                        if low_next < high_pos:
+                            if low_next > _series_value(lows, i, pos_index):
+                                dpa = low_next
+                                dda = _series_value(lows, i, pos_index)
+                            else:
+                                body_next = _series_value(bodies, i, pos_index + 1)
+                                dcr_next = _series_value(ranges, i, pos_index + 1)
+                                if body_next >= 0:
+                                    if dcr_next > atr_val:
+                                        dpa = dmax_open
+                                        dda = dmin_low
+                                    else:
+                                        dpa = dmax_close
+                                        dda = dmin_low
+                                else:
+                                    if dcr_next > atr_val:
+                                        dpa = dmax_open
+                                        dda = dmin_low
+                                    else:
+                                        dpa = dmax_open
+                                        dda = dmin_low
+                        else:
+                            dmin_open_gap = dmin_low - dmin_open
+                            dmin_close_gap = dmin_low - dmin_close
+                            if (dmin_open_gap > dmin_close_gap) and ((dmin_open_gap <= atr_val) and (dmin_open_gap >= (atr_val * 0.5))):
+                                dpa = dmin_open
+                                dda = dmin_low
+                            elif (dmin_open_gap < dmin_close_gap) and ((dmin_close_gap <= atr_val) and (dmin_close_gap >= (atr_val * 0.5))):
+                                dpa = dmin_close
+                                dda = dmin_low
+                            else:
+                                dpa = dmin_close
+                                dda = dmin_low
+                    else:
+                        dcr_next = _series_value(ranges, i, pos_index + 1)
+                        if dcr_next > atr_val:
+                            dpa = dmax_open
+                            dda = dmin_low
+                        else:
+                            dpa = dmax_close
+                            dda = dmin_low
+                else:
+                    if body_pos > 0:
+                        dpa = dmax_high
+                        dda = dmin_low
+                    else:
+                        dpa = dmax_high
+                        dda = dmax_low
+
+                if refine_mode == "Defensive":
+                    span = dpa - dda
+                    if span >= atr_val * 4:
+                        distal_refine = dda
+                        proximal_refine = dpa - span * 0.8
+                    elif span >= atr_val * 3:
+                        distal_refine = dda
+                        proximal_refine = dpa - span * 0.7
+                    elif span >= atr_val * 2:
+                        distal_refine = dda
+                        proximal_refine = dpa - span * 0.6
+                    elif span >= atr_val * 1.6:
+                        distal_refine = dda
+                        proximal_refine = dpa - span * 0.5
+                    elif span > atr_val:
+                        distal_refine = dda
+                        proximal_refine = dpa - span * 0.25
+                    else:
+                        distal_refine = dda
+                        proximal_refine = dpa
+                else:
+                    distal_refine = dda
+                    proximal_refine = dpa
+
+                y_p = proximal_refine if refine_on else _series_value(highs, i, pos_index)
+                y_d = distal_refine if refine_on else _series_value(lows, i, pos_index)
+
+            elif direction == "Supply" and i > 4:
+                offsets_full = [pos_index - 2, pos_index + 1, pos_index, pos_index - 1]
+                offsets_mid = [pos_index + 1, pos_index, pos_index - 1]
+                offsets_short = [pos_index + 1, pos_index]
+                if i > idx + 1:
+                    smin_open = _min_val(opens, offsets_full)
+                    smin_high = _min_val(highs, offsets_full)
+                    smin_low = _min_val(lows, offsets_full)
+                    smin_close = _min_val(closes, offsets_full)
+                    smax_open = _max_val(opens, offsets_full)
+                    smax_high = _max_val(highs, offsets_full)
+                    smax_low = _max_val(lows, offsets_full)
+                    smax_close = _max_val(closes, offsets_full)
+                elif i == idx + 1:
+                    smin_open = _min_val(opens, offsets_mid)
+                    smin_high = _min_val(highs, offsets_mid)
+                    smin_low = _min_val(lows, offsets_mid)
+                    smin_close = _min_val(closes, offsets_mid)
+                    smax_open = _max_val(opens, offsets_mid)
+                    smax_high = _max_val(highs, offsets_mid)
+                    smax_low = _max_val(lows, offsets_mid)
+                    smax_close = _max_val(closes, offsets_mid)
+                else:
+                    smin_open = _min_val(opens, offsets_short)
+                    smin_high = _min_val(highs, offsets_short)
+                    smin_low = _min_val(lows, offsets_short)
+                    smin_close = _min_val(closes, offsets_short)
+                    smax_open = _max_val(opens, offsets_short)
+                    smax_high = _max_val(highs, offsets_short)
+                    smax_low = _max_val(lows, offsets_short)
+                    smax_close = _max_val(closes, offsets_short)
+
+                spa = smin_close
+                sda = smax_high
+                if range_pos <= (atr_val * 0.5):
+                    spa = _series_value(lows, i, pos_index)
+                    sda = smax_high
+                elif (range_pos > (atr_val * 0.5)) and (range_pos <= atr_val):
+                    if body_pos >= 0:
+                        spa = _series_value(closes, i, pos_index)
+                        sda = smax_high
+                    else:
+                        spa = _series_value(opens, i, pos_index)
+                        sda = smax_high
+                elif range_pos > atr_val:
+                    if i > idx:
+                        high_prev = _series_value(highs, i, pos_index - 1)
+                        low_pos = _series_value(lows, i, pos_index)
+                        if high_prev > low_pos:
+                            if high_prev > _series_value(highs, i, pos_index):
+                                spa = high_prev
+                                sda = _series_value(highs, i, pos_index)
+                            else:
+                                body_prev = _series_value(bodies, i, pos_index - 1)
+                                scr_prev = _series_value(ranges, i, pos_index - 1)
+                                if body_prev >= 0:
+                                    if scr_prev > atr_val:
+                                        spa = smin_close
+                                        sda = smax_high
+                                    else:
+                                        spa = smin_open
+                                        sda = smax_high
+                                else:
+                                    if scr_prev > atr_val:
+                                        spa = smin_open
+                                        sda = smax_high
+                                    else:
+                                        spa = smax_close
+                                        sda = smax_high
+                        else:
+                            smax_open_gap = smax_high - smin_open
+                            smax_close_gap = smax_high - smin_close
+                            if (smax_open_gap > smax_close_gap) and ((smax_open_gap <= atr_val) and (smax_open_gap >= (atr_val * 0.5))):
+                                spa = smin_open
+                                sda = smax_high
+                            elif (smax_open_gap < smax_close_gap) and ((smax_close_gap <= atr_val) and (smax_close_gap >= (atr_val * 0.5))):
+                                spa = smin_close
+                                sda = smax_high
+                            else:
+                                spa = smin_close
+                                sda = smax_high
+                    else:
+                        scr_next = _series_value(ranges, i, pos_index + 1)
+                        if scr_next > atr_val:
+                            spa = smin_close
+                            sda = smax_high
+                        else:
+                            spa = smin_open
+                            sda = smax_high
+                else:
+                    if body_pos > 0:
+                        spa = smin_low
+                        sda = smax_high
+                    else:
+                        spa = smin_low
+                        sda = smax_high
+
+                if refine_mode == "Defensive":
+                    span = sda - spa
+                    if span >= atr_val * 4:
+                        distal_refine = sda
+                        proximal_refine = spa + span * 0.8
+                    elif span >= atr_val * 3:
+                        distal_refine = sda
+                        proximal_refine = spa + span * 0.7
+                    elif span >= atr_val * 2:
+                        distal_refine = sda
+                        proximal_refine = spa + span * 0.6
+                    elif span >= atr_val * 1.6:
+                        distal_refine = sda
+                        proximal_refine = spa + span * 0.5
+                    elif span > atr_val:
+                        distal_refine = sda
+                        proximal_refine = spa + span * 0.25
+                    else:
+                        distal_refine = sda
+                        proximal_refine = spa
+                else:
+                    distal_refine = sda
+                    proximal_refine = spa
+
+                y_p = proximal_refine if refine_on else _series_value(lows, i, pos_index)
+                y_d = distal_refine if refine_on else _series_value(highs, i, pos_index)
+            else:
+                y_p = np.nan
+                y_d = np.nan
+
+            current_index = idx
+            current_distal = y_d
+            current_proximal = y_p
 
         xd1.iloc[i] = current_index
         xd2.iloc[i] = current_index
@@ -286,49 +594,109 @@ def _ob_drawing(
     distal_series: pd.Series,
     proximal_series: pd.Series,
     index_series: pd.Series,
-    session_on: pd.Series,
+    ob_valid_global: pd.Series,
     validity: int,
     mitigation_level: str,
+    mitigation_level_bb: str,
+    show_all: bool,
+    show_all_bb: bool,
+    show: bool,
+    show_bb: bool,
 ) -> OBDrawingOutput:
     alert = pd.Series(False, index=df.index)
     proximal_out = pd.Series(np.nan, index=df.index)
     distal_out = pd.Series(np.nan, index=df.index)
     index_out = pd.Series(np.nan, index=df.index)
+    alert_bb = pd.Series(False, index=df.index)
+    proximal_bb = pd.Series(np.nan, index=df.index)
+    distal_bb = pd.Series(np.nan, index=df.index)
+    index_bb = pd.Series(np.nan, index=df.index)
 
-    active_zone: Optional[Dict[str, float]] = None
+    check = True
+    check_bb = False
+    distal_price = np.nan
+    proximal_price = np.nan
+    idx_price = np.nan
 
+    distal_price_bb = np.nan
+    proximal_price_bb = np.nan
+    idx_price_bb = np.nan
+
+    cbb_history: List[bool] = []
     for i in range(len(df)):
+        prev_check = check
+        prev_check_bb = check_bb
+
         if trigger.iloc[i]:
-            distal = distal_series.iloc[i]
-            proximal = proximal_series.iloc[i]
-            index_val = index_series.iloc[i]
-            if not pd.isna(distal) and not pd.isna(proximal) and not pd.isna(index_val):
-                active_zone = {
-                    "distal": float(distal),
-                    "proximal": float(proximal),
-                    "index": int(index_val),
-                }
+            distal_price = distal_series.iloc[i]
+            proximal_price = proximal_series.iloc[i]
+            idx_price = index_series.iloc[i]
+            check = True
 
-        if active_zone is not None:
-            zone_age = i - active_zone["index"]
-            if zone_age > validity:
-                active_zone = None
+        if check and not pd.isna(idx_price):
+            if (i - idx_price) >= validity:
+                check = False
             else:
-                distal = active_zone["distal"]
-                proximal = active_zone["proximal"]
-                level = _mitigation_level(distal, proximal, mitigation_level)
-                high_i = float(df["high"].iloc[i])
-                low_i = float(df["low"].iloc[i])
-                if session_on.iloc[i] == 1 and low_i <= level <= high_i:
-                    alert.iloc[i] = True
-                    active_zone = None
+                ml = _mitigation_level(distal_price, proximal_price, mitigation_level)
+                if direction == "Demand":
+                    if df["low"].iloc[i] < ml:
+                        check = False
+                else:
+                    if df["high"].iloc[i] > ml:
+                        check = False
 
-        if active_zone is not None:
-            proximal_out.iloc[i] = active_zone["proximal"]
-            distal_out.iloc[i] = active_zone["distal"]
-            index_out.iloc[i] = active_zone["index"]
+        cbb = (prev_check is True) and (check is False)
+        cbb_history.append(cbb)
+        if len(cbb_history) > 4:
+            cbb_history.pop(0)
 
-    return OBDrawingOutput(alert=alert, proximal=proximal_out, distal=distal_out, index=index_out)
+        if any(cbb_history) and not prev_check_bb and not check_bb:
+            if direction == "Demand" and df["close"].iloc[i] < distal_price:
+                idx_price_bb = i
+                check_bb = True
+                distal_price_bb = proximal_price
+                proximal_price_bb = distal_price
+            if direction == "Supply" and df["close"].iloc[i] > distal_price:
+                idx_price_bb = i
+                check_bb = True
+                distal_price_bb = proximal_price
+                proximal_price_bb = distal_price
+
+        if check_bb:
+            ml_bb = _mitigation_level(distal_price_bb, proximal_price_bb, mitigation_level_bb)
+            if direction == "Demand":
+                if df["high"].iloc[i] > ml_bb or (not pd.isna(idx_price_bb) and (i - idx_price_bb) >= validity) or cbb:
+                    check_bb = False
+            else:
+                if df["low"].iloc[i] < ml_bb or (not pd.isna(idx_price_bb) and (i - idx_price_bb) >= validity) or cbb:
+                    check_bb = False
+
+        if prev_check and not check:
+            alert.iloc[i] = True
+
+        if prev_check_bb and not check_bb and not alert.iloc[i]:
+            alert_bb.iloc[i] = True
+
+        if check:
+            proximal_out.iloc[i] = proximal_price
+            distal_out.iloc[i] = distal_price
+            index_out.iloc[i] = idx_price
+
+        if check_bb:
+            proximal_bb.iloc[i] = proximal_price_bb
+            distal_bb.iloc[i] = distal_price_bb
+            index_bb.iloc[i] = idx_price_bb
+
+    return OBDrawingOutput(
+        alert=alert,
+        proximal=proximal_out,
+        distal=distal_out,
+        index=index_out,
+        alert_bb=alert_bb,
+        proximal_bb=proximal_bb,
+        distal_bb=distal_bb,
+        index_bb=index_bb,
+    )
 
 
 def _cisd_level_detector(
@@ -616,9 +984,14 @@ def calculate_one_trading_setup(
         distal_series=demand_refined.yd12,
         proximal_series=demand_refined.yp12,
         index_series=demand_refined.xd1,
-        session_on=am_range,
+        ob_valid_global=am_range == 1,
         validity=ob_valid,
         mitigation_level=mitigation_level_ob,
+        mitigation_level_bb=mitigation_level_ob,
+        show_all=True,
+        show_all_bb=False,
+        show=True,
+        show_bb=False,
     )
     supply_ob = _ob_drawing(
         df,
@@ -627,9 +1000,14 @@ def calculate_one_trading_setup(
         distal_series=supply_refined.yd12,
         proximal_series=supply_refined.yp12,
         index_series=supply_refined.xd1,
-        session_on=am_range,
+        ob_valid_global=am_range == 1,
         validity=ob_valid,
         mitigation_level=mitigation_level_ob,
+        mitigation_level_bb=mitigation_level_ob,
+        show_all=True,
+        show_all_bb=False,
+        show=True,
+        show_bb=False,
     )
 
     demand_fvg = _ob_drawing(
@@ -639,9 +1017,14 @@ def calculate_one_trading_setup(
         distal_series=cisd_outputs.bull_fvg_distal,
         proximal_series=cisd_outputs.bull_fvg_proximal,
         index_series=cisd_outputs.bull_fvg_bar,
-        session_on=am_range,
+        ob_valid_global=am_range == 1,
         validity=fvg_valid,
         mitigation_level=mitigation_level_fvg,
+        mitigation_level_bb=mitigation_level_fvg,
+        show_all=True,
+        show_all_bb=False,
+        show=True,
+        show_bb=False,
     )
     supply_fvg = _ob_drawing(
         df,
@@ -650,9 +1033,14 @@ def calculate_one_trading_setup(
         distal_series=cisd_outputs.bear_fvg_distal,
         proximal_series=cisd_outputs.bear_fvg_proximal,
         index_series=cisd_outputs.bear_fvg_bar,
-        session_on=am_range,
+        ob_valid_global=am_range == 1,
         validity=fvg_valid,
         mitigation_level=mitigation_level_fvg,
+        mitigation_level_bb=mitigation_level_fvg,
+        show_all=True,
+        show_all_bb=False,
+        show=True,
+        show_bb=False,
     )
 
     alert_events: List[AlertEvent] = []

@@ -293,7 +293,11 @@ def calculate_setup_01(
                 low_tracker = low_i
                 if close_i >= proximal_lvl_bu:
                     long_count += 1
-                    long_signal = long_count == hunts_needed if signal_after_hunts else True
+                    if signal_after_hunts:
+                        if long_count == hunts_needed:
+                            long_signal = True
+                    else:
+                        long_signal = True
                 else:
                     long_signal = False
             else:
@@ -310,7 +314,11 @@ def calculate_setup_01(
                 high_tracker = high_i
                 if close_i <= proximal_lvl_be:
                     short_count += 1
-                    short_signal = short_count == hunts_needed if signal_after_hunts else True
+                    if signal_after_hunts:
+                        if short_count == hunts_needed:
+                            short_signal = True
+                    else:
+                        short_signal = True
                 else:
                     short_signal = False
             else:
