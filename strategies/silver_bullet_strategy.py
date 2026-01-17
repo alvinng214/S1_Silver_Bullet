@@ -67,6 +67,7 @@ ONE_TRADING_SETUP = _load_module(
 )
 FIB_O = _load_module("fib_ote", "Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.py")
 MIRPAPA_FOB = _load_module("mirpapa_fob", "MirPapa-ICT-HTF- FVG OB Threeple (EN).py")
+SB_WITH_SIGNALS = _load_module("sb_with_signals", "ICT_Silver_Bullet_with_signals.py")
 
 
 @dataclass
@@ -90,6 +91,7 @@ class SilverBulletStrategy(bt.Strategy):
         ("use_bpr", True),
         ("use_setup01", True),
         ("use_one_trading_setup", True),
+        ("use_silver_bullet_signals", False),
         ("sweep_timeframes", [("240", 200, True)]),
         ("market_structure_timeframes", ("60", "240", "1D", "1W")),
         ("market_structure_pivots", (15, 15, 15, 15)),
@@ -225,6 +227,10 @@ class SilverBulletStrategy(bt.Strategy):
         if self.params.use_one_trading_setup:
             setup = ONE_TRADING_SETUP.calculate_one_trading_setup(df)
             trigger = trigger or bool(setup["cisd"].bull_trigger.iloc[-1])
+
+        if self.params.use_silver_bullet_signals:
+            sb_signals = SB_WITH_SIGNALS.detect_silver_bullet_signals(df)
+            trigger = trigger or bool(sb_signals["signals"]["fvg_activated"].iloc[-1])
 
         if self.params.use_ote:
             ote = FIB_O.calculate_fibonacci_ote(df)
