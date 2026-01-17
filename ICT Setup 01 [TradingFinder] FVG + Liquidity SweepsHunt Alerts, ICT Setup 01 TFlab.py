@@ -7,6 +7,7 @@ This module mirrors the Pine Script logic by:
 - Maintaining discount/premium equilibrium zones.
 - Refining proximal/distal levels by candle interaction rules.
 - Emitting long/short signals based on hunts/sweeps inside the FVG.
+- Producing per-bar state and alert events equivalent to the Pine alert calls.
 """
 
 from __future__ import annotations
@@ -36,6 +37,41 @@ class SignalState:
     short_signal: bool
 
 
+@dataclass
+class BarState:
+    index: int
+    bull_fvg: bool
+    bear_fvg: bool
+    validity_bull: bool
+    validity_bear: bool
+    distal_bull: float
+    proximal_bull: float
+    distal_bear: float
+    proximal_bear: float
+    bull_point: int
+    bear_point: int
+    long_count: int
+    short_count: int
+    low_tracker: float
+    high_tracker: float
+    long_signal: bool
+    short_signal: bool
+    discount_bull: float
+    premium_bull: float
+    equilibrium_bull: float
+    discount_bear: float
+    premium_bear: float
+    equilibrium_bear: float
+
+
+@dataclass
+class AlertEvent:
+    index: int
+    direction: str
+    alert_name: str
+    message: str
+
+
 def _atr(df: pd.DataFrame, length: int = 55) -> pd.Series:
     tr = np.maximum(
         df["high"] - df["low"],
@@ -57,6 +93,10 @@ def calculate_setup_01(
     max_signals: int = 3,
     signal_after_hunts: bool = False,
     hunts_needed: int = 2,
+    alert: str = "On",
+    alert_name: str = "ICT Setup 01 Alerts [TradingFinder]",
+    message_bull: str = "Long Signal Position Based on ICT Setup 01 [FVG Hunts]",
+    message_bear: str = "Short Signal Position Based on ICT Setup 01 [FVG Hunts]",
 ) -> dict:
     """Replicate ICT Setup 01 logic and return FVGs and signals.
 
@@ -77,6 +117,8 @@ def calculate_setup_01(
 
     fvg_states: List[FVGState] = []
     signal_states: List[SignalState] = []
+    bar_states: List[BarState] = []
+    alert_events: List[AlertEvent] = []
 
     bull_fvg = False
     bear_fvg = False
@@ -251,7 +293,11 @@ def calculate_setup_01(
                 low_tracker = low_i
                 if close_i >= proximal_lvl_bu:
                     long_count += 1
-                    long_signal = long_count == hunts_needed if signal_after_hunts else True
+                    if signal_after_hunts:
+                        if long_count == hunts_needed:
+                            long_signal = True
+                    else:
+                        long_signal = True
                 else:
                     long_signal = False
             else:
@@ -268,7 +314,11 @@ def calculate_setup_01(
                 high_tracker = high_i
                 if close_i <= proximal_lvl_be:
                     short_count += 1
-                    short_signal = short_count == hunts_needed if signal_after_hunts else True
+                    if signal_after_hunts:
+                        if short_count == hunts_needed:
+                            short_signal = True
+                    else:
+                        short_signal = True
                 else:
                     short_signal = False
             else:
@@ -304,6 +354,52 @@ def calculate_setup_01(
             )
 
         signal_states.append(SignalState(i, long_signal, short_signal))
+        bar_states.append(
+            BarState(
+                index=i,
+                bull_fvg=bull_fvg,
+                bear_fvg=bear_fvg,
+                validity_bull=validity_bu,
+                validity_bear=validity_be,
+                distal_bull=distal_lvl_bu,
+                proximal_bull=proximal_lvl_bu,
+                distal_bear=distal_lvl_be,
+                proximal_bear=proximal_lvl_be,
+                bull_point=bu_point,
+                bear_point=be_point,
+                long_count=long_count,
+                short_count=short_count,
+                low_tracker=low_tracker,
+                high_tracker=high_tracker,
+                long_signal=long_signal,
+                short_signal=short_signal,
+                discount_bull=bu_discount,
+                premium_bull=bu_premium,
+                equilibrium_bull=bu_equilibrium,
+                discount_bear=be_discount,
+                premium_bear=be_premium,
+                equilibrium_bear=be_equilibrium,
+            )
+        )
+        if alert == "On":
+            if long_signal:
+                alert_events.append(
+                    AlertEvent(
+                        index=i,
+                        direction="long",
+                        alert_name=alert_name,
+                        message=message_bull,
+                    )
+                )
+            if short_signal:
+                alert_events.append(
+                    AlertEvent(
+                        index=i,
+                        direction="short",
+                        alert_name=alert_name,
+                        message=message_bear,
+                    )
+                )
 
         distal_bu_history.append(distal_lvl_bu)
         proximal_bu_history.append(proximal_lvl_bu)
@@ -315,4 +411,6 @@ def calculate_setup_01(
     return {
         "fvg_states": fvg_states,
         "signals": signal_states,
+        "bar_states": bar_states,
+        "alerts": alert_events,
     }

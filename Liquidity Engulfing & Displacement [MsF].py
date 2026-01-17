@@ -1,16 +1,17 @@
-"""Liquidity Engulfing & Displacement [MsF]
+"""Liquidity Engulfing & Displacement [MsF].
 
-Python translation of the TradingView Pine Script by Trader_Morry.
-
-This module reproduces:
+Python translation of the Trader_Morry Pine Script:
 - Liquidity Engulfing Candles (LEC) on H1/H4/current timeframe.
 - Displacement detection with optional FVG requirement.
+
+The translation mirrors `request.security` lookahead_off behavior by
+building higher-timeframe bars and forward-filling their signals to LTF bars.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,8 @@ import pandas as pd
 class LECSignals:
     bullish: pd.Series
     bearish: pd.Series
+    bullish_edge: pd.Series
+    bearish_edge: pd.Series
 
 
 @dataclass
@@ -31,40 +34,39 @@ class LECOutputs:
 
 @dataclass
 class DisplacementOutput:
-    displacement: pd.Series
+    displacement_raw: pd.Series
+    displacement_bar: pd.Series
     candle_range: pd.Series
     std_threshold: pd.Series
     fvg: pd.Series
 
 
-def _detect_lec(df: pd.DataFrame, filter_liquidity: bool = True, filter_close: bool = True) -> LECSignals:
-    """Detect Liquidity Engulfing Candles on a given dataframe."""
+def _detect_lec(df: pd.DataFrame, filter_liquidity: bool = True, filter_close: bool = True) -> Tuple[pd.Series, pd.Series]:
     prior_open = df["open"].shift(1)
     prior_close = df["close"].shift(1)
-
     current_open = df["open"]
     current_close = df["close"]
 
-    bull_engulf = (
+    bull = (
         (current_open <= prior_close)
         & (current_open < prior_open)
         & (current_close > prior_open)
     )
-    bear_engulf = (
+    bear = (
         (current_open >= prior_close)
         & (current_open > prior_open)
         & (current_close < prior_open)
     )
 
     if filter_liquidity:
-        bull_engulf = bull_engulf & (df["low"] <= df["low"].shift(1))
-        bear_engulf = bear_engulf & (df["high"] >= df["high"].shift(1))
+        bull = bull & (df["low"] <= df["low"].shift(1))
+        bear = bear & (df["high"] >= df["high"].shift(1))
 
     if filter_close:
-        bull_engulf = bull_engulf & (df["close"] >= df["high"].shift(1))
-        bear_engulf = bear_engulf & (df["close"] <= df["low"].shift(1))
+        bull = bull & (df["close"] >= df["high"].shift(1))
+        bear = bear & (df["close"] <= df["low"].shift(1))
 
-    return LECSignals(bullish=bull_engulf, bearish=bear_engulf)
+    return bull.fillna(False), bear.fillna(False)
 
 
 def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
@@ -76,10 +78,23 @@ def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     )
 
 
-def _align_signals(source_signals: LECSignals, target_index: pd.Index) -> LECSignals:
-    aligned_bull = source_signals.bullish.reindex(target_index, method="ffill").fillna(False)
-    aligned_bear = source_signals.bearish.reindex(target_index, method="ffill").fillna(False)
-    return LECSignals(bullish=aligned_bull, bearish=aligned_bear)
+def _align_signals(signal: pd.Series, target_index: pd.Index) -> pd.Series:
+    return signal.reindex(target_index, method="ffill").fillna(False)
+
+
+def _lec_signals_for_timeframe(
+    df: pd.DataFrame,
+    rule: str,
+    filter_liquidity: bool,
+    filter_close: bool,
+) -> LECSignals:
+    htf_df = _resample_ohlc(df, rule)
+    bull, bear = _detect_lec(htf_df, filter_liquidity=filter_liquidity, filter_close=filter_close)
+    bull = _align_signals(bull, df.index)
+    bear = _align_signals(bear, df.index)
+    bull_edge = bull & ~bull.shift(1).fillna(False)
+    bear_edge = bear & ~bear.shift(1).fillna(False)
+    return LECSignals(bullish=bull, bearish=bear, bullish_edge=bull_edge, bearish_edge=bear_edge)
 
 
 def calculate_lec_signals(
@@ -89,13 +104,13 @@ def calculate_lec_signals(
     filter_close: bool = True,
 ) -> LECOutputs:
     """Calculate LEC signals on H1, H4, and current timeframe."""
-    current = _detect_lec(df, filter_liquidity=filter_liquidity, filter_close=filter_close)
+    bull_cur, bear_cur = _detect_lec(df, filter_liquidity=filter_liquidity, filter_close=filter_close)
+    bull_edge_cur = bull_cur & ~bull_cur.shift(1).fillna(False)
+    bear_edge_cur = bear_cur & ~bear_cur.shift(1).fillna(False)
+    current = LECSignals(bull_cur, bear_cur, bull_edge_cur, bear_edge_cur)
 
-    h1_df = _resample_ohlc(df, "60min")
-    h4_df = _resample_ohlc(df, "240min")
-
-    h1 = _align_signals(_detect_lec(h1_df, filter_liquidity, filter_close), df.index)
-    h4 = _align_signals(_detect_lec(h4_df, filter_liquidity, filter_close), df.index)
+    h1 = _lec_signals_for_timeframe(df, "60min", filter_liquidity, filter_close)
+    h4 = _lec_signals_for_timeframe(df, "240min", filter_liquidity, filter_close)
 
     return LECOutputs(h1=h1, h4=h4, current=current)
 
@@ -118,16 +133,19 @@ def calculate_displacement(
 
     prior_bull = df["close"].shift(1) > df["open"].shift(1)
     fvg = np.where(prior_bull, df["high"].shift(2) < df["low"], df["low"].shift(2) > df["high"])
-    fvg = pd.Series(fvg, index=df.index, dtype=bool)
+    fvg = pd.Series(fvg, index=df.index, dtype=bool).fillna(False)
 
     if require_fvg:
-        displacement = (candle_range.shift(1) > std_threshold.shift(1)) & fvg
-        displacement = displacement.shift(1).fillna(False)
+        displacement_raw = (candle_range.shift(1) > std_threshold.shift(1)) & fvg
+        displacement_raw = displacement_raw.fillna(False)
+        displacement_bar = displacement_raw.shift(-1).fillna(False)
     else:
-        displacement = (candle_range > std_threshold).fillna(False)
+        displacement_raw = (candle_range > std_threshold).fillna(False)
+        displacement_bar = displacement_raw.copy()
 
     return DisplacementOutput(
-        displacement=displacement,
+        displacement_raw=displacement_raw,
+        displacement_bar=displacement_bar,
         candle_range=candle_range,
         std_threshold=std_threshold,
         fvg=fvg,

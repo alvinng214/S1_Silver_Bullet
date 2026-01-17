@@ -1,20 +1,18 @@
-"""
-ICT Balanced Price Range (BPR) | FVG + IFVG
+"""ICT Balanced Price Range (BPR) | FVG + IFVG.
+
 Python translation of the TradingFinder Pine Script.
 
-This module mirrors the Pine logic at a functional level by:
-- Detecting FVGs with optional width filtering.
-- Tracking invalidated FVGs as inversion FVGs (IFVGs).
-- Building Balanced Price Ranges (BPRs) where bullish/bearish zones overlap.
-- Emitting mitigation signals when price re-enters a BPR.
-
-Inputs are expressed as function arguments to keep the logic reproducible.
+This module mirrors the Pine logic by:
+- Detecting bullish and bearish FVGs with optional ATR width filtering.
+- Tracking IFVG (inverted FVG) when price closes through a FVG.
+- Computing BPR zones from overlapping FVG/IFVG pairs.
+- Emitting mitigation alerts when price reacts at configured mitigation levels.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -23,48 +21,32 @@ import pandas as pd
 @dataclass
 class FVGZone:
     direction: str  # "bullish" or "bearish"
-    proximal: float
     distal: float
-    start_idx: int
-    end_idx: int
+    proximal: float
+    index: int
+    valid_until: int
     mitigated: bool = False
-
-    def contains(self, price: float) -> bool:
-        lower = min(self.proximal, self.distal)
-        upper = max(self.proximal, self.distal)
-        return lower <= price <= upper
 
 
 @dataclass
 class IFVGZone:
     direction: str  # "bullish" or "bearish"
-    proximal: float
     distal: float
-    created_at: int
-    origin_start_idx: int
-
-    def overlaps(self, other: FVGZone) -> bool:
-        lower_a, upper_a = sorted((self.proximal, self.distal))
-        lower_b, upper_b = sorted((other.proximal, other.distal))
-        return max(lower_a, lower_b) <= min(upper_a, upper_b)
+    proximal: float
+    index: int
 
 
 @dataclass
 class BPRZone:
     direction: str  # "bullish" or "bearish"
-    proximal: float
     distal: float
-    start_idx: int
-    end_idx: int
+    proximal: float
+    index: int
+    valid_until: int
     mitigated: bool = False
 
-    def contains(self, price: float) -> bool:
-        lower = min(self.proximal, self.distal)
-        upper = max(self.proximal, self.distal)
-        return lower <= price <= upper
 
-
-def _calculate_atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
+def _atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
     tr = np.maximum(
         df["high"] - df["low"],
         np.maximum(
@@ -75,177 +57,156 @@ def _calculate_atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
     return tr.rolling(length).mean()
 
 
+def _mitigation_level(distal: float, proximal: float, mode: str) -> float:
+    if mode == "Distal":
+        return distal
+    if mode == "50 % OB":
+        return (distal + proximal) / 2.0
+    return proximal
+
+
 def detect_fvgs(
     df: pd.DataFrame,
+    *,
     filter_on: bool = True,
     filter_type: str = "Defensive",
+    validity: int = 500,
 ) -> List[FVGZone]:
-    """
-    Detect Fair Value Gaps using the same gap rules as the Pine library:
-    - Bullish FVG: low[i] > high[i-2]
-    - Bearish FVG: high[i] < low[i-2]
-
-    Filter types map to ATR multipliers in the same order as Pine.
-    """
-    fvgs: List[FVGZone] = []
-    atr = _calculate_atr(df) if filter_on else None
+    """Detect FVGs matching FVGDetectorLibrary semantics."""
+    atr = _atr(df) if filter_on else None
     multipliers = {
         "Very Aggressive": 0.0,
         "Aggressive": 0.5,
         "Defensive": 0.7,
         "Very Defensive": 1.0,
     }
-    multiplier = multipliers.get(filter_type, 0.7)
+    mult = multipliers.get(filter_type, 0.7)
+
+    zones: List[FVGZone] = []
 
     for i in range(2, len(df)):
-        if df["low"].iloc[i] > df["high"].iloc[i - 2]:
-            proximal = float(df["low"].iloc[i])
-            distal = float(df["high"].iloc[i - 2])
+        high_2 = float(df["high"].iloc[i - 2])
+        low_2 = float(df["low"].iloc[i - 2])
+        high = float(df["high"].iloc[i])
+        low = float(df["low"].iloc[i])
+
+        if low > high_2:
+            width = low - high_2
             if filter_on and atr is not None:
-                width = proximal - distal
-                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * mult:
                     continue
-            fvgs.append(
+            zones.append(
                 FVGZone(
                     direction="bullish",
-                    proximal=proximal,
-                    distal=distal,
-                    start_idx=int(df.index[i - 1]),
-                    end_idx=int(df.index[i]),
+                    distal=high_2,
+                    proximal=low,
+                    index=i,
+                    valid_until=i + validity,
                 )
             )
-        elif df["high"].iloc[i] < df["low"].iloc[i - 2]:
-            proximal = float(df["high"].iloc[i])
-            distal = float(df["low"].iloc[i - 2])
+        elif high < low_2:
+            width = low_2 - high
             if filter_on and atr is not None:
-                width = distal - proximal
-                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * multiplier:
+                if pd.isna(atr.iloc[i]) or width < atr.iloc[i] * mult:
                     continue
-            fvgs.append(
+            zones.append(
                 FVGZone(
                     direction="bearish",
-                    proximal=proximal,
-                    distal=distal,
-                    start_idx=int(df.index[i - 1]),
-                    end_idx=int(df.index[i]),
+                    distal=low_2,
+                    proximal=high,
+                    index=i,
+                    valid_until=i + validity,
                 )
             )
 
-    return fvgs
+    return zones
 
 
-def detect_ifvgs(
-    df: pd.DataFrame,
-    fvgs: Iterable[FVGZone],
-) -> List[IFVGZone]:
-    """
-    Convert invalidated FVGs into IFVGs.
-
-    - Bullish FVG becomes bearish IFVG if price closes below its distal.
-    - Bearish FVG becomes bullish IFVG if price closes above its distal.
-    """
+def detect_ifvgs(df: pd.DataFrame, fvgs: List[FVGZone]) -> List[IFVGZone]:
+    """Detect IFVGs (inversion) when price closes through a FVG."""
     ifvgs: List[IFVGZone] = []
-
-    for fvg in fvgs:
-        start = fvg.end_idx + 1
-        for i in range(start, len(df)):
+    for zone in fvgs:
+        for i in range(zone.index + 1, min(zone.valid_until + 1, len(df))):
             close = float(df["close"].iloc[i])
-            if fvg.direction == "bullish" and close < fvg.distal:
+            if zone.direction == "bullish" and close < zone.proximal:
                 ifvgs.append(
                     IFVGZone(
                         direction="bearish",
-                        proximal=fvg.proximal,
-                        distal=fvg.distal,
-                        created_at=int(df.index[i]),
-                        origin_start_idx=fvg.start_idx,
+                        distal=zone.distal,
+                        proximal=zone.proximal,
+                        index=i,
                     )
                 )
                 break
-            if fvg.direction == "bearish" and close > fvg.distal:
+            if zone.direction == "bearish" and close > zone.proximal:
                 ifvgs.append(
                     IFVGZone(
                         direction="bullish",
-                        proximal=fvg.proximal,
-                        distal=fvg.distal,
-                        created_at=int(df.index[i]),
-                        origin_start_idx=fvg.start_idx,
+                        distal=zone.distal,
+                        proximal=zone.proximal,
+                        index=i,
                     )
                 )
                 break
-
     return ifvgs
 
 
-def compute_bprs(
-    df: pd.DataFrame,
-    fvgs: Iterable[FVGZone],
-    ifvgs: Iterable[IFVGZone],
-    validity_bars: int = 500,
+def _overlap(a_distal: float, a_prox: float, b_distal: float, b_prox: float) -> Optional[tuple]:
+    a_low, a_high = sorted((a_distal, a_prox))
+    b_low, b_high = sorted((b_distal, b_prox))
+    low = max(a_low, b_low)
+    high = min(a_high, b_high)
+    if low <= high:
+        return low, high
+    return None
+
+
+def build_bprs(
+    fvgs: List[FVGZone],
+    ifvgs: List[IFVGZone],
+    validity: int,
 ) -> List[BPRZone]:
-    """
-    Build Balanced Price Ranges from overlapping FVG and IFVG zones.
-
-    - Bullish BPR: bullish FVG overlapping bearish IFVG.
-    - Bearish BPR: bearish FVG overlapping bullish IFVG.
-    """
-    bprs: List[BPRZone] = []
-
+    """Build BPRs from overlapping FVG/IFVG pairs in the same direction."""
+    zones: List[BPRZone] = []
     for fvg in fvgs:
         for ifvg in ifvgs:
-            if fvg.direction == "bullish" and ifvg.direction == "bearish":
-                if not ifvg.overlaps(fvg):
-                    continue
-                overlap_low = max(min(fvg.proximal, fvg.distal), min(ifvg.proximal, ifvg.distal))
-                overlap_high = min(max(fvg.proximal, fvg.distal), max(ifvg.proximal, ifvg.distal))
-                start_idx = max(fvg.start_idx, ifvg.created_at)
-                end_idx = start_idx + validity_bars
-                bprs.append(
-                    BPRZone(
-                        direction="bullish",
-                        proximal=overlap_high,
-                        distal=overlap_low,
-                        start_idx=start_idx,
-                        end_idx=end_idx,
-                    )
+            if fvg.direction != ifvg.direction:
+                continue
+            overlap = _overlap(fvg.distal, fvg.proximal, ifvg.distal, ifvg.proximal)
+            if not overlap:
+                continue
+            low, high = overlap
+            zones.append(
+                BPRZone(
+                    direction=fvg.direction,
+                    distal=low,
+                    proximal=high,
+                    index=max(fvg.index, ifvg.index),
+                    valid_until=max(fvg.index, ifvg.index) + validity,
                 )
-            elif fvg.direction == "bearish" and ifvg.direction == "bullish":
-                if not ifvg.overlaps(fvg):
-                    continue
-                overlap_low = max(min(fvg.proximal, fvg.distal), min(ifvg.proximal, ifvg.distal))
-                overlap_high = min(max(fvg.proximal, fvg.distal), max(ifvg.proximal, ifvg.distal))
-                start_idx = max(fvg.start_idx, ifvg.created_at)
-                end_idx = start_idx + validity_bars
-                bprs.append(
-                    BPRZone(
-                        direction="bearish",
-                        proximal=overlap_low,
-                        distal=overlap_high,
-                        start_idx=start_idx,
-                        end_idx=end_idx,
-                    )
-                )
-
-    return bprs
+            )
+    return zones
 
 
 def detect_bpr_mitigations(
     df: pd.DataFrame,
-    bprs: Iterable[BPRZone],
-) -> List[Tuple[int, BPRZone]]:
-    """
-    Track mitigation events: first entry of price into a BPR zone.
-    """
-    mitigations: List[Tuple[int, BPRZone]] = []
-
-    for bpr in bprs:
-        for i in range(bpr.start_idx, min(bpr.end_idx + 1, len(df))):
-            price = float(df["close"].iloc[i])
-            if bpr.contains(price):
-                bpr.mitigated = True
-                mitigations.append((int(df.index[i]), bpr))
+    bprs: List[BPRZone],
+    mitigation_mode: str,
+) -> List[int]:
+    """Return indices where BPR mitigations occur."""
+    alerts: List[int] = []
+    for zone in bprs:
+        level = _mitigation_level(zone.distal, zone.proximal, mitigation_mode)
+        for i in range(zone.index, min(zone.valid_until + 1, len(df))):
+            if zone.direction == "bullish" and df["low"].iloc[i] <= level:
+                zone.mitigated = True
+                alerts.append(i)
                 break
-
-    return mitigations
+            if zone.direction == "bearish" and df["high"].iloc[i] >= level:
+                zone.mitigated = True
+                alerts.append(i)
+                break
+    return alerts
 
 
 def calculate_bpr_indicator(
@@ -255,22 +216,33 @@ def calculate_bpr_indicator(
     fvg_validity: int = 500,
     fvg_filter_on: bool = True,
     fvg_filter_type: str = "Defensive",
-) -> dict:
-    """
-    End-to-end calculation mirroring the Pine Script output.
-
-    Returns a dict with FVGs, IFVGs, BPRs, and mitigation alerts.
-    """
-    fvgs = detect_fvgs(df, filter_on=fvg_filter_on, filter_type=fvg_filter_type)
+    mitigation_bpr: str = "Proximal",
+    mitigation_fvg: str = "Proximal",
+) -> Dict[str, object]:
+    """End-to-end BPR/IFVG calculation mirroring the Pine script."""
+    fvgs = detect_fvgs(df, filter_on=fvg_filter_on, filter_type=fvg_filter_type, validity=fvg_validity)
     ifvgs = detect_ifvgs(df, fvgs)
     if not show_all_ifvg:
         ifvgs = []
-    bprs = compute_bprs(df, fvgs, ifvgs, validity_bars=fvg_validity)
-    mitigations = detect_bpr_mitigations(df, bprs)
+    bprs = build_bprs(fvgs, ifvgs, fvg_validity)
+
+    bpr_alerts = detect_bpr_mitigations(df, bprs, mitigation_bpr)
+
+    fvg_alerts = []
+    for zone in fvgs:
+        level = _mitigation_level(zone.distal, zone.proximal, mitigation_fvg)
+        for i in range(zone.index, min(zone.valid_until + 1, len(df))):
+            if zone.direction == "bullish" and df["low"].iloc[i] <= level:
+                fvg_alerts.append(i)
+                break
+            if zone.direction == "bearish" and df["high"].iloc[i] >= level:
+                fvg_alerts.append(i)
+                break
 
     return {
         "fvgs": fvgs,
         "ifvgs": ifvgs,
         "bprs": bprs,
-        "mitigations": mitigations,
+        "bpr_alerts": bpr_alerts,
+        "fvg_alerts": fvg_alerts,
     }
