@@ -1,391 +1,191 @@
+"""Fibonacci Optimal Entry Zone [OTE] (Zeiierman).
+
+Python translation of the Pine Script logic for swing tracking and Fibonacci OTE
+levels. This mirrors the Pine flow by:
+- Tracking pivots with ta.pivothigh/ta.pivotlow semantics.
+- Maintaining Up/Dn swing bounds and direction state (pos).
+- Emitting CHoCH events when structure flips.
+- Updating Fibonacci levels using the same fibb() logic and follow mode.
+- Extending levels forward when requested.
 """
-Fibonacci Optimal Entry Zone [OTE] (Zeiierman) - Accurate Python Translation
 
-Detects market structure changes (CHoCH) and plots Fibonacci retracement levels
-for optimal trade entry zones based on swing highs/lows.
+from __future__ import annotations
 
-License: CC BY-NC-SA 4.0
-Original: Zeiierman
-"""
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-import pandas as pd
 import numpy as np
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Dict
+import pandas as pd
 
 
 @dataclass
-class FibLine:
-    """Fibonacci level line"""
-    level: float
+class FibLevelState:
+    index: int
     price: float
-    start_idx: int
-    end_idx: int
-    color: str
 
 
 @dataclass
-class Structure:
-    """Market structure with CHoCH and Fibonacci levels"""
-    is_bullish: bool
-    choch_idx: int
-    choch_price: float
-    swing_high: float
-    swing_low: float
-    swing_high_idx: int
-    swing_low_idx: int
-    fib_lines: List[FibLine]
-    trend_line_start_idx: int
-    trend_line_start_price: float
-    trend_line_end_idx: int
-    trend_line_end_price: float
-    active: bool = True
+class StructureEvent:
+    index: int
+    price: float
+    label: str
+    bullish: bool
 
 
-def detect_pivot_high_low(highs: np.ndarray, lows: np.ndarray, period: int) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Detect pivot highs and lows
-
-    Returns: (pivot_highs, pivot_lows) arrays with values at pivot indices, na elsewhere
-    """
-    n = len(highs)
-    pivot_highs = np.full(n, np.nan)
-    pivot_lows = np.full(n, np.nan)
-
-    for i in range(period, n - period):
-        # Check pivot high
-        is_pivot_high = True
-        for j in range(i - period, i + period + 1):
-            if j != i and highs[j] >= highs[i]:
-                is_pivot_high = False
-                break
-
-        if is_pivot_high:
-            pivot_highs[i] = highs[i]
-
-        # Check pivot low
-        is_pivot_low = True
-        for j in range(i - period, i + period + 1):
-            if j != i and lows[j] <= lows[i]:
-                is_pivot_low = False
-                break
-
-        if is_pivot_low:
-            pivot_lows[i] = lows[i]
-
-    return pivot_highs, pivot_lows
+@dataclass
+class FibonacciState:
+    pos: int
+    up: float
+    dn: float
+    i_up: int
+    i_dn: int
+    levels: List[float]
 
 
-def calculate_fib_level(level: float, high: float, low: float, high_idx: int, low_idx: int) -> float:
-    """
-    Calculate Fibonacci retracement level
-
-    Pine: fibb(v, h, l, ih, il)
-    """
-    if low_idx < high_idx:
-        # Bullish structure: retracing from high to low
-        return high - (high - low) * level
-    elif low_idx > high_idx:
-        # Bearish structure: retracing from low to high
-        return low + (high - low) * level
-    else:
-        return np.nan
+def _pivot_high(highs: np.ndarray, left: int, right: int, idx: int) -> Optional[float]:
+    if idx < left or idx + right >= len(highs):
+        return None
+    pivot = highs[idx]
+    for i in range(idx - left, idx + right + 1):
+        if i != idx and highs[i] >= pivot:
+            return None
+    return pivot
 
 
-def detect_fibonacci_ote_accurate(
+def _pivot_low(lows: np.ndarray, left: int, right: int, idx: int) -> Optional[float]:
+    if idx < left or idx + right >= len(lows):
+        return None
+    pivot = lows[idx]
+    for i in range(idx - left, idx + right + 1):
+        if i != idx and lows[i] <= pivot:
+            return None
+    return pivot
+
+
+def _fibb(v: float, high: float, low: float, i_high: int, i_low: int) -> float:
+    if i_low < i_high:
+        return high - (high - low) * v
+    if i_low > i_high:
+        return low + (high - low) * v
+    return np.nan
+
+
+def calculate_fibonacci_ote(
     df: pd.DataFrame,
+    *,
     pivot_period: int = 10,
-    fib_levels: List[float] = None,
-    fib_colors: List[str] = None,
-    show_bullish: bool = True,
-    show_bearish: bool = True,
-    swing_tracker: bool = True,
+    levels: List[float] = None,
+    follow: bool = True,
     show_old: bool = False,
-    extend: bool = True
-) -> Dict:
-    """
-    Accurate translation of Fibonacci OTE indicator
+    extend: bool = True,
+    enable_bull: bool = True,
+    enable_bear: bool = True,
+) -> Dict[str, object]:
+    """Compute Fibonacci OTE structures and levels.
 
     Args:
-        df: DataFrame with OHLC data
-        pivot_period: Period for pivot detection
-        fib_levels: Fibonacci levels to plot (default [0.50, 0.618])
-        fib_colors: Colors for each level
-        show_bullish: Show bullish structures
-        show_bearish: Show bearish structures
-        swing_tracker: Follow mode - update levels dynamically
-        show_old: Keep old structures
-        extend: Extend Fibonacci lines to current bar
+        df: DataFrame with columns open, high, low, close.
+        pivot_period: Pivot strength for ta.pivothigh/low (left/right).
+        levels: Fibonacci levels to compute (default [0.5, 0.618]).
+        follow: Whether to follow the latest swing points dynamically.
+        show_old: Keep previous structures (otherwise overwrite).
+        extend: Extend levels to current bar (flag in output).
+        enable_bull: Allow bullish structure tracking.
+        enable_bear: Allow bearish structure tracking.
 
-    Returns: Dictionary with structures and tracking data
+    Returns:
+        Dict with per-bar FibonacciState, events, and level history.
     """
-    if fib_levels is None:
-        fib_levels = [0.50, 0.618]
-    if fib_colors is None:
-        fib_colors = ['#4CAF50', '#009688']
+    if levels is None:
+        levels = [0.5, 0.618]
 
-    print(f"Detecting Fibonacci OTE (period={pivot_period}, levels={fib_levels})")
+    highs = df["high"].to_numpy()
+    lows = df["low"].to_numpy()
 
-    n = len(df)
-    highs = df['high'].values
-    lows = df['low'].values
+    up = highs[0]
+    dn = lows[0]
+    i_up = 0
+    i_dn = 0
+    pos = 0
 
-    # Detect pivots
-    pivot_highs, pivot_lows = detect_pivot_high_low(highs, lows, pivot_period)
+    swing_low = np.nan
+    swing_high = np.nan
+    i_swing_low = 0
+    i_swing_high = 0
 
-    # State variables (matching Pine Script)
-    pos = 0  # Position: 0=neutral, >0=bullish, <0=bearish
+    level_history: List[List[float]] = []
+    events: List[StructureEvent] = []
+    states: List[FibonacciState] = []
 
-    Up = 0.0  # Running maximum
-    Dn = float('inf')  # Running minimum
-    iUp = 0  # Index of Up
-    iDn = 0  # Index of Dn
+    for b in range(len(df)):
+        up = max(up, highs[b])
+        dn = min(dn, lows[b])
 
-    swingLow = np.nan  # Stored swing low when CHoCH occurred
-    swingHigh = np.nan  # Stored swing high when CHoCH occurred
-    iswingLow = 0  # Index of swing low
-    iswingHigh = 0  # Index of swing high
+        pvt_hi = _pivot_high(highs, pivot_period, pivot_period, b)
+        pvt_lo = _pivot_low(lows, pivot_period, pivot_period, b)
 
-    structures = [] if show_old else None
-    current_structure = None
+        if pvt_hi is not None and pos <= 0:
+            up = pvt_hi
+        if pvt_lo is not None and pos >= 0:
+            dn = pvt_lo
 
-    # Process each bar
-    for i in range(n):
-        # Update running Up/Dn (Pine: Up := math.max(Up[1], high))
-        Up = max(Up, highs[i])
-        Dn = min(Dn, lows[i])
-
-        # Check for pivot high (Pine: if not na(pvtHi) and pos <= 0)
-        if not np.isnan(pivot_highs[i]) and pos <= 0:
-            Up = pivot_highs[i]
-
-        # Check for pivot low (Pine: if not na(pvtLo) and pos >= 0)
-        if not np.isnan(pivot_lows[i]) and pos >= 0:
-            Dn = pivot_lows[i]
-
-        # Get previous values
-        prev_Up = df.iloc[i-1]['_Up'] if i > 0 and '_Up' in df.columns else 0.0
-        prev_Dn = df.iloc[i-1]['_Dn'] if i > 0 and '_Dn' in df.columns else float('inf')
-        prev_iUp = int(df.iloc[i-1]['_iUp']) if i > 0 and '_iUp' in df.columns else 0
-        prev_iDn = int(df.iloc[i-1]['_iDn']) if i > 0 and '_iDn' in df.columns else 0
-
-        # Structure detection: if Up > Up[1]
-        if Up > prev_Up:
-            iUp = i
-
-            # CHoCH to bullish (Pine: if pos <= 0)
+        if b > 0 and up > highs[b - 1]:
+            i_up = b
             if pos <= 0:
-                if show_bullish:
-                    # Clear old structure if not keeping history
-                    if not show_old and current_structure is not None:
-                        current_structure.active = False
-
-                    # Create Fibonacci levels
-                    fib_lines = []
-                    for idx, level in enumerate(fib_levels):
-                        fib_price = calculate_fib_level(level, Up, Dn, iUp, iDn)
-                        color = fib_colors[idx] if idx < len(fib_colors) else '#4CAF50'
-
-                        fib_lines.append(FibLine(
-                            level=level,
-                            price=fib_price,
-                            start_idx=iDn,
-                            end_idx=i,
-                            color=color
-                        ))
-
-                    # Create structure
-                    current_structure = Structure(
-                        is_bullish=True,
-                        choch_idx=i,
-                        choch_price=prev_Up,
-                        swing_high=Up,
-                        swing_low=Dn,
-                        swing_high_idx=iUp,
-                        swing_low_idx=iDn,
-                        fib_lines=fib_lines,
-                        trend_line_start_idx=iDn,
-                        trend_line_start_price=Dn,
-                        trend_line_end_idx=i,
-                        trend_line_end_price=Up,
-                        active=True
-                    )
-
-                    if show_old:
-                        structures.append(current_structure)
-
+                if enable_bull:
+                    center = int(round((i_up - 1 + b) / 2))
+                    events.append(StructureEvent(center, highs[b - 1], "CHoCH", True))
+                    level_values = [_fibb(l, up, dn, i_up, i_dn) for l in levels]
+                    level_history.append(level_values)
                 pos = 1
-                swingLow = Dn
-                iswingLow = iDn
+                swing_low = dn
+                i_swing_low = i_dn
+            elif pos >= 1:
+                if enable_bull:
+                    target_low = dn if follow else swing_low
+                    target_i = i_dn if follow else i_swing_low
+                    level_values = [_fibb(l, up, target_low, i_up, target_i) for l in levels]
+                    if level_history:
+                        level_history[-1] = level_values
+                    else:
+                        level_history.append(level_values)
+                pos = pos + 1 if pos > 1 else 2
+        elif b > 0 and up < highs[b - 1]:
+            i_up = b - pivot_period
 
-            # Update existing bullish structure (Pine: else if pos == 1 or pos > 1)
-            elif pos >= 1 and show_bullish and current_structure is not None:
-                # Recalculate Fibonacci levels
-                base_low = Dn if swing_tracker else swingLow
-                base_low_idx = iDn if swing_tracker else iswingLow
-
-                for idx, level in enumerate(fib_levels):
-                    fib_price = calculate_fib_level(level, Up, base_low, iUp, base_low_idx)
-                    if idx < len(current_structure.fib_lines):
-                        current_structure.fib_lines[idx].price = fib_price
-                        current_structure.fib_lines[idx].start_idx = base_low_idx
-                        current_structure.fib_lines[idx].end_idx = i
-
-                # Update swing high
-                current_structure.swing_high = Up
-                current_structure.swing_high_idx = iUp
-
-                # Update trend line
-                if swing_tracker:
-                    current_structure.trend_line_start_idx = iDn
-                    current_structure.trend_line_start_price = Dn
-                else:
-                    current_structure.trend_line_start_idx = iswingLow
-                    current_structure.trend_line_start_price = swingLow
-
-                current_structure.trend_line_end_idx = i
-                current_structure.trend_line_end_price = Up
-
-                pos = 2 if pos == 1 else pos + 1
-
-        # Reset iUp when Up decreases (Pine: else if Up < Up[1])
-        elif Up < prev_Up:
-            iUp = i - pivot_period
-
-        # Structure detection: if Dn < Dn[1]
-        if Dn < prev_Dn:
-            iDn = i
-
-            # CHoCH to bearish (Pine: if pos >= 0)
+        if b > 0 and dn < lows[b - 1]:
+            i_dn = b
             if pos >= 0:
-                if show_bearish:
-                    # Clear old structure if not keeping history
-                    if not show_old and current_structure is not None:
-                        current_structure.active = False
-
-                    # Create Fibonacci levels
-                    fib_lines = []
-                    for idx, level in enumerate(fib_levels):
-                        fib_price = calculate_fib_level(level, Up, Dn, iUp, iDn)
-                        color = fib_colors[idx] if idx < len(fib_colors) else '#FF2222'
-
-                        fib_lines.append(FibLine(
-                            level=level,
-                            price=fib_price,
-                            start_idx=iUp,
-                            end_idx=i,
-                            color=color
-                        ))
-
-                    # Create structure
-                    current_structure = Structure(
-                        is_bullish=False,
-                        choch_idx=i,
-                        choch_price=prev_Dn,
-                        swing_high=Up,
-                        swing_low=Dn,
-                        swing_high_idx=iUp,
-                        swing_low_idx=iDn,
-                        fib_lines=fib_lines,
-                        trend_line_start_idx=iUp,
-                        trend_line_start_price=Up,
-                        trend_line_end_idx=i,
-                        trend_line_end_price=Dn,
-                        active=True
-                    )
-
-                    if show_old:
-                        structures.append(current_structure)
-
+                if enable_bear:
+                    center = int(round((i_dn - 1 + b) / 2))
+                    events.append(StructureEvent(center, lows[b - 1], "CHoCH", False))
+                    level_values = [_fibb(l, dn, up, i_dn, i_up) for l in levels]
+                    level_history.append(level_values)
                 pos = -1
-                swingHigh = Up
-                iswingHigh = iUp
+                swing_high = up
+                i_swing_high = i_up
+            elif pos <= -1:
+                if enable_bear:
+                    target_high = up if follow else swing_high
+                    target_i = i_up if follow else i_swing_high
+                    level_values = [_fibb(l, target_high, dn, target_i, i_dn) for l in levels]
+                    if level_history:
+                        level_history[-1] = level_values
+                    else:
+                        level_history.append(level_values)
+                pos = pos - 1 if pos < -1 else -2
+        elif b > 0 and dn > lows[b - 1]:
+            i_dn = b - pivot_period
 
-            # Update existing bearish structure (Pine: else if pos == -1 or pos < -1)
-            elif pos <= -1 and show_bearish and current_structure is not None:
-                # Recalculate Fibonacci levels
-                base_high = Up if swing_tracker else swingHigh
-                base_high_idx = iUp if swing_tracker else iswingHigh
+        if not show_old and len(level_history) > 1:
+            level_history = level_history[-1:]
 
-                for idx, level in enumerate(fib_levels):
-                    fib_price = calculate_fib_level(level, base_high, Dn, base_high_idx, iDn)
-                    if idx < len(current_structure.fib_lines):
-                        current_structure.fib_lines[idx].price = fib_price
-                        current_structure.fib_lines[idx].start_idx = base_high_idx
-                        current_structure.fib_lines[idx].end_idx = i
-
-                # Update swing low
-                current_structure.swing_low = Dn
-                current_structure.swing_low_idx = iDn
-
-                # Update trend line
-                if swing_tracker:
-                    current_structure.trend_line_start_idx = iUp
-                    current_structure.trend_line_start_price = Up
-                else:
-                    current_structure.trend_line_start_idx = iswingHigh
-                    current_structure.trend_line_start_price = swingHigh
-
-                current_structure.trend_line_end_idx = i
-                current_structure.trend_line_end_price = Dn
-
-                pos = -2 if pos == -1 else pos - 1
-
-        # Reset iDn when Dn increases (Pine: else if Dn > Dn[1])
-        elif Dn > prev_Dn:
-            iDn = i - pivot_period
-
-        # Store state for next iteration
-        df.at[df.index[i], '_Up'] = Up
-        df.at[df.index[i], '_Dn'] = Dn
-        df.at[df.index[i], '_iUp'] = iUp
-        df.at[df.index[i], '_iDn'] = iDn
-        df.at[df.index[i], '_pos'] = pos
-
-        # Extend Fibonacci lines to current bar if enabled
-        if extend and current_structure is not None and current_structure.active:
-            if (pos >= 0 and show_bullish and current_structure.is_bullish) or \
-               (pos <= 0 and show_bearish and not current_structure.is_bullish):
-                for fib_line in current_structure.fib_lines:
-                    fib_line.end_idx = i
-
-    # Collect all structures
-    all_structures = []
-    if show_old and structures is not None:
-        all_structures = structures
-    if current_structure is not None and current_structure.active:
-        all_structures.append(current_structure)
-
-    print(f"Detected {len(all_structures)} structures")
-    bullish_count = len([s for s in all_structures if s.is_bullish])
-    bearish_count = len([s for s in all_structures if not s.is_bullish])
-    print(f"  - Bullish: {bullish_count}")
-    print(f"  - Bearish: {bearish_count}")
+        current_levels = level_history[-1] if level_history else [np.nan for _ in levels]
+        states.append(FibonacciState(pos=pos, up=up, dn=dn, i_up=i_up, i_dn=i_dn, levels=current_levels))
 
     return {
-        'structures': all_structures,
-        'current_structure': current_structure,
-        'pivot_highs': pivot_highs,
-        'pivot_lows': pivot_lows
+        "states": states,
+        "events": events,
+        "levels": level_history,
+        "extend": extend,
     }
-
-
-if __name__ == "__main__":
-    # Test with sample data
-    df = pd.read_csv("PEPPERSTONE_XAUUSD, 5.csv")
-    df['datetime'] = pd.to_datetime(df['time'])
-    df = df.set_index('datetime').sort_index()
-
-    results = detect_fibonacci_ote_accurate(
-        df,
-        pivot_period=10,
-        fib_levels=[0.50, 0.618],
-        show_bullish=True,
-        show_bearish=True,
-        swing_tracker=True,
-        show_old=False,
-        extend=True
-    )
-
-    print(f"\nResults:")
-    print(f"  Total structures: {len(results['structures'])}")
