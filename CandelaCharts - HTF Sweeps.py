@@ -62,12 +62,6 @@ def _is_bullish_candle(close: float, open_: float, high: float, low: float) -> b
 
 def _parse_tf_to_minutes(tf: str) -> int:
     tf = tf.strip()
-    if tf.endswith("M") and tf[:-1].isdigit():
-        return int(tf[:-1]) * 43200
-    if tf.endswith("W") and tf[:-1].isdigit():
-        return int(tf[:-1]) * 10080
-    if tf.endswith("D") and tf[:-1].isdigit():
-        return int(tf[:-1]) * 1440
     if tf.endswith("H") and tf[:-1].isdigit():
         return int(tf[:-1]) * 60
     if tf.endswith("min") and tf[:-3].isdigit():
@@ -76,61 +70,70 @@ def _parse_tf_to_minutes(tf: str) -> int:
         return int(tf[:-1])
     if tf.isdigit():
         return int(tf)
-    if tf == "1D":
-        return 1440
-    if tf == "1W":
-        return 10080
-    if tf == "1M":
-        return 43200
+    if tf in {"1D", "1W", "1M"}:
+        return {"1D": 1440, "1W": 10080, "1M": 43200}[tf]
     raise ValueError(f"Unsupported timeframe: {tf}")
 
 
-def _resample_htf(df: pd.DataFrame, tf: str) -> pd.DataFrame:
+def _tf_rule(tf: str) -> str:
+    if tf in {"1D", "1W", "1M"}:
+        return tf
     minutes = _parse_tf_to_minutes(tf)
-    resampled = (
-        df[["open", "high", "low", "close"]]
-        .resample(f"{minutes}min", label="left", closed="left")
-        .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
-        .dropna()
-    )
-    return resampled
+    return f"{minutes}min"
 
 
-def _build_htf_candles(df: pd.DataFrame, tf: str, limit: int) -> List[HTFCandle]:
-    htf = _resample_htf(df, tf)
-    candles: List[HTFCandle] = []
+def _floor_time(ts: pd.Timestamp, rule: str) -> pd.Timestamp:
+    if rule in {"1D", "1W", "1M"}:
+        return ts.to_period(rule[1]).start_time
+    return ts.floor(rule)
 
-    for _, row in htf.tail(limit).iterrows():
-        start_time = row.name
-        end_time = start_time + (htf.index[1] - htf.index[0]) if len(htf) > 1 else start_time
 
-        mask = (df.index >= start_time) & (df.index < end_time)
-        if not mask.any():
-            continue
+def _update_htf_candles(
+    candles: List[HTFCandle],
+    df_index: pd.Index,
+    tf: str,
+    rule: str,
+    idx: pd.Timestamp,
+    row: pd.Series,
+    limit: int,
+) -> List[HTFCandle]:
+    bucket = _floor_time(idx, rule)
+    current = candles[-1] if candles else None
+    current_bucket = _floor_time(current.ot, rule) if current else None
 
-        ltf_slice = df.loc[mask]
-        o_idx = df.index.get_loc(ltf_slice.index[0])
-        c_idx = df.index.get_loc(ltf_slice.index[-1])
-        h_idx = df.index.get_loc(ltf_slice["high"].idxmax())
-        l_idx = df.index.get_loc(ltf_slice["low"].idxmin())
-
-        candle = HTFCandle(
+    if current is None or bucket != current_bucket:
+        if current is not None:
+            current.is_closed = True
+        new_candle = HTFCandle(
             tf=tf,
             o=float(row["open"]),
             h=float(row["high"]),
             l=float(row["low"]),
             c=float(row["close"]),
-            o_idx=o_idx,
-            c_idx=c_idx,
-            h_idx=h_idx,
-            l_idx=l_idx,
-            ot=start_time,
-            ct=ltf_slice.index[-1],
+            o_idx=df_index.get_loc(idx),
+            c_idx=df_index.get_loc(idx),
+            h_idx=df_index.get_loc(idx),
+            l_idx=df_index.get_loc(idx),
+            ot=idx,
+            ct=idx,
             bull=_is_bullish_candle(float(row["close"]), float(row["open"]), float(row["high"]), float(row["low"])),
-            is_closed=True,
+            is_closed=False,
         )
-        candles.append(candle)
+        candles.append(new_candle)
+    else:
+        current.c = float(row["close"])
+        current.ct = idx
+        current.c_idx = df_index.get_loc(idx)
+        if float(row["high"]) > current.h:
+            current.h = float(row["high"])
+            current.h_idx = df_index.get_loc(idx)
+        if float(row["low"]) < current.l:
+            current.l = float(row["low"])
+            current.l_idx = df_index.get_loc(idx)
+        current.bull = _is_bullish_candle(current.c, current.o, current.h, current.l)
 
+    if len(candles) > limit:
+        return candles[-limit:]
     return candles
 
 
@@ -145,11 +148,13 @@ def _detect_sweep(c1: HTFCandle, c2: HTFCandle) -> Optional[Tuple[Sweep, Sweep]]
     is_bear_sweep = c2.l < c1.l and bear_sweep_in_range
 
     if is_bull_sweep and not c1.bull_sweep:
-        sweep = Sweep(x1=c1.h_idx, x2=c2.c_idx, y=c1.h, bull=True, tf=c1.tf)
-        return sweep, sweep
+        htf_sweep = Sweep(x1=c1.h_idx, x2=c2.c_idx, y=c1.h, bull=True, tf=c1.tf)
+        ltf_sweep = Sweep(x1=c1.h_idx, x2=c2.c_idx, y=c1.h, bull=True, tf=c1.tf)
+        return htf_sweep, ltf_sweep
     if is_bear_sweep and not c1.bear_sweep:
-        sweep = Sweep(x1=c1.l_idx, x2=c2.c_idx, y=c1.l, bull=False, tf=c1.tf)
-        return sweep, sweep
+        htf_sweep = Sweep(x1=c1.l_idx, x2=c2.c_idx, y=c1.l, bull=False, tf=c1.tf)
+        ltf_sweep = Sweep(x1=c1.l_idx, x2=c2.c_idx, y=c1.l, bull=False, tf=c1.tf)
+        return htf_sweep, ltf_sweep
     return None
 
 
@@ -164,32 +169,37 @@ def _invalidate_sweeps(candles: List[HTFCandle]) -> None:
     for i in range(1, len(candles)):
         c1 = candles[i - 1]
         c2 = candles[i]
-        for sweep in c1.ltf_sweeps:
+        for sweep in c1.ltf_sweeps + c1.htf_sweeps:
             if sweep.removed or sweep.invalidated_on is not None:
                 continue
             invalidated = _invalidate_sweep(sweep, c2)
-
             if sweep.x2 <= c2.c_idx and sweep.x2 >= c2.o_idx:
                 sweep.invalidated = invalidated
                 if invalidated:
                     sweep.invalidated_on = c2.o_idx
-            else:
-                sweep.invalidated = invalidated
-                if invalidated:
-                    sweep.invalidated_on = c2.o_idx
+            elif invalidated:
+                sweep.invalidated = True
+                sweep.invalidated_on = c2.o_idx
 
-            if sweep.invalidated and not sweep.formed:
-                sweep.removed = True
-
-        for sweep in c1.ltf_sweeps:
-            if not sweep.formed and not sweep.removed:
-                sweep.formed = True
+        if c2.is_closed:
+            for sweep in c1.ltf_sweeps + c1.htf_sweeps:
+                if not sweep.formed and not sweep.removed:
+                    if sweep.invalidated and sweep.invalidated_on is not None:
+                        sweep.removed = True
+                    else:
+                        sweep.formed = True
 
 
 def _detect_sweeps(candles: List[HTFCandle]) -> None:
-    for i in range(1, len(candles)):
+    if len(candles) < 2:
+        return
+    size = min(4, len(candles) - 1)
+    start = max(1, len(candles) - size - 1)
+    for i in range(start, len(candles)):
         c1 = candles[i - 1]
         c2 = candles[i]
+        if c2.is_closed or len(c1.htf_sweeps) > 2:
+            continue
         result = _detect_sweep(c1, c2)
         if result:
             htf_sweep, ltf_sweep = result
@@ -220,8 +230,11 @@ def calculate_htf_sweeps(
 
     output: Dict[str, List[HTFCandle]] = {}
     for tf, count, _ in timeframes:
-        candles = _build_htf_candles(df, tf, count)
-        _detect_sweeps(candles)
+        rule = _tf_rule(tf)
+        candles: List[HTFCandle] = []
+        for idx, row in df.iterrows():
+            candles = _update_htf_candles(candles, df.index, tf, rule, idx, row, count)
+            _detect_sweeps(candles)
         output[tf] = candles
 
     return output
