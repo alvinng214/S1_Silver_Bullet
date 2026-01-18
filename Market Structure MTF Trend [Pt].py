@@ -233,11 +233,32 @@ def _trend_color_series(
     return pd.Series(colors, index=trend.index)
 
 
+def _align_lower_tf_series(
+    series: MarketStructureSeries,
+    base_index: pd.Index,
+    base_rule: str,
+    lookahead_on: bool,
+) -> MarketStructureSeries:
+    def _downsample(values: pd.Series) -> pd.Series:
+        resampled = values.resample(base_rule, label="right", closed="right").last().dropna()
+        return _align_series(resampled, base_index, lookahead_on)
+
+    return MarketStructureSeries(
+        trend=_downsample(series.trend),
+        bos=_downsample(series.bos),
+        pivot_high_time=_downsample(series.pivot_high_time),
+        pivot_low_time=_downsample(series.pivot_low_time),
+        prev_pivot_high=_downsample(series.prev_pivot_high),
+        prev_pivot_low=_downsample(series.prev_pivot_low),
+    )
+
+
 def _market_structure_for_timeframe(
     df: pd.DataFrame,
     timeframe: str,
     pivot_len: int,
     lookahead_on: bool,
+    lower_tf_data: Optional[pd.DataFrame] = None,
 ) -> MarketStructureSeries:
     base_minutes = _infer_base_minutes(df)
     tf_minutes = _parse_timeframe_to_minutes(timeframe)
@@ -247,7 +268,11 @@ def _market_structure_for_timeframe(
         return series
 
     if tf_minutes < base_minutes:
-        return calculate_market_structure_trend(df, pivot_len)
+        if lower_tf_data is None or lower_tf_data.empty:
+            return calculate_market_structure_trend(df, pivot_len)
+        lower_series = calculate_market_structure_trend(lower_tf_data, pivot_len)
+        base_rule = f"{base_minutes}min"
+        return _align_lower_tf_series(lower_series, df.index, base_rule, lookahead_on)
 
     rule = f"{tf_minutes}min"
     htf = _resample_ohlc(df, rule)
@@ -299,6 +324,7 @@ def calculate_market_structure_mtf(
     timeframes: Tuple[str, str, str, str] = ("15", "30", "60", "240"),
     pivot_strengths: Tuple[int, int, int, int] = (15, 15, 15, 15),
     is_lower_tf: Tuple[bool, bool, bool, bool] = (False, False, False, False),
+    lower_tf_data: Optional[Dict[str, pd.DataFrame]] = None,
     choch_bull_colors: Tuple[Tuple[int, int, int], ...] = (
         (46, 104, 48),
         (46, 104, 48),
@@ -327,10 +353,19 @@ def calculate_market_structure_mtf(
         if lower_tf and base_minutes < tf_min:
             tf_mismatch_lower = True
 
-    tf1_series = _market_structure_for_timeframe(df, timeframes[0], pivot_strengths[0], is_lower_tf[0])
-    tf2_series = _market_structure_for_timeframe(df, timeframes[1], pivot_strengths[1], is_lower_tf[1])
-    tf3_series = _market_structure_for_timeframe(df, timeframes[2], pivot_strengths[2], is_lower_tf[2])
-    tf4_series = _market_structure_for_timeframe(df, timeframes[3], pivot_strengths[3], is_lower_tf[3])
+    lower_tf_data = lower_tf_data or {}
+    tf1_series = _market_structure_for_timeframe(
+        df, timeframes[0], pivot_strengths[0], is_lower_tf[0], lower_tf_data.get(timeframes[0])
+    )
+    tf2_series = _market_structure_for_timeframe(
+        df, timeframes[1], pivot_strengths[1], is_lower_tf[1], lower_tf_data.get(timeframes[1])
+    )
+    tf3_series = _market_structure_for_timeframe(
+        df, timeframes[2], pivot_strengths[2], is_lower_tf[2], lower_tf_data.get(timeframes[2])
+    )
+    tf4_series = _market_structure_for_timeframe(
+        df, timeframes[3], pivot_strengths[3], is_lower_tf[3], lower_tf_data.get(timeframes[3])
+    )
 
     tf1_output = _build_trend_output(
         tf1_series, choch_bull_colors[0], choch_bear_colors[0], bos_bull_colors[0], bos_bear_colors[0]
