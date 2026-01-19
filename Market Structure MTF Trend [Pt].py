@@ -101,10 +101,12 @@ def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 
 
 def _align_series(series: pd.Series, target_index: pd.Index, lookahead_on: bool) -> pd.Series:
+    if series.dtype == object:
+        series = series.infer_objects(copy=False)
     if lookahead_on:
         aligned = series.reindex(target_index, method="bfill")
-        return aligned.fillna(method="ffill")
-    return series.reindex(target_index, method="ffill").fillna(method="bfill")
+        return aligned.ffill()
+    return series.reindex(target_index, method="ffill").bfill()
 
 
 def _is_pivot_high(highs: np.ndarray, idx: int, pivot_len: int) -> bool:
@@ -131,11 +133,12 @@ def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> Market
     closes = df["close"].to_numpy()
     times = df.index
 
-    n = len(df)
+    n = int(len(df))
     trend = np.full(n, False, dtype=object)
     bos = np.full(n, False, dtype=object)
-    pivot_high_time = np.full(n, pd.NaT, dtype="datetime64[ns]")
-    pivot_low_time = np.full(n, pd.NaT, dtype="datetime64[ns]")
+    nat = np.datetime64("NaT")
+    pivot_high_time = np.full(n, nat, dtype="datetime64[ns]")
+    pivot_low_time = np.full(n, nat, dtype="datetime64[ns]")
     prev_pivot_high = np.full(n, np.nan, dtype=float)
     prev_pivot_low = np.full(n, np.nan, dtype=float)
 
@@ -143,8 +146,8 @@ def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> Market
     last_pivot_low = np.nan
     last_broken_high = np.nan
     last_broken_low = np.nan
-    last_pivot_high_time = pd.NaT
-    last_pivot_low_time = pd.NaT
+    last_pivot_high_time = nat
+    last_pivot_low_time = nat
     current_trend = False
 
     for i in range(n):
@@ -164,7 +167,7 @@ def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> Market
                 else:
                     last_pivot_high = pivot_price
                 if last_pivot_high != prev_last_pivot_high:
-                    last_pivot_high_time = times[pivot_idx]
+                    last_pivot_high_time = np.datetime64(times[pivot_idx])
 
             if _is_pivot_low(lows, pivot_idx, pivot_len):
                 pivot_price = lows[pivot_idx]
@@ -177,7 +180,7 @@ def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> Market
                 else:
                     last_pivot_low = pivot_price
                 if last_pivot_low != prev_last_pivot_low:
-                    last_pivot_low_time = times[pivot_idx]
+                    last_pivot_low_time = np.datetime64(times[pivot_idx])
 
         break_of_structure = False
         if not np.isnan(last_pivot_high):
@@ -302,14 +305,23 @@ def _build_trend_output(
     bos_bull: str,
     bos_bear: str,
 ) -> TrendOutputs:
-    trend_change = series.trend.ne(series.trend.shift(1)).fillna(False)
-    bos_edge = series.bos & ~series.bos.shift(1).fillna(False)
-    color = _trend_color_series(series.trend, series.bos, trend_change, choch_bull, choch_bear, bos_bull, bos_bear)
-    bullish_choch = trend_change & series.trend
-    bearish_choch = trend_change & ~series.trend
+    trend_bool = series.trend.astype(bool)
+    bos_bool = series.bos.astype(bool)
+    trend_change = trend_bool.ne(trend_bool.shift(1)).fillna(False)
+    bos_edge = bos_bool & ~bos_bool.shift(1, fill_value=False)
+    color = _trend_color_series(trend_bool, bos_bool, trend_change, choch_bull, choch_bear, bos_bull, bos_bear)
+    bullish_choch = trend_change & trend_bool
+    bearish_choch = trend_change & ~trend_bool
 
     return TrendOutputs(
-        data=series,
+        data=MarketStructureSeries(
+            trend=trend_bool,
+            bos=bos_bool,
+            pivot_high_time=series.pivot_high_time,
+            pivot_low_time=series.pivot_low_time,
+            prev_pivot_high=series.prev_pivot_high,
+            prev_pivot_low=series.prev_pivot_low,
+        ),
         trend_change=trend_change,
         bos_edge=bos_edge,
         color=color,
