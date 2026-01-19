@@ -52,10 +52,14 @@ class HTFCache:
     close1: float
     high1: float
     low1: float
+    open2: float
+    close2: float
     high2: float
     low2: float
     high3: float
     low3: float
+    time1: Optional[pd.Timestamp]
+    time2: Optional[pd.Timestamp]
 
 
 @dataclass
@@ -146,10 +150,14 @@ def _build_htf_cache(df: pd.DataFrame, timeframe: str) -> HTFCache:
         close1=htf["close"].shift(1),
         high1=htf["high"].shift(1),
         low1=htf["low"].shift(1),
+        open2=htf["open"].shift(2),
+        close2=htf["close"].shift(2),
         high2=htf["high"].shift(2),
         low2=htf["low"].shift(2),
         high3=htf["high"].shift(3),
         low3=htf["low"].shift(3),
+        time1=htf.index.to_series().shift(1),
+        time2=htf.index.to_series().shift(2),
     )
 
     aligned = pd.DataFrame(index=df.index)
@@ -163,10 +171,14 @@ def _build_htf_cache(df: pd.DataFrame, timeframe: str) -> HTFCache:
         "close1",
         "high1",
         "low1",
+        "open2",
+        "close2",
         "high2",
         "low2",
         "high3",
         "low3",
+        "time1",
+        "time2",
     ]:
         aligned[col] = _align_series(htf[col], df.index)
 
@@ -186,10 +198,14 @@ def _build_htf_cache(df: pd.DataFrame, timeframe: str) -> HTFCache:
         close1=float(aligned["close1"].iloc[-1]) if not pd.isna(aligned["close1"].iloc[-1]) else np.nan,
         high1=float(aligned["high1"].iloc[-1]) if not pd.isna(aligned["high1"].iloc[-1]) else np.nan,
         low1=float(aligned["low1"].iloc[-1]) if not pd.isna(aligned["low1"].iloc[-1]) else np.nan,
+        open2=float(aligned["open2"].iloc[-1]) if not pd.isna(aligned["open2"].iloc[-1]) else np.nan,
+        close2=float(aligned["close2"].iloc[-1]) if not pd.isna(aligned["close2"].iloc[-1]) else np.nan,
         high2=float(aligned["high2"].iloc[-1]) if not pd.isna(aligned["high2"].iloc[-1]) else np.nan,
         low2=float(aligned["low2"].iloc[-1]) if not pd.isna(aligned["low2"].iloc[-1]) else np.nan,
         high3=float(aligned["high3"].iloc[-1]) if not pd.isna(aligned["high3"].iloc[-1]) else np.nan,
         low3=float(aligned["low3"].iloc[-1]) if not pd.isna(aligned["low3"].iloc[-1]) else np.nan,
+        time1=aligned["time1"].iloc[-1] if not pd.isna(aligned["time1"].iloc[-1]) else None,
+        time2=aligned["time2"].iloc[-1] if not pd.isna(aligned["time2"].iloc[-1]) else None,
     )
 
 

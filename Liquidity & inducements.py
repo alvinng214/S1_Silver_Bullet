@@ -53,6 +53,9 @@ class EqualPivotState:
 @dataclass
 class RetracementInducement:
     pivot: Pivot
+    taken: bool = False
+    invalidated: bool = False
+    stop_index: Optional[int] = None
 
 
 @dataclass
@@ -61,6 +64,8 @@ class RetracementState:
     lows: List[RetracementInducement] = field(default_factory=list)
     high_pivots: List[Pivot] = field(default_factory=list)
     low_pivots: List[Pivot] = field(default_factory=list)
+    historical_highs: List[RetracementInducement] = field(default_factory=list)
+    historical_lows: List[RetracementInducement] = field(default_factory=list)
 
 
 @dataclass
@@ -200,6 +205,49 @@ def _detect_break_of_structure(structure_pivots: List[Pivot], trend: int, close:
                 pivot.break_of_structure_broken = True
                 return pivot
     return None
+
+
+def _stop_retracement_inducements(
+    retr_state: RetracementState,
+    *,
+    high: float,
+    low: float,
+    bar_index: int,
+    stop_reason: str,
+    keep_invalidated: bool,
+) -> None:
+    if stop_reason not in {"take", "invalidate"}:
+        raise ValueError("stop_reason must be 'take' or 'invalidate'")
+
+    remaining_highs: List[RetracementInducement] = []
+    for inducement in retr_state.highs:
+        stop = stop_reason == "invalidate" or high >= inducement.pivot.price
+        if stop:
+            inducement.stop_index = bar_index
+            if stop_reason == "take":
+                inducement.taken = True
+            else:
+                inducement.invalidated = True
+            if keep_invalidated or stop_reason == "take":
+                retr_state.historical_highs.append(inducement)
+        else:
+            remaining_highs.append(inducement)
+    retr_state.highs = remaining_highs
+
+    remaining_lows: List[RetracementInducement] = []
+    for inducement in retr_state.lows:
+        stop = stop_reason == "invalidate" or low <= inducement.pivot.price
+        if stop:
+            inducement.stop_index = bar_index
+            if stop_reason == "take":
+                inducement.taken = True
+            else:
+                inducement.invalidated = True
+            if keep_invalidated or stop_reason == "take":
+                retr_state.historical_lows.append(inducement)
+        else:
+            remaining_lows.append(inducement)
+    retr_state.lows = remaining_lows
 
 
 def _detect_change_of_character(
@@ -504,13 +552,23 @@ def calculate_liquidity_inducements(
                         if latest.bar_index == i - retr_right and latest_after_break and next_latest.bar_index < previous_structure_break_index:
                             target_list = retr_state.highs if trend == -1 else retr_state.lows
                             target_list.insert(0, RetracementInducement(latest))
-            if previous_structure_break_index is not None:
-                if change_of_character or break_of_structure:
-                    if retr_keep_invalidated:
-                        pass
-                    else:
-                        retr_state.highs.clear()
-                        retr_state.lows.clear()
+            _stop_retracement_inducements(
+                retr_state,
+                high=high,
+                low=low,
+                bar_index=i,
+                stop_reason="take",
+                keep_invalidated=retr_keep_invalidated,
+            )
+            if previous_structure_break_index is not None and (change_of_character or break_of_structure):
+                _stop_retracement_inducements(
+                    retr_state,
+                    high=high,
+                    low=low,
+                    bar_index=i,
+                    stop_reason="invalidate",
+                    keep_invalidated=retr_keep_invalidated,
+                )
 
     return {
         "trend": trend,
