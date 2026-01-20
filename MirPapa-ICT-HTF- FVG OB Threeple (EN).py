@@ -131,7 +131,7 @@ def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 
 
 def _align_series(series: pd.Series, target_index: pd.Index) -> pd.Series:
-    return series.reindex(target_index, method="ffill").fillna(method="bfill")
+    return series.reindex(target_index, method="ffill")
 
 
 def _build_htf_cache(df: pd.DataFrame, timeframe: str) -> HTFCache:

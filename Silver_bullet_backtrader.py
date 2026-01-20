@@ -242,8 +242,10 @@ def add_killzone_windows(df: pd.DataFrame) -> pd.DataFrame:
 
     tradingfinder = calculate_tradingfinder_silver_bullet(hk_aligned)
     session_levels = tradingfinder["session_levels"]
-    sb_or_range = session_levels.or_range.reindex(df.index, fill_value=0).astype(int)
-    sb_trading_range = session_levels.trading_range.reindex(df.index, fill_value=0).astype(int)
+    sb_or_range = pd.Series(session_levels.or_range.to_numpy(), index=df.index).fillna(0).astype(int)
+    sb_trading_range = (
+        pd.Series(session_levels.trading_range.to_numpy(), index=df.index).fillna(0).astype(int)
+    )
 
     df = df.copy()
     df["sb_sig_ln"] = sb_sig_ln
