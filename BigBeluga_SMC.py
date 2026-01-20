@@ -51,6 +51,7 @@ class SMCConfig:
     fvg_extend: bool = False
     fvg_show_midline: bool = True
     fvg_show_raids: bool = False
+    use_confirmed_only: bool = True
 
 
 @dataclass
@@ -137,6 +138,12 @@ class SFP:
     anchor: float
 
 
+@dataclass
+class OBRequest:
+    direction: int  # 1 bullish, -1 bearish
+    ref_loc: Optional[int]
+
+
 def _sfp_data(df: pd.DataFrame, idx: int) -> Tuple[float, float, float, float, float, float, float, float]:
     if idx < 2:
         return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
@@ -154,8 +161,13 @@ def _sfp_data(df: pd.DataFrame, idx: int) -> Tuple[float, float, float, float, f
     )
 
 
-def _atr(df: pd.DataFrame, length: int = 200, ob_len: int = 5) -> pd.Series:
-    """Calculate ATR with Pine Script scaling factor (5/ob_len)."""
+def _atr(
+    df: pd.DataFrame,
+    length: int = 200,
+    ob_len: int = 5,
+    scale_ob_len: bool = True,
+) -> pd.Series:
+    """Calculate ATR with optional Pine Script scaling factor (5/ob_len)."""
     high = df["high"]
     low = df["low"]
     close = df["close"]
@@ -168,6 +180,8 @@ def _atr(df: pd.DataFrame, length: int = 200, ob_len: int = 5) -> pd.Series:
         axis=1,
     ).max(axis=1)
     base_atr = tr.rolling(length).mean()
+    if not scale_ob_len:
+        return base_atr
     # Pine Script: float atr = (ta.atr(200) / (5/len))
     # This scales the ATR based on ob_len parameter
     scale_factor = 5.0 / ob_len if ob_len > 0 else 1.0
@@ -239,13 +253,14 @@ def _find_swing_extreme(
     lookback = current_idx - loc
     if lookback < 0:
         lookback = 0
+    max_i = lookback - 1 if (lookback - 1) > 0 else lookback
 
     min_val = float('inf')
     max_val = float('-inf')
     idx = 0
     opposite = 0.0
 
-    for i in range(lookback + 1):
+    for i in range(max_i + 1):
         if current_idx - i < 0:
             break
         bar_high = float(df["high"].iloc[current_idx - i])
@@ -431,8 +446,13 @@ def _fvg_raid(row: pd.Series, fvg: FVG) -> bool:
     return row["high"] > fvg.bottom and row["close"] < fvg.bottom
 
 
-def _overlap_range(a_top: float, a_bottom: float, b_top: float, b_bottom: float) -> bool:
-    return a_bottom <= b_top and a_top >= b_bottom
+def _overlap_condition(stuff_top: float, stuff_bottom: float, current_top: float, current_bottom: float) -> bool:
+    return (
+        (stuff_bottom > current_bottom and stuff_bottom < current_top)
+        or (stuff_top < current_top and stuff_bottom > current_bottom)
+        or (stuff_top > current_top and stuff_bottom < current_bottom)
+        or (stuff_top < current_top and stuff_top > current_bottom)
+    )
 
 
 def _overlap_fvg(bull: List[FVG], bear: List[FVG]) -> None:
@@ -440,25 +460,25 @@ def _overlap_fvg(bull: List[FVG], bear: List[FVG]) -> None:
         for i in range(len(bull) - 1, 0, -1):
             stuff = bull[i]
             current = bull[0]
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bull.pop(i)
     if len(bear) > 1:
         for i in range(len(bear) - 1, 0, -1):
             stuff = bear[i]
             current = bear[0]
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bear.pop(i)
     if bull and bear:
         for i in range(len(bull) - 1, -1, -1):
             stuff = bull[i]
             current = bear[0]
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bull.pop(i)
     if bull and bear:
         for i in range(len(bear) - 1, -1, -1):
             stuff = bear[i]
             current = bull[0]
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bear.pop(i)
 
 
@@ -468,28 +488,28 @@ def _overlap_obs(bull: List[OrderBlock], bear: List[OrderBlock], mode: str) -> N
             stuff = bull[i]
             current = bull[0]
             remove_idx = i if mode == "Recent" else 0
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bull.pop(remove_idx)
     if len(bear) > 1:
         for i in range(len(bear) - 1, 0, -1):
             stuff = bear[i]
             current = bear[0]
             remove_idx = i if mode == "Recent" else 0
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bear.pop(remove_idx)
     if bull and bear:
         for i in range(len(bull) - 1, -1, -1):
             stuff = bull[i]
             current = bear[0]
             remove_idx = 0 if mode == "Recent" else i
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bull.pop(remove_idx)
     if bull and bear:
         for i in range(len(bear) - 1, -1, -1):
             stuff = bear[i]
             current = bull[0]
             remove_idx = 0 if mode == "Recent" else i
-            if _overlap_range(stuff.top, stuff.bottom, current.top, current.bottom):
+            if _overlap_condition(stuff.top, stuff.bottom, current.top, current.bottom):
                 bear.pop(remove_idx)
 
 
@@ -607,8 +627,10 @@ def _update_structure(
     crossdn: bool,
     config: SMCConfig,
     df: Optional[pd.DataFrame] = None,
-) -> List[StructureEvent]:
+) -> Tuple[List[StructureEvent], List[OBRequest]]:
     events: List[StructureEvent] = []
+    ob_requests: List[OBRequest] = []
+    ref_loc = state.loc
     if state.start == 0:
         state.zn = idx
         state.zz = None
@@ -649,7 +671,8 @@ def _update_structure(
             state.temp = state.loc
             state.xloc = idx
             events.append(StructureEvent(idx, "choch", -1, low))
-            return events
+            ob_requests.append(OBRequest(direction=1, ref_loc=ref_loc))
+            return events, ob_requests
         if state.bos is not None and close >= state.bos:
             state.txt = "choch"
             state.trend = 1
@@ -660,14 +683,15 @@ def _update_structure(
             state.temp = state.loc
             state.xloc = idx
             events.append(StructureEvent(idx, "choch", 1, high))
-            return events
+            ob_requests.append(OBRequest(direction=-1, ref_loc=ref_loc))
+            return events, ob_requests
 
     if state.start == 2:
         if state.trend == -1:
             if state.main is None or low <= state.main:
                 state.main = low
                 state.temp = idx
-            if idx % (config.mslen * 2) == 0 and config.msmode == "Adjusted Points":
+            if idx % config.mslen == 0 and config.msmode == "Adjusted Points":
                 if pivot_highs and state.choch is not None and pivot_highs[0] < state.choch:
                     state.choch = pivot_highs[0]
                     state.loc = pivot_high_idx[0]
@@ -691,6 +715,7 @@ def _update_structure(
                 state.zz = state.bos
                 state.zn = idx
                 events.append(StructureEvent(idx, "bos", -1, state.bos))
+                ob_requests.append(OBRequest(direction=-1, ref_loc=ref_loc))
                 state.bos = None
                 if swing_high is not None:
                     state.choch = swing_high
@@ -700,7 +725,7 @@ def _update_structure(
             if state.main is None or high >= state.main:
                 state.main = high
                 state.temp = idx
-            if idx % (config.mslen * 2) == 0 and config.msmode == "Adjusted Points":
+            if idx % config.mslen == 0 and config.msmode == "Adjusted Points":
                 if pivot_lows and state.choch is not None and pivot_lows[0] > state.choch:
                     state.choch = pivot_lows[0]
                     state.loc = pivot_low_idx[0]
@@ -724,6 +749,7 @@ def _update_structure(
                 state.zz = state.bos
                 state.zn = idx
                 events.append(StructureEvent(idx, "bos", 1, state.bos))
+                ob_requests.append(OBRequest(direction=1, ref_loc=ref_loc))
                 state.bos = None
                 if swing_low is not None:
                     state.choch = swing_low
@@ -734,6 +760,7 @@ def _update_structure(
                 # Bullish to Bearish CHoCH
                 state.txt = "choch"
                 events.append(StructureEvent(idx, "choch", -1, state.choch))
+                ob_requests.append(OBRequest(direction=-1, ref_loc=ref_loc))
                 state.trend = -1
 
                 # Pine logic: when BOS is None, use ms.find() to locate new CHoCH level
@@ -758,6 +785,7 @@ def _update_structure(
                 # Bearish to Bullish CHoCH
                 state.txt = "choch"
                 events.append(StructureEvent(idx, "choch", 1, state.choch))
+                ob_requests.append(OBRequest(direction=1, ref_loc=ref_loc))
                 state.trend = 1
 
                 # Pine logic: when BOS is None, use ms.find() to locate new CHoCH level
@@ -778,7 +806,7 @@ def _update_structure(
                 state.temp = state.loc
                 state.xloc = idx
 
-    return events
+    return events, ob_requests
 
 
 def _detect_fvg(
@@ -789,6 +817,7 @@ def _detect_fvg(
     atr: pd.Series,
     pending_bull_fvg: List[bool],
     pending_bear_fvg: List[bool],
+    timeframe_change: bool,
 ) -> Optional[FVG]:
     """
     Detect Fair Value Gap mirroring Pine Script logic.
@@ -842,7 +871,7 @@ def _detect_fvg(
         bottom = high_3  # h2[1] = high[3] at creation bar
         pending_bull_fvg[0] = False
         if not pd.isna(top) and not pd.isna(bottom) and top > bottom:
-            result = FVG(bull=True, top=float(top), bottom=float(bottom), index=idx - 2)
+            result = FVG(bull=True, top=float(top), bottom=float(bottom), index=idx - 3)
 
     if pending_bear_fvg and pending_bear_fvg[0]:
         # Create bearish FVG now (one bar after detection)
@@ -852,15 +881,15 @@ def _detect_fvg(
         pending_bear_fvg[0] = False
         if not pd.isna(top) and not pd.isna(bottom) and top > bottom:
             if result is None:
-                result = FVG(bull=False, top=float(top), bottom=float(bottom), index=idx - 2)
+                result = FVG(bull=False, top=float(top), bottom=float(bottom), index=idx - 3)
 
     # Detect new FVGs (to be created next bar)
     # Pine: if l > h2 and cc and c1 > blth => upfvg := true
-    if low > high_2 and prev_close > bullish_thresh:
+    if timeframe_change and low > high_2 and prev_close > bullish_thresh:
         pending_bull_fvg[0] = True
 
     # Pine: if l2 > h and cc and c1 < brth => dnfvg := true
-    if low_2 > high and prev_close < bearish_thresh:
+    if timeframe_change and low_2 > high and prev_close < bearish_thresh:
         pending_bear_fvg[0] = True
 
     return result
@@ -899,8 +928,10 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
     current_trend = 0
     structure_state = StructureState()
 
-    # ATR with Pine Script scaling factor
-    atr = _atr(df, ob_len=config.ob_len)
+    # ATR with Pine Script scaling factor (for OB sizing)
+    atr = _atr(df, ob_len=config.ob_len, scale_ob_len=True)
+    # Unscaled ATR (for FVG thresholding)
+    fvg_atr = _atr(df, ob_len=config.ob_len, scale_ob_len=False)
     pivot_high_idx: List[int] = []
     pivot_highs: List[float] = []
     pivot_low_idx: List[int] = []
@@ -909,6 +940,10 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
     # Pending FVG tracking (Pine creates FVG one bar after detection)
     pending_bull_fvg: List[bool] = [False]
     pending_bear_fvg: List[bool] = [False]
+
+    confirmed_mask = pd.Series(True, index=df.index)
+    if config.use_confirmed_only and "confirmed" in df.columns:
+        confirmed_mask = df["confirmed"].fillna(True).astype(bool)
 
     for i in range(window_start, len(df)):
         if i == 0:
@@ -967,8 +1002,7 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
 
         swing_high = float(last_swing_high) if last_swing_high_idx is not None else None
         swing_low = float(last_swing_low) if last_swing_low_idx is not None else None
-        events.extend(
-            _update_structure(
+        new_events, ob_requests = _update_structure(
                 structure_state,
                 i,
                 high,
@@ -988,15 +1022,13 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
                 config,
                 df,  # Pass DataFrame for CHoCH find() logic
             )
-        )
-        if structure_state.trend != current_trend:
-            current_trend = structure_state.trend
-            # Use structure_state.loc as reference for finding swing extreme
+        events.extend(new_events)
+        for request in ob_requests:
             ob = _find_ob_at_swing(
                 df,
-                current_trend,
+                request.direction,
                 i,
-                structure_state.loc,
+                request.ref_loc,
                 config.ob_mode,
                 atr,
             )
@@ -1005,6 +1037,9 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
                     bull_obs.insert(0, ob)
                 else:
                     bear_obs.insert(0, ob)
+        if structure_state.trend != current_trend:
+            current_trend = structure_state.trend
+            # Trend changes are already captured in OB requests from structure events.
 
         # Note: Extra sweep detection on swing points was removed.
         # Pine only detects sweeps on structure levels (BOS/CHoCH), not on all swing points.
@@ -1012,7 +1047,7 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
 
         trend.iloc[i] = current_trend
 
-        if config.ob_show:
+        if config.ob_show and confirmed_mask.iloc[i]:
             for ob in list(bull_obs + bear_obs):
                 if not ob.active:
                     continue
@@ -1042,8 +1077,14 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
         if config.fvg_enable:
             # FVG detection with Pine-style delayed creation
             fvg = _detect_fvg(
-                df, i, config.fvg_src, config.fvg_thresh, atr,
-                pending_bull_fvg, pending_bear_fvg
+                df,
+                i,
+                config.fvg_src,
+                config.fvg_thresh,
+                fvg_atr,
+                pending_bull_fvg,
+                pending_bear_fvg,
+                timeframe_change=True,
             )
             if fvg:
                 if fvg.bull:
