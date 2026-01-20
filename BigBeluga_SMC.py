@@ -75,8 +75,8 @@ class OrderBlock:
     move: int = 1
     bl_pos: int = 1
     br_pos: int = 1
-    xlocbl: Optional[int] = None
-    xlocbr: Optional[int] = None
+    xlocbl: Optional[pd.Timestamp] = None
+    xlocbr: Optional[pd.Timestamp] = None
     mitigated: bool = False
     breaker: bool = False
     breaker_index: Optional[int] = None
@@ -407,8 +407,8 @@ def _update_ob_metrics(
     dt = current_time - prev_time
     prev_dt = prev_time - prev_prev_time
     if dt == prev_dt:
-        ob.xlocbl = (base_time + dt * ob.bl_pos).value
-        ob.xlocbr = (base_time + dt * ob.br_pos).value
+        ob.xlocbl = base_time + dt * ob.bl_pos
+        ob.xlocbr = base_time + dt * ob.br_pos
 
 
 def _fvg_breaker_resolved(row: pd.Series, fvg: FVG, src: str) -> bool:
