@@ -154,7 +154,8 @@ def _sfp_data(df: pd.DataFrame, idx: int) -> Tuple[float, float, float, float, f
     )
 
 
-def _atr(df: pd.DataFrame, length: int = 200) -> pd.Series:
+def _atr(df: pd.DataFrame, length: int = 200, ob_len: int = 5) -> pd.Series:
+    """Calculate ATR with Pine Script scaling factor (5/ob_len)."""
     high = df["high"]
     low = df["low"]
     close = df["close"]
@@ -166,7 +167,11 @@ def _atr(df: pd.DataFrame, length: int = 200) -> pd.Series:
         ],
         axis=1,
     ).max(axis=1)
-    return tr.rolling(length).mean()
+    base_atr = tr.rolling(length).mean()
+    # Pine Script: float atr = (ta.atr(200) / (5/len))
+    # This scales the ATR based on ob_len parameter
+    scale_factor = 5.0 / ob_len if ob_len > 0 else 1.0
+    return base_atr / scale_factor
 
 
 def _pivot_points(series: pd.Series, left: int, right: int, is_high: bool) -> pd.Series:
@@ -198,71 +203,187 @@ def _apply_swing_limit(pivot: pd.Series, limit: int) -> pd.Series:
     return pivot
 
 
-def _find_ob_range(
+def _find_swing_extreme(
+    df: pd.DataFrame,
+    current_idx: int,
+    ref_loc: int,
+    use_max: bool,
+    use_sweep_loc: bool = False,
+    xloc: Optional[int] = None,
+    check_adjacent: bool = False,
+) -> Tuple[int, float, float]:
+    """
+    Mirror Pine's ms.find() method.
+
+    Finds the highest high (use_max=True) or lowest low (use_max=False)
+    between the current bar and a reference location.
+
+    Args:
+        df: DataFrame with OHLC data
+        current_idx: Current bar index
+        ref_loc: Reference location (ms.loc or ms.xloc)
+        use_max: True to find highest high, False to find lowest low
+        use_sweep_loc: If True, use xloc instead of ref_loc
+        xloc: Alternative reference location for sweeps
+        check_adjacent: If True, also check the adjacent bar for OB detection
+
+    Returns:
+        Tuple of (index_offset, extreme_value, opposite_value)
+        where index_offset is bars back from current_idx
+    """
+    loc = xloc if use_sweep_loc and xloc is not None else ref_loc
+
+    if loc is None:
+        loc = current_idx
+
+    lookback = current_idx - loc
+    if lookback < 0:
+        lookback = 0
+
+    min_val = float('inf')
+    max_val = float('-inf')
+    idx = 0
+    opposite = 0.0
+
+    for i in range(lookback + 1):
+        if current_idx - i < 0:
+            break
+        bar_high = float(df["high"].iloc[current_idx - i])
+        bar_low = float(df["low"].iloc[current_idx - i])
+
+        if use_max:
+            if bar_high > max_val:
+                max_val = bar_high
+                min_val = bar_low
+                idx = i
+        else:
+            if bar_low < min_val:
+                min_val = bar_low
+                max_val = bar_high
+                idx = i
+
+    # Pine's useob flag - check adjacent bar for potentially better OB candle
+    if check_adjacent and idx + 1 <= lookback and current_idx - idx - 1 >= 0:
+        adj_high = float(df["high"].iloc[current_idx - idx - 1])
+        adj_low = float(df["low"].iloc[current_idx - idx - 1])
+        if use_max:
+            if adj_high > max_val:
+                max_val = adj_high
+                min_val = adj_low
+                idx = idx + 1
+        else:
+            if adj_low < min_val:
+                min_val = adj_low
+                max_val = adj_high
+                idx = idx + 1
+
+    if use_max:
+        return idx, max_val, min_val
+    return idx, min_val, max_val
+
+
+def _find_ob_at_swing(
     df: pd.DataFrame,
     direction: int,
-    lookback: int,
+    current_idx: int,
+    ref_loc: Optional[int],
     ob_mode: str,
-    idx: int,
     atr: pd.Series,
 ) -> Optional[OrderBlock]:
-    start = max(0, idx - lookback)
-    end = idx
-    if direction == 1:
-        candidates = df.iloc[start:end]
-        down_candles = candidates[candidates["close"] < candidates["open"]]
-        if down_candles.empty:
-            return None
-        ob_idx = down_candles.index[-1]
-        candle = df.loc[ob_idx]
-        atr_val = float(atr.loc[ob_idx]) if ob_idx in atr.index else np.nan
-        top = candle["high"]
+    """
+    Find Order Block at swing extreme, mirroring Pine's logic.
+
+    Pine logic:
+    - For bullish OB (direction=1): Find lowest low candle (idbull = ms.find(false, false, true))
+    - For bearish OB (direction=-1): Find highest high candle (idbear = ms.find(true, false, true))
+
+    The OB is created at the candle where the swing extreme occurred.
+    """
+    if ref_loc is None:
+        ref_loc = max(0, current_idx - 1)
+
+    # Use _find_swing_extreme to locate the swing candle
+    # For bullish OB: find lowest low (use_max=False)
+    # For bearish OB: find highest high (use_max=True)
+    use_max = direction == -1  # Bearish OB needs highest high
+
+    idx_offset, extreme_val, opposite_val = _find_swing_extreme(
+        df, current_idx, ref_loc, use_max=use_max, check_adjacent=True
+    )
+
+    ob_bar = current_idx - idx_offset
+    if ob_bar < 0 or ob_bar >= len(df):
+        return None
+
+    candle = df.iloc[ob_bar]
+    atr_val = float(atr.iloc[ob_bar]) if ob_bar < len(atr) else np.nan
+
+    if direction == 1:  # Bullish OB
+        # Pine: topP = obmode == "Length" ? (low[idbull] + 1 * atr[idbull]) > high[idbull]
+        #              ? high[idbull] : (low[idbull] + 1 * atr[idbull]) : high[idbull]
+        # OB created with: top=topP, bottom=low[idx]
+        bottom = float(candle["low"])
         if ob_mode == "Length" and not np.isnan(atr_val):
-            top = min(candle["high"], candle["low"] + atr_val)
-        bottom = candle["low"]
+            top = min(float(candle["high"]), bottom + atr_val)
+        else:
+            top = float(candle["high"])
         avg = (top + bottom) / 2.0
         return OrderBlock(
             bull=True,
-            top=float(top),
-            bottom=float(bottom),
-            avg=float(avg),
-            index=df.index.get_loc(ob_idx),
+            top=top,
+            bottom=bottom,
+            avg=avg,
+            index=ob_bar,
             volume=float(candle.get("volume", np.nan)),
             direction=1 if candle["close"] > candle["open"] else -1,
         )
-    candidates = df.iloc[start:end]
-    up_candles = candidates[candidates["close"] > candidates["open"]]
-    if up_candles.empty:
-        return None
-    ob_idx = up_candles.index[-1]
-    candle = df.loc[ob_idx]
-    atr_val = float(atr.loc[ob_idx]) if ob_idx in atr.index else np.nan
-    top = candle["high"]
-    bottom = candle["low"]
-    if ob_mode == "Length" and not np.isnan(atr_val):
-        bottom = max(candle["low"], candle["high"] - atr_val)
-    avg = (top + bottom) / 2.0
-    return OrderBlock(
-        bull=False,
-        top=float(top),
-        bottom=float(bottom),
-        avg=float(avg),
-        index=df.index.get_loc(ob_idx),
-        volume=float(candle.get("volume", np.nan)),
-        direction=1 if candle["close"] > candle["open"] else -1,
-    )
+    else:  # Bearish OB (direction == -1)
+        # Pine: btmP = obmode == "Length" ? (high[idbear] - 1 * atr[idbear]) < low[idbear]
+        #              ? low[idbear] : (high[idbear] - 1 * atr[idbear]) : low[idbear]
+        # OB created with: top=high[idx], bottom=btmP
+        top = float(candle["high"])
+        if ob_mode == "Length" and not np.isnan(atr_val):
+            bottom = max(float(candle["low"]), top - atr_val)
+        else:
+            bottom = float(candle["low"])
+        avg = (top + bottom) / 2.0
+        return OrderBlock(
+            bull=False,
+            top=top,
+            bottom=bottom,
+            avg=avg,
+            index=ob_bar,
+            volume=float(candle.get("volume", np.nan)),
+            direction=1 if candle["close"] > candle["open"] else -1,
+        )
 
 
 def _mitigation_trigger(row: pd.Series, ob: OrderBlock, mode: str) -> bool:
+    """
+    Check if an Order Block has been mitigated.
+
+    Pine logic uses strict inequalities (<, >):
+    - Bullish OB: Close mode: min(close, open) < btm
+                  Wick mode: low < btm
+                  Avg mode: low < avg
+    - Bearish OB: Close mode: max(close, open) > top
+                  Wick mode: high > top
+                  Avg mode: high > avg
+    """
     if ob.bull:
-        level = ob.bottom if mode == "Close" else ob.bottom if mode == "Wick" else ob.avg
         if mode == "Close":
-            return min(row["open"], row["close"]) < level
-        return row["low"] < level
-    level = ob.top if mode == "Close" else ob.top if mode == "Wick" else ob.avg
-    if mode == "Close":
-        return max(row["open"], row["close"]) > level
-    return row["high"] > level
+            return min(row["open"], row["close"]) < ob.bottom
+        elif mode == "Wick":
+            return row["low"] < ob.bottom
+        else:  # Avg mode - Pine: low < stuff.avg
+            return row["low"] < ob.avg
+    else:  # Bearish OB
+        if mode == "Close":
+            return max(row["open"], row["close"]) > ob.top
+        elif mode == "Wick":
+            return row["high"] > ob.top
+        else:  # Avg mode - Pine: high > stuff.avg
+            return row["high"] > ob.avg
 
 
 def _fvg_levels(row: pd.Series, src: str) -> Tuple[float, float]:
@@ -275,19 +396,33 @@ def _fvg_levels(row: pd.Series, src: str) -> Tuple[float, float]:
 
 
 def _fvg_mitigated(row: pd.Series, fvg: FVG, src: str) -> bool:
+    """
+    Check if an FVG has been mitigated.
+
+    Pine logic uses strict inequalities (<, >):
+    - Bullish FVG: Close mode: min(c, o) < fvg.btm
+                   Wick mode: l < fvg.btm
+                   Avg mode: l < math.avg(fvg.top, fvg.btm)  (low < FVG midpoint)
+    - Bearish FVG: Close mode: max(c, o) > fvg.top
+                   Wick mode: h > fvg.top
+                   Avg mode: h > math.avg(fvg.top, fvg.btm)  (high > FVG midpoint)
+    """
+    fvg_midpoint = (fvg.top + fvg.bottom) / 2.0
+
     if fvg.bull:
         if src == "Close":
-            return min(row["open"], row["close"]) <= fvg.bottom
-        if src == "Avg":
-            avg = (row["open"] + row["close"]) / 2.0
-            return avg <= fvg.bottom
-        return row["low"] <= fvg.bottom
-    if src == "Close":
-        return max(row["open"], row["close"]) >= fvg.top
-    if src == "Avg":
-        avg = (row["open"] + row["close"]) / 2.0
-        return avg >= fvg.top
-    return row["high"] >= fvg.top
+            return min(row["open"], row["close"]) < fvg.bottom
+        elif src == "Wick":
+            return row["low"] < fvg.bottom
+        else:  # Avg mode - Pine: l < math.avg(fvg.top, fvg.btm)
+            return row["low"] < fvg_midpoint
+    else:  # Bearish FVG
+        if src == "Close":
+            return max(row["open"], row["close"]) > fvg.top
+        elif src == "Wick":
+            return row["high"] > fvg.top
+        else:  # Avg mode - Pine: h > math.avg(fvg.top, fvg.btm)
+            return row["high"] > fvg_midpoint
 
 
 def _fvg_raid(row: pd.Series, fvg: FVG) -> bool:
@@ -359,19 +494,31 @@ def _overlap_obs(bull: List[OrderBlock], bear: List[OrderBlock], mode: str) -> N
 
 
 def _breaker_resolved(row: pd.Series, ob: OrderBlock, mode: str) -> bool:
-    if ob.bull:
+    """
+    Check if an OB breaker has been resolved (invalidated).
+
+    Pine logic for breaker resolution:
+    - Bullish breaker: Close mode: max(close, open) > top
+                       Wick mode: high > top
+                       Avg mode: high > avg (NOT candle_avg > top)
+    - Bearish breaker: Close mode: min(close, open) < btm
+                       Wick mode: low < btm
+                       Avg mode: low < avg (NOT candle_avg < btm)
+    """
+    if ob.bull:  # Bullish breaker gets resolved when price breaks above
         if mode == "Close":
             return max(row["open"], row["close"]) > ob.top
-        if mode == "Avg":
-            avg = (row["open"] + row["close"]) / 2.0
-            return avg > ob.top
-        return row["high"] > ob.top
-    if mode == "Close":
-        return min(row["open"], row["close"]) < ob.bottom
-    if mode == "Avg":
-        avg = (row["open"] + row["close"]) / 2.0
-        return avg < ob.bottom
-    return row["low"] < ob.bottom
+        elif mode == "Wick":
+            return row["high"] > ob.top
+        else:  # Avg mode - Pine: high > stuff.avg
+            return row["high"] > ob.avg
+    else:  # Bearish breaker gets resolved when price breaks below
+        if mode == "Close":
+            return min(row["open"], row["close"]) < ob.bottom
+        elif mode == "Wick":
+            return row["low"] < ob.bottom
+        else:  # Avg mode - Pine: low < stuff.avg
+            return row["low"] < ob.avg
 
 
 def _update_ob_metrics(
@@ -412,19 +559,35 @@ def _update_ob_metrics(
 
 
 def _fvg_breaker_resolved(row: pd.Series, fvg: FVG, src: str) -> bool:
-    if fvg.bull:
+    """
+    Check if an FVG breaker has been resolved (invalidated).
+
+    Pine logic for FVG breaker resolution:
+    - Bullish FVG breaker: Close mode: max(c, o) > fvg.top
+                           Wick mode: h > fvg.top
+                           Avg mode: h > math.avg(fvg.top, fvg.btm)
+    - Bearish FVG breaker: Close mode: min(c, o) < fvg.btm
+                           Wick mode: l < fvg.btm
+                           Avg mode: l < math.avg(fvg.top, fvg.btm)
+    """
+    fvg_midpoint = (fvg.top + fvg.bottom) / 2.0
+
+    if fvg.bull:  # Bullish FVG breaker resolved when price breaks above
         if src == "Close":
             return max(row["open"], row["close"]) > fvg.top
-        if src == "Avg":
-            avg = (row["open"] + row["close"]) / 2.0
-            return avg > fvg.top
-        return row["high"] > fvg.top
-    if src == "Close":
-        return min(row["open"], row["close"]) < fvg.bottom
-    if src == "Avg":
-        avg = (row["open"] + row["close"]) / 2.0
-        return avg < fvg.bottom
-    return row["low"] < fvg.bottom
+        elif src == "Wick":
+            return row["high"] > fvg.top
+        else:  # Avg mode - Pine: h > math.avg(fvg.top, fvg.btm)
+            return row["high"] > fvg_midpoint
+    else:  # Bearish FVG breaker resolved when price breaks below
+        if src == "Close":
+            return min(row["open"], row["close"]) < fvg.bottom
+        elif src == "Wick":
+            return row["low"] < fvg.bottom
+        else:  # Avg mode - Pine: l < math.avg(fvg.top, fvg.btm)
+            return row["low"] < fvg_midpoint
+
+
 def _update_structure(
     state: StructureState,
     idx: int,
@@ -443,6 +606,7 @@ def _update_structure(
     crossup: bool,
     crossdn: bool,
     config: SMCConfig,
+    df: Optional[pd.DataFrame] = None,
 ) -> List[StructureEvent]:
     events: List[StructureEvent] = []
     if state.start == 0:
@@ -567,20 +731,47 @@ def _update_structure(
 
         if state.choch is not None:
             if state.trend == 1 and close <= state.choch:
+                # Bullish to Bearish CHoCH
                 state.txt = "choch"
                 events.append(StructureEvent(idx, "choch", -1, state.choch))
                 state.trend = -1
-                state.choch = state.bos
+
+                # Pine logic: when BOS is None, use ms.find() to locate new CHoCH level
+                # For bearish trend: find highest high as new CHoCH
+                if state.bos is None and df is not None:
+                    # ms.find(true, false, false) - find highest high
+                    idx_offset, found_high, _ = _find_swing_extreme(
+                        df, idx, state.loc or idx, use_max=True
+                    )
+                    state.choch = found_high
+                    state.loc = idx - idx_offset
+                else:
+                    state.choch = state.bos
+
                 state.bos = None
                 state.loc = idx
                 state.main = low
                 state.temp = state.loc
                 state.xloc = idx
+
             elif state.trend == -1 and close >= state.choch:
+                # Bearish to Bullish CHoCH
                 state.txt = "choch"
                 events.append(StructureEvent(idx, "choch", 1, state.choch))
                 state.trend = 1
-                state.choch = state.bos
+
+                # Pine logic: when BOS is None, use ms.find() to locate new CHoCH level
+                # For bullish trend: find lowest low as new CHoCH
+                if state.bos is None and df is not None:
+                    # ms.find(false, false, false) - find lowest low
+                    idx_offset, found_low, _ = _find_swing_extreme(
+                        df, idx, state.loc or idx, use_max=False
+                    )
+                    state.choch = found_low
+                    state.loc = idx - idx_offset
+                else:
+                    state.choch = state.bos
+
                 state.bos = None
                 state.loc = idx
                 state.main = high
@@ -596,34 +787,83 @@ def _detect_fvg(
     fvg_src: str,
     thresh: float,
     atr: pd.Series,
+    pending_bull_fvg: List[bool],
+    pending_bear_fvg: List[bool],
 ) -> Optional[FVG]:
+    """
+    Detect Fair Value Gap mirroring Pine Script logic.
+
+    Pine Script creates FVG one bar AFTER detection (using upfvg[1]/dnfvg[1]).
+    To match this behavior, we track pending FVGs and create them on the next bar.
+
+    Pine FVG detection:
+    - Bullish: l > h2 (current low > high 2 bars ago) - gap up
+    - Bearish: l2 > h (low 2 bars ago > current high) - gap down
+
+    Pine FVG boundaries (at creation bar, one bar after detection):
+    - Bullish: top = l[1] (low of detection bar), bottom = h2[1] (high[3] at creation)
+    - Bearish: top = l2[1] (low[3] at creation), bottom = h[1] (high of detection bar)
+    """
     if idx < 3:
         return None
-    high_2 = df["high"].iloc[idx - 2]
-    low_2 = df["low"].iloc[idx - 2]
-    high_3 = df["high"].iloc[idx - 3]
-    low_3 = df["low"].iloc[idx - 3]
+
+    # Current bar values
     high = df["high"].iloc[idx]
     low = df["low"].iloc[idx]
+    close = df["close"].iloc[idx]
+
+    # Previous bar values (for threshold check - Pine uses c1)
     prev_close = df["close"].iloc[idx - 1]
     prev_low = df["low"].iloc[idx - 1]
     prev_high = df["high"].iloc[idx - 1]
-    atr_prev = atr.iloc[idx - 1]
+
+    # Two bars ago
+    high_2 = df["high"].iloc[idx - 2]
+    low_2 = df["low"].iloc[idx - 2]
+
+    # Three bars ago (for FVG boundaries at creation time)
+    high_3 = df["high"].iloc[idx - 3] if idx >= 3 else np.nan
+    low_3 = df["low"].iloc[idx - 3] if idx >= 3 else np.nan
+
+    # ATR for threshold
+    atr_prev = atr.iloc[idx - 1] if idx >= 1 else np.nan
+
+    # Pine threshold calculation: blth = l1 + (fvatr[1] * fvgthresh)
     bullish_thresh = prev_low + (atr_prev * thresh) if not pd.isna(atr_prev) else prev_low
     bearish_thresh = prev_high - (atr_prev * thresh) if not pd.isna(atr_prev) else prev_high
+
+    # Check if there's a pending FVG from previous bar to create now
+    result = None
+
+    if pending_bull_fvg and pending_bull_fvg[0]:
+        # Create bullish FVG now (one bar after detection)
+        # Pine: top = l[1], bottom = h2[1] = high[3] at current bar
+        top = prev_low  # l[1] - low of detection bar (now prev bar)
+        bottom = high_3  # h2[1] = high[3] at creation bar
+        pending_bull_fvg[0] = False
+        if not pd.isna(top) and not pd.isna(bottom) and top > bottom:
+            result = FVG(bull=True, top=float(top), bottom=float(bottom), index=idx - 2)
+
+    if pending_bear_fvg and pending_bear_fvg[0]:
+        # Create bearish FVG now (one bar after detection)
+        # Pine: top = l2[1] = low[3], bottom = h[1] (high of detection bar)
+        top = low_3  # l2[1] = low[3] at creation bar
+        bottom = prev_high  # h[1] - high of detection bar (now prev bar)
+        pending_bear_fvg[0] = False
+        if not pd.isna(top) and not pd.isna(bottom) and top > bottom:
+            if result is None:
+                result = FVG(bull=False, top=float(top), bottom=float(bottom), index=idx - 2)
+
+    # Detect new FVGs (to be created next bar)
+    # Pine: if l > h2 and cc and c1 > blth => upfvg := true
     if low > high_2 and prev_close > bullish_thresh:
-        top = prev_low
-        bottom = high_3
-        if thresh > 0 and not pd.isna(atr_prev) and (top - bottom) < (atr_prev * thresh):
-            return None
-        return FVG(bull=True, top=float(top), bottom=float(bottom), index=idx - 1)
+        pending_bull_fvg[0] = True
+
+    # Pine: if l2 > h and cc and c1 < brth => dnfvg := true
     if low_2 > high and prev_close < bearish_thresh:
-        top = low_3
-        bottom = prev_high
-        if thresh > 0 and not pd.isna(atr_prev) and (top - bottom) < (atr_prev * thresh):
-            return None
-        return FVG(bull=False, top=float(top), bottom=float(bottom), index=idx - 1)
-    return None
+        pending_bear_fvg[0] = True
+
+    return result
 
 
 def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None) -> SMCOutputs:
@@ -659,11 +899,16 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
     current_trend = 0
     structure_state = StructureState()
 
-    atr = _atr(df)
+    # ATR with Pine Script scaling factor
+    atr = _atr(df, ob_len=config.ob_len)
     pivot_high_idx: List[int] = []
     pivot_highs: List[float] = []
     pivot_low_idx: List[int] = []
     pivot_lows: List[float] = []
+
+    # Pending FVG tracking (Pine creates FVG one bar after detection)
+    pending_bull_fvg: List[bool] = [False]
+    pending_bear_fvg: List[bool] = [False]
 
     for i in range(window_start, len(df)):
         if i == 0:
@@ -686,10 +931,15 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
         open_ = float(df["open"].iloc[i])
 
         if not np.isnan(swing_highs.iloc[i]):
-            pivot_high_idx.insert(0, i)
+            # Pine stores bar_index[mslen] - the actual pivot bar, not the confirmation bar
+            # The pivot at swing_highs.iloc[i] was actually detected at bar (i - mslen)
+            actual_pivot_bar = i - config.mslen
+            pivot_high_idx.insert(0, actual_pivot_bar)
             pivot_highs.insert(0, float(swing_highs.iloc[i]))
         if not np.isnan(swing_lows.iloc[i]):
-            pivot_low_idx.insert(0, i)
+            # Same for swing lows
+            actual_pivot_bar = i - config.mslen
+            pivot_low_idx.insert(0, actual_pivot_bar)
             pivot_lows.insert(0, float(swing_lows.iloc[i]))
 
         if pivot_highs and high > pivot_highs[0]:
@@ -736,22 +986,29 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
                 crossup,
                 crossdn,
                 config,
+                df,  # Pass DataFrame for CHoCH find() logic
             )
         )
         if structure_state.trend != current_trend:
             current_trend = structure_state.trend
-            ob = _find_ob_range(df, current_trend, config.ob_len, config.ob_mode, i, atr)
+            # Use structure_state.loc as reference for finding swing extreme
+            ob = _find_ob_at_swing(
+                df,
+                current_trend,
+                i,
+                structure_state.loc,
+                config.ob_mode,
+                atr,
+            )
             if ob:
                 if ob.bull:
                     bull_obs.insert(0, ob)
                 else:
                     bear_obs.insert(0, ob)
 
-        if config.build_sweep:
-            if last_swing_high_idx is not None and high > last_swing_high and close < last_swing_high:
-                events.append(StructureEvent(i, "bos", 1, high, sweep=True))
-            if last_swing_low_idx is not None and low < last_swing_low and close > last_swing_low:
-                events.append(StructureEvent(i, "bos", -1, low, sweep=True))
+        # Note: Extra sweep detection on swing points was removed.
+        # Pine only detects sweeps on structure levels (BOS/CHoCH), not on all swing points.
+        # Sweep detection is handled inside _update_structure.
 
         trend.iloc[i] = current_trend
 
@@ -783,9 +1040,14 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
                         ob.active = False
 
         if config.fvg_enable:
-            fvg = _detect_fvg(df, i, config.fvg_src, config.fvg_thresh, atr)
+            # FVG detection with Pine-style delayed creation
+            fvg = _detect_fvg(
+                df, i, config.fvg_src, config.fvg_thresh, atr,
+                pending_bull_fvg, pending_bear_fvg
+            )
             if fvg:
                 if fvg.bull:
+                    # Pine logic: reset raid state when new FVG is created
                     if bull_fvgs and bull_fvgs[0].raid and not bull_fvgs[0].active:
                         bull_fvgs[0].active = True
                         bull_fvgs[0].raid = False
