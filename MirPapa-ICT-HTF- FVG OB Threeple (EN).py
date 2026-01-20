@@ -182,6 +182,30 @@ def _build_htf_cache(df: pd.DataFrame, timeframe: str) -> HTFCache:
     ]:
         aligned[col] = _align_series(htf[col], df.index)
 
+    if aligned["bar_index"].isna().all():
+        return HTFCache(
+            timeframe=timeframe,
+            last_bar_index=0,
+            is_new_bar=False,
+            bar_index=0,
+            open=np.nan,
+            high=np.nan,
+            low=np.nan,
+            close=np.nan,
+            open1=np.nan,
+            close1=np.nan,
+            high1=np.nan,
+            low1=np.nan,
+            open2=np.nan,
+            close2=np.nan,
+            high2=np.nan,
+            low2=np.nan,
+            high3=np.nan,
+            low3=np.nan,
+            time1=None,
+            time2=None,
+        )
+
     bar_index = int(aligned["bar_index"].iloc[-1])
     is_new_bar = aligned["bar_index"].iloc[-1] != aligned["bar_index"].iloc[-2] if len(aligned) > 1 else True
 
@@ -206,6 +230,109 @@ def _build_htf_cache(df: pd.DataFrame, timeframe: str) -> HTFCache:
         low3=float(aligned["low3"].iloc[-1]) if not pd.isna(aligned["low3"].iloc[-1]) else np.nan,
         time1=aligned["time1"].iloc[-1] if not pd.isna(aligned["time1"].iloc[-1]) else None,
         time2=aligned["time2"].iloc[-1] if not pd.isna(aligned["time2"].iloc[-1]) else None,
+    )
+
+
+def _build_htf_cache_series(df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    tf_minutes = _parse_timeframe_to_minutes(timeframe)
+    if tf_minutes is None:
+        raise ValueError(f"Unsupported timeframe: {timeframe}")
+
+    if tf_minutes <= _infer_base_minutes(df) or tf_minutes == 0:
+        htf = df[["open", "high", "low", "close"]].copy()
+    else:
+        htf = _resample_ohlc(df, f"{tf_minutes}min")
+
+    htf["bar_index"] = np.arange(len(htf))
+    htf = htf.assign(
+        open1=htf["open"].shift(1),
+        close1=htf["close"].shift(1),
+        high1=htf["high"].shift(1),
+        low1=htf["low"].shift(1),
+        open2=htf["open"].shift(2),
+        close2=htf["close"].shift(2),
+        high2=htf["high"].shift(2),
+        low2=htf["low"].shift(2),
+        high3=htf["high"].shift(3),
+        low3=htf["low"].shift(3),
+        time1=htf.index.to_series().shift(1),
+        time2=htf.index.to_series().shift(2),
+    )
+
+    aligned = pd.DataFrame(index=df.index)
+    for col in [
+        "bar_index",
+        "open",
+        "high",
+        "low",
+        "close",
+        "open1",
+        "close1",
+        "high1",
+        "low1",
+        "open2",
+        "close2",
+        "high2",
+        "low2",
+        "high3",
+        "low3",
+        "time1",
+        "time2",
+    ]:
+        aligned[col] = _align_series(htf[col], df.index)
+    return aligned
+
+
+def _htf_cache_from_aligned(aligned: pd.DataFrame, bar_index: int, timeframe: str) -> HTFCache:
+    row = aligned.iloc[bar_index]
+    prev_row = aligned.iloc[bar_index - 1] if bar_index > 0 else row
+    if pd.isna(row["bar_index"]):
+        return HTFCache(
+            timeframe=timeframe,
+            last_bar_index=0,
+            is_new_bar=False,
+            bar_index=0,
+            open=np.nan,
+            high=np.nan,
+            low=np.nan,
+            close=np.nan,
+            open1=np.nan,
+            close1=np.nan,
+            high1=np.nan,
+            low1=np.nan,
+            open2=np.nan,
+            close2=np.nan,
+            high2=np.nan,
+            low2=np.nan,
+            high3=np.nan,
+            low3=np.nan,
+            time1=None,
+            time2=None,
+        )
+
+    bar_index_value = int(row["bar_index"])
+    is_new_bar = row["bar_index"] != prev_row["bar_index"] if bar_index > 0 else True
+    return HTFCache(
+        timeframe=timeframe,
+        last_bar_index=bar_index_value,
+        is_new_bar=is_new_bar,
+        bar_index=bar_index_value,
+        open=float(row["open"]),
+        high=float(row["high"]),
+        low=float(row["low"]),
+        close=float(row["close"]),
+        open1=float(row["open1"]) if not pd.isna(row["open1"]) else np.nan,
+        close1=float(row["close1"]) if not pd.isna(row["close1"]) else np.nan,
+        high1=float(row["high1"]) if not pd.isna(row["high1"]) else np.nan,
+        low1=float(row["low1"]) if not pd.isna(row["low1"]) else np.nan,
+        open2=float(row["open2"]) if not pd.isna(row["open2"]) else np.nan,
+        close2=float(row["close2"]) if not pd.isna(row["close2"]) else np.nan,
+        high2=float(row["high2"]) if not pd.isna(row["high2"]) else np.nan,
+        low2=float(row["low2"]) if not pd.isna(row["low2"]) else np.nan,
+        high3=float(row["high3"]) if not pd.isna(row["high3"]) else np.nan,
+        low3=float(row["low3"]) if not pd.isna(row["low3"]) else np.nan,
+        time1=row["time1"] if not pd.isna(row["time1"]) else None,
+        time2=row["time2"] if not pd.isna(row["time2"]) else None,
     )
 
 
@@ -334,6 +461,8 @@ def calculate_fvg_ob_threeple(
     df: pd.DataFrame,
     *,
     chart_timeframe: str,
+    mid_tf_override: Optional[str] = None,
+    high_tf_override: Optional[str] = None,
     max_boxes: int = 300,
     enable_cleanup: bool = True,
     high_tf_settings: FOBSettings = FOBSettings(
@@ -365,7 +494,11 @@ def calculate_fvg_ob_threeple(
     ),
     offset_fob: int = 2,
 ) -> ThreepleOutputs:
-    mid_tf, high_tf = _select_timeframes(chart_timeframe)
+    if mid_tf_override and high_tf_override:
+        mid_tf = mid_tf_override
+        high_tf = high_tf_override
+    else:
+        mid_tf, high_tf = _select_timeframes(chart_timeframe)
 
     high_tf_boxes_bull: List[BoxData] = []
     high_tf_boxes_bear: List[BoxData] = []
@@ -380,6 +513,17 @@ def calculate_fvg_ob_threeple(
     last_mid_tf_fob_bull: bool = False
     last_current_tf_fob_bar: Optional[int] = None
     last_current_tf_fob_bull: bool = False
+
+    high_tf_aligned = (
+        _build_htf_cache_series(df, high_tf)
+        if high_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, high_tf)
+        else None
+    )
+    mid_tf_aligned = (
+        _build_htf_cache_series(df, mid_tf)
+        if mid_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, mid_tf)
+        else None
+    )
 
     for bar_index, (timestamp, row) in enumerate(df.iterrows()):
         high_price = float(row["high"])
@@ -449,7 +593,7 @@ def calculate_fvg_ob_threeple(
             continue
 
         if high_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, high_tf):
-            htf_cache = _build_htf_cache(df.iloc[: bar_index + 1], high_tf)
+            htf_cache = _htf_cache_from_aligned(high_tf_aligned, bar_index, high_tf)
             if htf_cache.is_new_bar and htf_cache.bar_index > offset_fob:
                 can_bull = (
                     last_high_tf_fob_bar is None
@@ -497,7 +641,7 @@ def calculate_fvg_ob_threeple(
                         last_high_tf_fob_bull = False
 
         if mid_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, mid_tf):
-            mid_cache = _build_htf_cache(df.iloc[: bar_index + 1], mid_tf)
+            mid_cache = _htf_cache_from_aligned(mid_tf_aligned, bar_index, mid_tf)
             if mid_cache.is_new_bar and mid_cache.bar_index > offset_fob:
                 can_bull = (
                     last_mid_tf_fob_bar is None
