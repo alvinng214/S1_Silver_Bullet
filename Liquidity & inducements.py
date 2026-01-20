@@ -335,6 +335,8 @@ def calculate_liquidity_inducements(
     retr_keep_invalidated: bool = False,
 ) -> Dict[str, object]:
     atr = _atr(df, 14)
+    buyside_targets = pd.Series(np.nan, index=df.index)
+    sellside_targets = pd.Series(np.nan, index=df.index)
 
     structure_high, structure_low = _pivot_series(df["high"], df["low"], market_left, market_right)
     structure_pivots: List[Pivot] = []
@@ -570,6 +572,9 @@ def calculate_liquidity_inducements(
                     keep_invalidated=retr_keep_invalidated,
                 )
 
+        buyside_targets.iloc[i] = buyside[0].price if buyside else np.nan
+        sellside_targets.iloc[i] = sellside[0].price if sellside else np.nan
+
     return {
         "trend": trend,
         "change_of_character": change_of_character,
@@ -583,5 +588,7 @@ def calculate_liquidity_inducements(
         "turtle_soups": turtle_events,
         "buyside_liquidity": buyside,
         "sellside_liquidity": sellside,
+        "buyside_targets": buyside_targets,
+        "sellside_targets": sellside_targets,
         "retracement_inducements": retr_state,
     }
