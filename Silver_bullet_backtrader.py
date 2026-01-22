@@ -7,12 +7,14 @@ Steps:
 3) Attach Smart Money trend columns to the base dataframe.
 4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple.
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
-6) Feed data into Backtrader and resample to 4H/1D.
-7) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+6) Mark session highs/lows, daily 50%, CRT, and HTF sweeps for Step 4/6 preparation.
+7) Feed data into Backtrader and resample to 4H/1D.
+8) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import warnings
@@ -42,6 +44,36 @@ LIQUIDITY_PATH = os.path.join(
 liquidity_module = SourceFileLoader("liquidity_inducements", LIQUIDITY_PATH).load_module()
 calculate_liquidity_inducements = liquidity_module.calculate_liquidity_inducements
 
+CANDLACHARTS_SWEEPS_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "CandelaCharts - HTF Sweeps.py",
+)
+candelacharts_module = SourceFileLoader(
+    "candelacharts_htf_sweeps", CANDLACHARTS_SWEEPS_PATH
+).load_module()
+calculate_htf_sweeps = candelacharts_module.calculate_htf_sweeps
+
+ASIALONDON_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "SW's AsiaLondon HL's.py",
+)
+asialondon_module = SourceFileLoader("asialondon_levels", ASIALONDON_PATH).load_module()
+calculate_asia_london_levels = asialondon_module.calculate_asia_london_levels
+
+ICT_CUSTOM_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT_Customizable_50__Line___DailyAsiaLondonNew_York_HighLow___True_Day_Open.py",
+)
+ict_custom_module = SourceFileLoader("ict_custom_50_line", ICT_CUSTOM_PATH).load_module()
+calculate_custom_50_line = ict_custom_module.calculate_indicator
+
+IGHODALO_CRT_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "Ighodalo_Gold_-_CRT__Candles_are_ranges_theory_.py",
+)
+ighodalo_module = SourceFileLoader("ighodalo_crt", IGHODALO_CRT_PATH).load_module()
+calculate_ighodalo_crt = ighodalo_module.calculate_ighodalo_crt
+
 LUXALGO_SB_PATH = os.path.join(
     os.path.dirname(__file__),
     "ICT_Silver_Bullet__LuxAlgo___shorttitle__LuxAlgo_-_ICT_Silver_Bullet.py",
@@ -69,6 +101,19 @@ class PandasDataBias(bt.feeds.PandasData):
         "smc_liquidity_low",
         "liq_buyside_target",
         "liq_sellside_target",
+        "asia_session_high",
+        "asia_session_low",
+        "london_session_high",
+        "london_session_low",
+        "ny_session_high",
+        "ny_session_low",
+        "pd_high",
+        "pd_low",
+        "pd_mid",
+        "daily_mid_50",
+        "true_day_open",
+        "crt_buy_signal",
+        "crt_sell_signal",
         "sb_sig_ln",
         "sb_sig_am",
         "sb_sig_pm",
@@ -77,6 +122,10 @@ class PandasDataBias(bt.feeds.PandasData):
         "sb_lux_pm",
         "sb_or_range",
         "sb_trading_range",
+        "htf_sweep_bull",
+        "htf_sweep_bear",
+        "liquidity_sweep_buy",
+        "liquidity_sweep_sell",
     )
     params = (
         ("datetime", None),
@@ -96,6 +145,19 @@ class PandasDataBias(bt.feeds.PandasData):
         ("smc_liquidity_low", "smc_liquidity_low"),
         ("liq_buyside_target", "liq_buyside_target"),
         ("liq_sellside_target", "liq_sellside_target"),
+        ("asia_session_high", "asia_session_high"),
+        ("asia_session_low", "asia_session_low"),
+        ("london_session_high", "london_session_high"),
+        ("london_session_low", "london_session_low"),
+        ("ny_session_high", "ny_session_high"),
+        ("ny_session_low", "ny_session_low"),
+        ("pd_high", "pd_high"),
+        ("pd_low", "pd_low"),
+        ("pd_mid", "pd_mid"),
+        ("daily_mid_50", "daily_mid_50"),
+        ("true_day_open", "true_day_open"),
+        ("crt_buy_signal", "crt_buy_signal"),
+        ("crt_sell_signal", "crt_sell_signal"),
         ("sb_sig_ln", "sb_sig_ln"),
         ("sb_sig_am", "sb_sig_am"),
         ("sb_sig_pm", "sb_sig_pm"),
@@ -104,6 +166,10 @@ class PandasDataBias(bt.feeds.PandasData):
         ("sb_lux_pm", "sb_lux_pm"),
         ("sb_or_range", "sb_or_range"),
         ("sb_trading_range", "sb_trading_range"),
+        ("htf_sweep_bull", "htf_sweep_bull"),
+        ("htf_sweep_bear", "htf_sweep_bear"),
+        ("liquidity_sweep_buy", "liquidity_sweep_buy"),
+        ("liquidity_sweep_sell", "liquidity_sweep_sell"),
     )
 
 
@@ -113,6 +179,17 @@ def load_data(csv_file: str) -> pd.DataFrame:
     df = df.set_index("time").sort_index()
     df = df[["open", "high", "low", "close"]].dropna()
     return df
+
+
+def limit_bars(df: pd.DataFrame, max_bars: int | None) -> pd.DataFrame:
+    if max_bars is None or max_bars <= 0 or len(df) <= max_bars:
+        return df
+    trimmed = df.iloc[-max_bars:]
+    print(
+        f"Limiting dataset to last {max_bars} bars "
+        f"({trimmed.index.min()} to {trimmed.index.max()})."
+    )
+    return trimmed
 
 
 def add_smart_money_trends(df: pd.DataFrame) -> pd.DataFrame:
@@ -201,6 +278,120 @@ def add_external_liquidity_targets(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _to_utc_naive(ts: pd.Timestamp) -> pd.Timestamp:
+    if ts.tzinfo is None:
+        return ts
+    return ts.tz_convert("UTC").tz_localize(None)
+
+
+def add_session_levels(df: pd.DataFrame) -> pd.DataFrame:
+    aligned = df.copy()
+    aligned.index = pd.to_datetime(aligned.index)
+    if aligned.index.tz is None:
+        aligned.index = aligned.index.tz_localize("UTC")
+
+    asia_levels = calculate_asia_london_levels(aligned, timezone_offset=3)
+
+    def build_session_series(session: str, is_high: bool) -> pd.Series:
+        values = pd.Series(0.0, index=df.index, dtype=float)
+        for line in asia_levels.session_lines:
+            if line.session != session or line.is_high != is_high:
+                continue
+            start = _to_utc_naive(line.start_time)
+            end = _to_utc_naive(line.end_time)
+            mask = (values.index >= start) & (values.index <= end)
+            values.loc[mask] = float(line.price)
+        return values
+
+    asia_high = build_session_series("Asia", True)
+    asia_low = build_session_series("Asia", False)
+    london_high = build_session_series("London", True)
+    london_low = build_session_series("London", False)
+    ny_high = build_session_series("NY", True)
+    ny_low = build_session_series("NY", False)
+
+    pd_high = float(asia_levels.pd_levels.high or 0.0)
+    pd_low = float(asia_levels.pd_levels.low or 0.0)
+    pd_mid = float(asia_levels.pd_levels.mid or 0.0)
+
+    custom_levels = calculate_custom_50_line(aligned)
+    daily_states = custom_levels["daily_states"]
+    daily_mid_50 = pd.Series(0.0, index=df.index, dtype=float)
+    for idx, state in enumerate(daily_states):
+        if idx >= len(daily_mid_50):
+            break
+        daily_mid_50.iloc[idx] = float(state.mid_level)
+
+    true_day_open_states = custom_levels["true_day_open_states"]
+    true_day_open = pd.Series(0, index=df.index, dtype=int)
+    for idx in true_day_open_states.keys():
+        if 0 <= idx < len(true_day_open):
+            true_day_open.iloc[idx] = 1
+
+    crt = calculate_ighodalo_crt(df)
+    crt_buy = pd.Series(0, index=df.index, dtype=int)
+    crt_sell = pd.Series(0, index=df.index, dtype=int)
+    for signal in crt["signals"]:
+        if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
+            crt_buy.iloc[signal.index] = 1
+        if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
+            crt_sell.iloc[signal.index] = 1
+
+    df = df.copy()
+    df["asia_session_high"] = asia_high
+    df["asia_session_low"] = asia_low
+    df["london_session_high"] = london_high
+    df["london_session_low"] = london_low
+    df["ny_session_high"] = ny_high
+    df["ny_session_low"] = ny_low
+    df["pd_high"] = pd_high
+    df["pd_low"] = pd_low
+    df["pd_mid"] = pd_mid
+    df["daily_mid_50"] = daily_mid_50
+    df["true_day_open"] = true_day_open
+    df["crt_buy_signal"] = crt_buy
+    df["crt_sell_signal"] = crt_sell
+    return df
+
+
+def add_liquidity_sweep_signals(df: pd.DataFrame) -> pd.DataFrame:
+    sweeps = calculate_htf_sweeps(df, timeframes=[("4H", 3, False)])
+    htf_candles = sweeps.get("4H", [])
+
+    htf_sweep_bull = pd.Series(0, index=df.index, dtype=int)
+    htf_sweep_bear = pd.Series(0, index=df.index, dtype=int)
+    for candle in htf_candles:
+        if 0 <= candle.c_idx < len(htf_sweep_bull):
+            if candle.bull_sweep:
+                htf_sweep_bull.iloc[candle.c_idx] = 1
+            if candle.bear_sweep:
+                htf_sweep_bear.iloc[candle.c_idx] = 1
+
+    df = df.copy()
+    df["htf_sweep_bull"] = htf_sweep_bull
+    df["htf_sweep_bear"] = htf_sweep_bear
+
+    if "crt_buy_signal" not in df.columns or "crt_sell_signal" not in df.columns:
+        crt = calculate_ighodalo_crt(df)
+        crt_buy = pd.Series(0, index=df.index, dtype=int)
+        crt_sell = pd.Series(0, index=df.index, dtype=int)
+        for signal in crt["signals"]:
+            if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
+                crt_buy.iloc[signal.index] = 1
+            if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
+                crt_sell.iloc[signal.index] = 1
+        df["crt_buy_signal"] = crt_buy
+        df["crt_sell_signal"] = crt_sell
+
+    df["liquidity_sweep_buy"] = (
+        df["htf_sweep_bull"].astype(int) * df["crt_buy_signal"].astype(int)
+    )
+    df["liquidity_sweep_sell"] = (
+        df["htf_sweep_bear"].astype(int) * df["crt_sell_signal"].astype(int)
+    )
+    return df
+
+
 def _align_index_to_hk_as_ny(df: pd.DataFrame) -> pd.DataFrame:
     index = df.index
     if index.tz is None:
@@ -267,15 +458,19 @@ def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     )
 
 
-def run_backtest(csv_file: str) -> None:
+def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     if not os.path.exists(csv_file):
         raise FileNotFoundError(f"CSV file not found: {csv_file}")
 
     warnings.filterwarnings("ignore", category=FutureWarning)
 
-    data_df = add_smart_money_trends(load_data(csv_file))
+    data_df = load_data(csv_file)
+    data_df = limit_bars(data_df, max_bars)
+    data_df = add_smart_money_trends(data_df)
     data_df = add_htf_poi(data_df)
     data_df = add_external_liquidity_targets(data_df)
+    data_df = add_session_levels(data_df)
+    data_df = add_liquidity_sweep_signals(data_df)
     data_df = add_killzone_windows(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
@@ -303,8 +498,21 @@ def run_backtest(csv_file: str) -> None:
 
 
 def main() -> None:
-    csv_file = "PEPPERSTONE_XAUUSD, 5.csv"
-    run_backtest(csv_file)
+    parser = argparse.ArgumentParser(description="Run Silver Bullet backtrader prep.")
+    parser.add_argument(
+        "--csv-file",
+        default="PEPPERSTONE_XAUUSD, 5.csv",
+        help="Path to CSV file containing OHLC data.",
+    )
+    parser.add_argument(
+        "--max-bars",
+        type=int,
+        default=int(os.environ.get("SILVER_BULLET_MAX_BARS", "0")),
+        help="Limit the number of most recent bars processed (0 = no limit).",
+    )
+    args = parser.parse_args()
+    max_bars = args.max_bars if args.max_bars > 0 else None
+    run_backtest(args.csv_file, max_bars=max_bars)
 
 
 if __name__ == "__main__":
