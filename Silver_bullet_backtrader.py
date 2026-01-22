@@ -16,6 +16,7 @@ Steps:
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import warnings
@@ -230,6 +231,17 @@ def load_data(csv_file: str, max_rows: int | None = None) -> pd.DataFrame:
     if max_rows is not None and len(df) > max_rows:
         df = df.tail(max_rows)
     return df
+
+
+def limit_bars(df: pd.DataFrame, max_bars: int | None) -> pd.DataFrame:
+    if max_bars is None or max_bars <= 0 or len(df) <= max_bars:
+        return df
+    trimmed = df.iloc[-max_bars:]
+    print(
+        f"Limiting dataset to last {max_bars} bars "
+        f"({trimmed.index.min()} to {trimmed.index.max()})."
+    )
+    return trimmed
 
 
 def add_smart_money_trends(df: pd.DataFrame) -> pd.DataFrame:
@@ -636,7 +648,7 @@ def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     )
 
 
-def run_backtest(csv_file: str) -> None:
+def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     if not os.path.exists(csv_file):
         raise FileNotFoundError(f"CSV file not found: {csv_file}")
 
@@ -683,8 +695,21 @@ def run_backtest(csv_file: str) -> None:
 
 
 def main() -> None:
-    csv_file = "PEPPERSTONE_XAUUSD, 5.csv"
-    run_backtest(csv_file)
+    parser = argparse.ArgumentParser(description="Run Silver Bullet backtrader prep.")
+    parser.add_argument(
+        "--csv-file",
+        default="PEPPERSTONE_XAUUSD, 5.csv",
+        help="Path to CSV file containing OHLC data.",
+    )
+    parser.add_argument(
+        "--max-bars",
+        type=int,
+        default=int(os.environ.get("SILVER_BULLET_MAX_BARS", "0")),
+        help="Limit the number of most recent bars processed (0 = no limit).",
+    )
+    args = parser.parse_args()
+    max_bars = args.max_bars if args.max_bars > 0 else None
+    run_backtest(args.csv_file, max_bars=max_bars)
 
 
 if __name__ == "__main__":
