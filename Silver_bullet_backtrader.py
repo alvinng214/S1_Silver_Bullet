@@ -7,7 +7,7 @@ Steps:
 3) Attach Smart Money trend columns to the base dataframe.
 4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple.
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
-6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
+6) Mark session highs/lows, daily 50%, CRT, and HTF sweeps for Step 4/6 preparation.
 7) Feed data into Backtrader and resample to 4H/1D.
 8) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
@@ -43,6 +43,15 @@ LIQUIDITY_PATH = os.path.join(
 )
 liquidity_module = SourceFileLoader("liquidity_inducements", LIQUIDITY_PATH).load_module()
 calculate_liquidity_inducements = liquidity_module.calculate_liquidity_inducements
+
+CANDLACHARTS_SWEEPS_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "CandelaCharts - HTF Sweeps.py",
+)
+candelacharts_module = SourceFileLoader(
+    "candelacharts_htf_sweeps", CANDLACHARTS_SWEEPS_PATH
+).load_module()
+calculate_htf_sweeps = candelacharts_module.calculate_htf_sweeps
 
 ASIALONDON_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -113,6 +122,10 @@ class PandasDataBias(bt.feeds.PandasData):
         "sb_lux_pm",
         "sb_or_range",
         "sb_trading_range",
+        "htf_sweep_bull",
+        "htf_sweep_bear",
+        "liquidity_sweep_buy",
+        "liquidity_sweep_sell",
     )
     params = (
         ("datetime", None),
@@ -153,6 +166,10 @@ class PandasDataBias(bt.feeds.PandasData):
         ("sb_lux_pm", "sb_lux_pm"),
         ("sb_or_range", "sb_or_range"),
         ("sb_trading_range", "sb_trading_range"),
+        ("htf_sweep_bull", "htf_sweep_bull"),
+        ("htf_sweep_bear", "htf_sweep_bear"),
+        ("liquidity_sweep_buy", "liquidity_sweep_buy"),
+        ("liquidity_sweep_sell", "liquidity_sweep_sell"),
     )
 
 
@@ -337,6 +354,44 @@ def add_session_levels(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_liquidity_sweep_signals(df: pd.DataFrame) -> pd.DataFrame:
+    sweeps = calculate_htf_sweeps(df, timeframes=[("4H", 3, False)])
+    htf_candles = sweeps.get("4H", [])
+
+    htf_sweep_bull = pd.Series(0, index=df.index, dtype=int)
+    htf_sweep_bear = pd.Series(0, index=df.index, dtype=int)
+    for candle in htf_candles:
+        if 0 <= candle.c_idx < len(htf_sweep_bull):
+            if candle.bull_sweep:
+                htf_sweep_bull.iloc[candle.c_idx] = 1
+            if candle.bear_sweep:
+                htf_sweep_bear.iloc[candle.c_idx] = 1
+
+    df = df.copy()
+    df["htf_sweep_bull"] = htf_sweep_bull
+    df["htf_sweep_bear"] = htf_sweep_bear
+
+    if "crt_buy_signal" not in df.columns or "crt_sell_signal" not in df.columns:
+        crt = calculate_ighodalo_crt(df)
+        crt_buy = pd.Series(0, index=df.index, dtype=int)
+        crt_sell = pd.Series(0, index=df.index, dtype=int)
+        for signal in crt["signals"]:
+            if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
+                crt_buy.iloc[signal.index] = 1
+            if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
+                crt_sell.iloc[signal.index] = 1
+        df["crt_buy_signal"] = crt_buy
+        df["crt_sell_signal"] = crt_sell
+
+    df["liquidity_sweep_buy"] = (
+        df["htf_sweep_bull"].astype(int) * df["crt_buy_signal"].astype(int)
+    )
+    df["liquidity_sweep_sell"] = (
+        df["htf_sweep_bear"].astype(int) * df["crt_sell_signal"].astype(int)
+    )
+    return df
+
+
 def _align_index_to_hk_as_ny(df: pd.DataFrame) -> pd.DataFrame:
     index = df.index
     if index.tz is None:
@@ -415,6 +470,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_htf_poi(data_df)
     data_df = add_external_liquidity_targets(data_df)
     data_df = add_session_levels(data_df)
+    data_df = add_liquidity_sweep_signals(data_df)
     data_df = add_killzone_windows(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
