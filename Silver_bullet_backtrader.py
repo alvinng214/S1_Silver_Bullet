@@ -9,8 +9,9 @@ Steps:
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
 6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
 7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
-8) Feed data into Backtrader and resample to 4H/1D.
-9) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+8) Confirm MSS/CHOCH via market structure + CISD sweep signals.
+9) Feed data into Backtrader and resample to 4H/1D.
+10) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -87,6 +88,23 @@ HTF_SWEEPS_PATH = os.path.join(
 htf_sweeps_module = SourceFileLoader("candela_htf_sweeps", HTF_SWEEPS_PATH).load_module()
 calculate_htf_sweeps = htf_sweeps_module.calculate_htf_sweeps
 
+MARKET_STRUCTURE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "Market Structure MTF Trend [Pt].py",
+)
+market_structure_module = SourceFileLoader(
+    "market_structure_mtf_trend",
+    MARKET_STRUCTURE_PATH,
+).load_module()
+calculate_market_structure_mtf = market_structure_module.calculate_market_structure_mtf
+
+CD_SWEEP_CISD_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "cd_sweep&cisd_Cx.py",
+)
+cd_sweep_module = SourceFileLoader("cd_sweep_cisd", CD_SWEEP_CISD_PATH).load_module()
+detect_cd_sweep_cisd = cd_sweep_module.detect_cd_sweep_cisd
+
 
 class PandasDataBias(bt.feeds.PandasData):
     lines = (
@@ -127,6 +145,12 @@ class PandasDataBias(bt.feeds.PandasData):
         "htf_sweep_1d_bear",
         "liquidity_sweep_bull",
         "liquidity_sweep_bear",
+        "choch_bull",
+        "choch_bear",
+        "cisd_bull",
+        "cisd_bear",
+        "mss_bull",
+        "mss_bear",
     )
     params = (
         ("datetime", None),
@@ -173,14 +197,39 @@ class PandasDataBias(bt.feeds.PandasData):
         ("htf_sweep_1d_bear", "htf_sweep_1d_bear"),
         ("liquidity_sweep_bull", "liquidity_sweep_bull"),
         ("liquidity_sweep_bear", "liquidity_sweep_bear"),
+        ("choch_bull", "choch_bull"),
+        ("choch_bear", "choch_bear"),
+        ("cisd_bull", "cisd_bull"),
+        ("cisd_bear", "cisd_bear"),
+        ("mss_bull", "mss_bull"),
+        ("mss_bear", "mss_bear"),
     )
 
 
-def load_data(csv_file: str) -> pd.DataFrame:
+def _env_int(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer for {name}: {value}") from exc
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def load_data(csv_file: str, max_rows: int | None = None) -> pd.DataFrame:
     df = pd.read_csv(csv_file)
     df["time"] = pd.to_datetime(df["time"], utc=True).dt.tz_convert(None)
     df = df.set_index("time").sort_index()
     df = df[["open", "high", "low", "close"]].dropna()
+    if max_rows is not None and len(df) > max_rows:
+        df = df.tail(max_rows)
     return df
 
 
@@ -287,7 +336,11 @@ def _to_utc_naive(ts: pd.Timestamp) -> pd.Timestamp:
     return ts.tz_convert("UTC").tz_localize(None)
 
 
-def add_session_levels(df: pd.DataFrame) -> pd.DataFrame:
+def add_session_levels(
+    df: pd.DataFrame,
+    enable_custom_50: bool = True,
+    enable_crt: bool = True,
+) -> pd.DataFrame:
     aligned = df.copy()
     aligned.index = pd.to_datetime(aligned.index)
     if aligned.index.tz is None:
@@ -317,28 +370,35 @@ def add_session_levels(df: pd.DataFrame) -> pd.DataFrame:
     pd_low = float(asia_levels.pd_levels.low or 0.0)
     pd_mid = float(asia_levels.pd_levels.mid or 0.0)
 
-    custom_levels = calculate_custom_50_line(aligned)
-    daily_states = custom_levels["daily_states"]
     daily_mid_50 = pd.Series(0.0, index=df.index, dtype=float)
-    for idx, state in enumerate(daily_states):
-        if idx >= len(daily_mid_50):
-            break
-        daily_mid_50.iloc[idx] = float(state.mid_level)
-
-    true_day_open_states = custom_levels["true_day_open_states"]
     true_day_open = pd.Series(0, index=df.index, dtype=int)
-    for idx in true_day_open_states.keys():
-        if 0 <= idx < len(true_day_open):
-            true_day_open.iloc[idx] = 1
+    if enable_custom_50:
+        custom_config = ict_custom_module.IndicatorConfig(
+            show_checklist=False,
+            show_labels=False,
+            enable_watermark=False,
+        )
+        custom_levels = calculate_custom_50_line(aligned, config=custom_config)
+        daily_states = custom_levels["daily_states"]
+        for idx, state in enumerate(daily_states):
+            if idx >= len(daily_mid_50):
+                break
+            daily_mid_50.iloc[idx] = float(state.mid_level)
 
-    crt = calculate_ighodalo_crt(df)
+        true_day_open_states = custom_levels["true_day_open_states"]
+        for idx in true_day_open_states.keys():
+            if 0 <= idx < len(true_day_open):
+                true_day_open.iloc[idx] = 1
+
     crt_buy = pd.Series(0, index=df.index, dtype=int)
     crt_sell = pd.Series(0, index=df.index, dtype=int)
-    for signal in crt["signals"]:
-        if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
-            crt_buy.iloc[signal.index] = 1
-        if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
-            crt_sell.iloc[signal.index] = 1
+    if enable_crt:
+        crt = calculate_ighodalo_crt(df)
+        for signal in crt["signals"]:
+            if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
+                crt_buy.iloc[signal.index] = 1
+            if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
+                crt_sell.iloc[signal.index] = 1
 
     df = df.copy()
     df["asia_session_high"] = asia_high
@@ -415,20 +475,29 @@ def add_killzone_windows(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _build_sweep_series(candles: list, length: int) -> tuple[pd.Series, pd.Series]:
-    bull = pd.Series(0, index=range(length), dtype=int)
-    bear = pd.Series(0, index=range(length), dtype=int)
+def _build_sweep_series(candles: list, index: pd.Index) -> tuple[pd.Series, pd.Series]:
+    bull = pd.Series(0, index=index, dtype=int)
+    bear = pd.Series(0, index=index, dtype=int)
     for candle in candles:
         for sweep in candle.htf_sweeps:
             if not sweep.formed or sweep.removed:
                 continue
             idx = sweep.x2
-            if 0 <= idx < length:
+            if 0 <= idx < len(index):
                 if sweep.bull:
                     bull.iloc[idx] = 1
                 else:
                     bear.iloc[idx] = 1
     return bull, bear
+
+
+def _bool_series_from_list(values: list[bool], index: pd.Index) -> pd.Series:
+    series = pd.Series(0, index=index, dtype=int)
+    if not values:
+        return series
+    limit = min(len(values), len(series))
+    series.iloc[:limit] = pd.Series(values[:limit], index=index[:limit]).astype(int)
+    return series
 
 
 def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
@@ -440,8 +509,8 @@ def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
         ],
     )
 
-    htf_4h_bull, htf_4h_bear = _build_sweep_series(sweeps.get("4H", []), len(df))
-    htf_1d_bull, htf_1d_bear = _build_sweep_series(sweeps.get("1D", []), len(df))
+    htf_4h_bull, htf_4h_bear = _build_sweep_series(sweeps.get("4H", []), df.index)
+    htf_1d_bull, htf_1d_bear = _build_sweep_series(sweeps.get("1D", []), df.index)
 
     session_highs = (
         df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
@@ -497,6 +566,80 @@ def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_mss_choch_signals(df: pd.DataFrame) -> pd.DataFrame:
+    market_structure = calculate_market_structure_mtf(df)
+    ms_tf1 = market_structure.tf1
+
+    smc = calculate_smc_tradingfinder(df)
+    structure = smc["structure"]
+
+    try:
+        cisd = detect_cd_sweep_cisd(df)
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(
+            f"CISD sweep detection failed; defaulting to no CISD signals. Error: {exc}",
+            RuntimeWarning,
+        )
+        cisd = {"cisd_signals": [], "xbull_series": [], "xbear_series": []}
+    cisd_bull = pd.Series(0, index=df.index, dtype=int)
+    cisd_bear = pd.Series(0, index=df.index, dtype=int)
+    for signal in cisd["cisd_signals"]:
+        if 0 <= signal.idx < len(cisd_bull):
+            if signal.is_bullish:
+                cisd_bull.iloc[signal.idx] = 1
+            else:
+                cisd_bear.iloc[signal.idx] = 1
+
+    cisd_xbull = _bool_series_from_list(cisd["xbull_series"], df.index)
+    cisd_xbear = _bool_series_from_list(cisd["xbear_series"], df.index)
+
+    choch_bull = (
+        ms_tf1.bullish_choch
+        | structure.bullish_minor_choch
+        | structure.bullish_major_choch
+    )
+    choch_bear = (
+        ms_tf1.bearish_choch
+        | structure.bearish_minor_choch
+        | structure.bearish_major_choch
+    )
+
+    killzone_cols = [
+        "sb_sig_ln",
+        "sb_sig_am",
+        "sb_sig_pm",
+        "sb_lux_ln",
+        "sb_lux_am",
+        "sb_lux_pm",
+        "sb_or_range",
+        "sb_trading_range",
+    ]
+    available_cols = [col for col in killzone_cols if col in df.columns]
+    if available_cols:
+        killzone_active = df[available_cols].astype(bool).any(axis=1)
+    else:
+        killzone_active = pd.Series(True, index=df.index)
+
+    sweep_bull = df.get("liquidity_sweep_bull", pd.Series(0, index=df.index)).astype(bool)
+    sweep_bear = df.get("liquidity_sweep_bear", pd.Series(0, index=df.index)).astype(bool)
+
+    mss_bull = sweep_bull & killzone_active & choch_bull & (
+        cisd_bull.astype(bool) | cisd_xbull.astype(bool)
+    )
+    mss_bear = sweep_bear & killzone_active & choch_bear & (
+        cisd_bear.astype(bool) | cisd_xbear.astype(bool)
+    )
+
+    df = df.copy()
+    df["choch_bull"] = choch_bull.astype(int)
+    df["choch_bear"] = choch_bear.astype(int)
+    df["cisd_bull"] = cisd_bull
+    df["cisd_bear"] = cisd_bear
+    df["mss_bull"] = mss_bull.astype(int)
+    df["mss_bear"] = mss_bear.astype(int)
+    return df
+
+
 def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return (
         df.resample(rule)
@@ -511,14 +654,21 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
 
     warnings.filterwarnings("ignore", category=FutureWarning)
 
-    data_df = load_data(csv_file)
-    data_df = limit_bars(data_df, max_bars)
-    data_df = add_smart_money_trends(data_df)
+    max_rows = _env_int("SB_MAX_ROWS")
+    enable_custom_50 = not _env_bool("SB_DISABLE_CUSTOM_50", default=False)
+    enable_crt = not _env_bool("SB_DISABLE_CRT", default=False)
+
+    data_df = add_smart_money_trends(load_data(csv_file, max_rows=max_rows))
     data_df = add_htf_poi(data_df)
     data_df = add_external_liquidity_targets(data_df)
-    data_df = add_session_levels(data_df)
-    data_df = add_liquidity_sweeps(data_df)
+    data_df = add_session_levels(
+        data_df,
+        enable_custom_50=enable_custom_50,
+        enable_crt=enable_crt,
+    )
     data_df = add_killzone_windows(data_df)
+    data_df = add_liquidity_sweeps(data_df)
+    data_df = add_mss_choch_signals(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
 
