@@ -11,8 +11,9 @@ Steps:
 7) Confirm MSS/CHOCH via MTF market structure trend outputs.
 8) Identify FVG/BPR zones during MSS displacement leg.
 9) Identify FVG-based entries with OTE confirmation.
-10) Feed data into Backtrader and resample to 4H/1D.
-11) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+10) Derive stop-loss placement from sweeps, liquidity, and session levels.
+11) Feed data into Backtrader and resample to 4H/1D.
+12) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -170,6 +171,8 @@ class PandasDataBias(bt.feeds.PandasData):
         "ote_high",
         "entry_long",
         "entry_short",
+        "stop_loss_long",
+        "stop_loss_short",
     )
     params = (
         ("datetime", None),
@@ -226,6 +229,8 @@ class PandasDataBias(bt.feeds.PandasData):
         ("ote_high", "ote_high"),
         ("entry_long", "entry_long"),
         ("entry_short", "entry_short"),
+        ("stop_loss_long", "stop_loss_long"),
+        ("stop_loss_short", "stop_loss_short"),
     )
 
 
@@ -528,6 +533,33 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    session_lows = df[
+        ["asia_session_low", "london_session_low", "ny_session_low"]
+    ].replace(0, float("nan"))
+    session_highs = df[
+        ["asia_session_high", "london_session_high", "ny_session_high"]
+    ].replace(0, float("nan"))
+    liquidity_lows = df[["smc_liquidity_low", "liq_sellside_target"]].replace(
+        0, float("nan")
+    )
+    liquidity_highs = df[["smc_liquidity_high", "liq_buyside_target"]].replace(
+        0, float("nan")
+    )
+
+    stop_loss_long = pd.concat([session_lows, liquidity_lows, df[["low"]]], axis=1).min(
+        axis=1
+    )
+    stop_loss_short = pd.concat(
+        [session_highs, liquidity_highs, df[["high"]]], axis=1
+    ).max(axis=1)
+
+    df["stop_loss_long"] = stop_loss_long
+    df["stop_loss_short"] = stop_loss_short
+    return df
+
+
 def _align_index_to_hk_as_ny(df: pd.DataFrame) -> pd.DataFrame:
     index = df.index
     if index.tz is None:
@@ -610,6 +642,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_market_structure_shift(data_df)
     data_df = add_fvg_displacement_zones(data_df)
     data_df = add_entry_signals(data_df)
+    data_df = add_stop_loss_levels(data_df)
     data_df = add_killzone_windows(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
