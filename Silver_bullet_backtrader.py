@@ -11,8 +11,9 @@ Steps:
 7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
 8) Confirm MSS/CHOCH via market structure + CISD sweep signals.
 9) Identify FVGs formed during MSS displacement (Silver Bullet/SMZ/BPR).
-10) Feed data into Backtrader and resample to 4H/1D.
-11) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+10) Trigger entry signals at FVG zones (Silver Bullet/TradingFinder/Fib OTE).
+11) Feed data into Backtrader and resample to 4H/1D.
+12) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -88,6 +89,20 @@ HTF_SWEEPS_PATH = os.path.join(
 )
 htf_sweeps_module = SourceFileLoader("candela_htf_sweeps", HTF_SWEEPS_PATH).load_module()
 calculate_htf_sweeps = htf_sweeps_module.calculate_htf_sweeps
+
+SETUP01_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT Setup 01 [TradingFinder] FVG + Liquidity SweepsHunt Alerts, ICT Setup 01 TFlab.py",
+)
+setup01_module = SourceFileLoader("ict_setup_01", SETUP01_PATH).load_module()
+calculate_setup_01 = setup01_module.calculate_setup_01
+
+FIB_OTE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.py",
+)
+fib_ote_module = SourceFileLoader("fib_ote_zeierman", FIB_OTE_PATH).load_module()
+calculate_fibonacci_ote = fib_ote_module.calculate_fibonacci_ote
 
 ICT_BPR_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -167,6 +182,14 @@ class PandasDataBias(bt.feeds.PandasData):
         "fvg_bpr_bear",
         "mss_fvg_bull",
         "mss_fvg_bear",
+        "entry_sb_bull",
+        "entry_sb_bear",
+        "entry_setup01_bull",
+        "entry_setup01_bear",
+        "entry_ote_bull",
+        "entry_ote_bear",
+        "entry_fvg_bull",
+        "entry_fvg_bear",
     )
     params = (
         ("datetime", None),
@@ -227,6 +250,14 @@ class PandasDataBias(bt.feeds.PandasData):
         ("fvg_bpr_bear", "fvg_bpr_bear"),
         ("mss_fvg_bull", "mss_fvg_bull"),
         ("mss_fvg_bear", "mss_fvg_bear"),
+        ("entry_sb_bull", "entry_sb_bull"),
+        ("entry_sb_bear", "entry_sb_bear"),
+        ("entry_setup01_bull", "entry_setup01_bull"),
+        ("entry_setup01_bear", "entry_setup01_bear"),
+        ("entry_ote_bull", "entry_ote_bull"),
+        ("entry_ote_bear", "entry_ote_bear"),
+        ("entry_fvg_bull", "entry_fvg_bull"),
+        ("entry_fvg_bear", "entry_fvg_bear"),
     )
 
 
@@ -732,6 +763,63 @@ def add_mss_fvg_signals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
+    hk_aligned = _align_index_to_hk_as_ny(df)
+    sb = detect_silver_bullet_signals(hk_aligned)
+    sb_signals = sb["signals"]
+    sb_entry_bull = pd.Series(sb_signals["bull_fvg_retrace"].to_numpy(), index=df.index).astype(int)
+    sb_entry_bear = pd.Series(sb_signals["bear_fvg_retrace"].to_numpy(), index=df.index).astype(int)
+
+    setup01 = calculate_setup_01(df)
+    setup01_bull = pd.Series(0, index=df.index, dtype=int)
+    setup01_bear = pd.Series(0, index=df.index, dtype=int)
+    for signal in setup01["signals"]:
+        if 0 <= signal.index < len(setup01_bull):
+            if signal.long_signal:
+                setup01_bull.iloc[signal.index] = 1
+            if signal.short_signal:
+                setup01_bear.iloc[signal.index] = 1
+
+    fib = calculate_fibonacci_ote(df)
+    ote_bull = pd.Series(0, index=df.index, dtype=int)
+    ote_bear = pd.Series(0, index=df.index, dtype=int)
+    for idx, state in enumerate(fib["states"]):
+        if idx >= len(df):
+            break
+        levels = state.levels
+        if not levels or any(pd.isna(level) for level in levels):
+            continue
+        lower, upper = sorted(levels[:2])
+        low = float(df["low"].iloc[idx])
+        high = float(df["high"].iloc[idx])
+        if low <= upper and high >= lower:
+            if state.pos > 0:
+                ote_bull.iloc[idx] = 1
+            elif state.pos < 0:
+                ote_bear.iloc[idx] = 1
+
+    mss_fvg_bull = df.get("mss_fvg_bull", pd.Series(0, index=df.index)).astype(bool)
+    mss_fvg_bear = df.get("mss_fvg_bear", pd.Series(0, index=df.index)).astype(bool)
+
+    entry_fvg_bull = mss_fvg_bull & (
+        sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
+    )
+    entry_fvg_bear = mss_fvg_bear & (
+        sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
+    )
+
+    df = df.copy()
+    df["entry_sb_bull"] = sb_entry_bull
+    df["entry_sb_bear"] = sb_entry_bear
+    df["entry_setup01_bull"] = setup01_bull
+    df["entry_setup01_bear"] = setup01_bear
+    df["entry_ote_bull"] = ote_bull
+    df["entry_ote_bear"] = ote_bear
+    df["entry_fvg_bull"] = entry_fvg_bull.astype(int)
+    df["entry_fvg_bear"] = entry_fvg_bear.astype(int)
+    return df
+
+
 def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return (
         df.resample(rule)
@@ -762,6 +850,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_liquidity_sweeps(data_df)
     data_df = add_mss_choch_signals(data_df)
     data_df = add_mss_fvg_signals(data_df)
+    data_df = add_entry_signals(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
 
