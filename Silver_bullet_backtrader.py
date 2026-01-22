@@ -7,13 +7,10 @@ Steps:
 3) Attach Smart Money trend columns to the base dataframe.
 4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple.
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
-6) Mark session highs/lows, daily 50%, CRT, and HTF sweeps for Step 4/6 preparation.
-7) Confirm MSS/CHOCH via MTF market structure trend outputs.
-8) Identify FVG/BPR zones during MSS displacement leg.
-9) Identify FVG-based entries with OTE confirmation.
-10) Derive stop-loss placement from sweeps, liquidity, and session levels.
-11) Feed data into Backtrader and resample to 4H/1D.
-12) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
+7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
+8) Feed data into Backtrader and resample to 4H/1D.
+9) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -47,24 +44,6 @@ LIQUIDITY_PATH = os.path.join(
 )
 liquidity_module = SourceFileLoader("liquidity_inducements", LIQUIDITY_PATH).load_module()
 calculate_liquidity_inducements = liquidity_module.calculate_liquidity_inducements
-
-CANDLACHARTS_SWEEPS_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "CandelaCharts - HTF Sweeps.py",
-)
-candelacharts_module = SourceFileLoader(
-    "candelacharts_htf_sweeps", CANDLACHARTS_SWEEPS_PATH
-).load_module()
-calculate_htf_sweeps = candelacharts_module.calculate_htf_sweeps
-
-MARKET_STRUCTURE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "Market Structure MTF Trend [Pt].py",
-)
-market_structure_module = SourceFileLoader(
-    "market_structure_mtf", MARKET_STRUCTURE_PATH
-).load_module()
-calculate_market_structure_mtf = market_structure_module.calculate_market_structure_mtf
 
 ASIALONDON_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -101,26 +80,13 @@ TRADINGFINDER_SB_PATH = os.path.join(
 tradingfinder_module = SourceFileLoader("tradingfinder_silver_bullet", TRADINGFINDER_SB_PATH).load_module()
 calculate_tradingfinder_silver_bullet = tradingfinder_module.calculate_tradingfinder_silver_bullet
 
-BPR_PATH = os.path.join(
+HTF_SWEEPS_PATH = os.path.join(
     os.path.dirname(__file__),
-    "ICT Balanced Price Range [TradingFinder] BPR FVG + IFVG.py",
+    "CandelaCharts - HTF Sweeps.py",
 )
-bpr_module = SourceFileLoader("ict_bpr_fvg", BPR_PATH).load_module()
-calculate_bpr_indicator = bpr_module.calculate_bpr_indicator
+htf_sweeps_module = SourceFileLoader("candela_htf_sweeps", HTF_SWEEPS_PATH).load_module()
+calculate_htf_sweeps = htf_sweeps_module.calculate_htf_sweeps
 
-SETUP_01_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "ICT Setup 01 [TradingFinder] FVG + Liquidity SweepsHunt Alerts, ICT Setup 01 TFlab.py",
-)
-setup_01_module = SourceFileLoader("ict_setup_01", SETUP_01_PATH).load_module()
-calculate_setup_01 = setup_01_module.calculate_setup_01
-
-FIBONACCI_OTE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "Fibonacci_Optimal_Entry_Zone__OTE___Zeiierman_.py",
-)
-fibonacci_module = SourceFileLoader("fibonacci_ote", FIBONACCI_OTE_PATH).load_module()
-calculate_fibonacci_ote = fibonacci_module.calculate_fibonacci_ote
 
 class PandasDataBias(bt.feeds.PandasData):
     lines = (
@@ -155,24 +121,12 @@ class PandasDataBias(bt.feeds.PandasData):
         "sb_lux_pm",
         "sb_or_range",
         "sb_trading_range",
-        "htf_sweep_bull",
-        "htf_sweep_bear",
-        "liquidity_sweep_buy",
-        "liquidity_sweep_sell",
-        "ms_trend",
-        "ms_bos",
-        "ms_bullish_choch",
-        "ms_bearish_choch",
-        "bpr_bull",
-        "bpr_bear",
-        "fvg_bull",
-        "fvg_bear",
-        "ote_low",
-        "ote_high",
-        "entry_long",
-        "entry_short",
-        "stop_loss_long",
-        "stop_loss_short",
+        "htf_sweep_4h_bull",
+        "htf_sweep_4h_bear",
+        "htf_sweep_1d_bull",
+        "htf_sweep_1d_bear",
+        "liquidity_sweep_bull",
+        "liquidity_sweep_bear",
     )
     params = (
         ("datetime", None),
@@ -213,24 +167,12 @@ class PandasDataBias(bt.feeds.PandasData):
         ("sb_lux_pm", "sb_lux_pm"),
         ("sb_or_range", "sb_or_range"),
         ("sb_trading_range", "sb_trading_range"),
-        ("htf_sweep_bull", "htf_sweep_bull"),
-        ("htf_sweep_bear", "htf_sweep_bear"),
-        ("liquidity_sweep_buy", "liquidity_sweep_buy"),
-        ("liquidity_sweep_sell", "liquidity_sweep_sell"),
-        ("ms_trend", "ms_trend"),
-        ("ms_bos", "ms_bos"),
-        ("ms_bullish_choch", "ms_bullish_choch"),
-        ("ms_bearish_choch", "ms_bearish_choch"),
-        ("bpr_bull", "bpr_bull"),
-        ("bpr_bear", "bpr_bear"),
-        ("fvg_bull", "fvg_bull"),
-        ("fvg_bear", "fvg_bear"),
-        ("ote_low", "ote_low"),
-        ("ote_high", "ote_high"),
-        ("entry_long", "entry_long"),
-        ("entry_short", "entry_short"),
-        ("stop_loss_long", "stop_loss_long"),
-        ("stop_loss_short", "stop_loss_short"),
+        ("htf_sweep_4h_bull", "htf_sweep_4h_bull"),
+        ("htf_sweep_4h_bear", "htf_sweep_4h_bear"),
+        ("htf_sweep_1d_bull", "htf_sweep_1d_bull"),
+        ("htf_sweep_1d_bear", "htf_sweep_1d_bear"),
+        ("liquidity_sweep_bull", "liquidity_sweep_bull"),
+        ("liquidity_sweep_bear", "liquidity_sweep_bear"),
     )
 
 
@@ -415,151 +357,6 @@ def add_session_levels(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_liquidity_sweep_signals(df: pd.DataFrame) -> pd.DataFrame:
-    sweeps = calculate_htf_sweeps(df, timeframes=[("4H", 3, False)])
-    htf_candles = sweeps.get("4H", [])
-
-    htf_sweep_bull = pd.Series(0, index=df.index, dtype=int)
-    htf_sweep_bear = pd.Series(0, index=df.index, dtype=int)
-    for candle in htf_candles:
-        if 0 <= candle.c_idx < len(htf_sweep_bull):
-            if candle.bull_sweep:
-                htf_sweep_bull.iloc[candle.c_idx] = 1
-            if candle.bear_sweep:
-                htf_sweep_bear.iloc[candle.c_idx] = 1
-
-    df = df.copy()
-    df["htf_sweep_bull"] = htf_sweep_bull
-    df["htf_sweep_bear"] = htf_sweep_bear
-
-    if "crt_buy_signal" not in df.columns or "crt_sell_signal" not in df.columns:
-        crt = calculate_ighodalo_crt(df)
-        crt_buy = pd.Series(0, index=df.index, dtype=int)
-        crt_sell = pd.Series(0, index=df.index, dtype=int)
-        for signal in crt["signals"]:
-            if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
-                crt_buy.iloc[signal.index] = 1
-            if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
-                crt_sell.iloc[signal.index] = 1
-        df["crt_buy_signal"] = crt_buy
-        df["crt_sell_signal"] = crt_sell
-
-    df["liquidity_sweep_buy"] = (
-        df["htf_sweep_bull"].astype(int) * df["crt_buy_signal"].astype(int)
-    )
-    df["liquidity_sweep_sell"] = (
-        df["htf_sweep_bear"].astype(int) * df["crt_sell_signal"].astype(int)
-    )
-    return df
-
-
-def add_market_structure_shift(df: pd.DataFrame) -> pd.DataFrame:
-    chart_minutes = infer_chart_timeframe_minutes(df)
-    chart_tf = format_chart_timeframe(chart_minutes)
-    outputs = calculate_market_structure_mtf(df, timeframes=(chart_tf, "15", "60", "240"))
-    tf1 = outputs.tf1
-
-    df = df.copy()
-    df["ms_trend"] = tf1.data.trend.astype(int)
-    df["ms_bos"] = tf1.data.bos.astype(int)
-    df["ms_bullish_choch"] = tf1.bullish_choch.astype(int)
-    df["ms_bearish_choch"] = tf1.bearish_choch.astype(int)
-    return df
-
-
-def add_fvg_displacement_zones(df: pd.DataFrame) -> pd.DataFrame:
-    bpr = calculate_bpr_indicator(df)
-    fvg_bull = pd.Series(0, index=df.index, dtype=int)
-    fvg_bear = pd.Series(0, index=df.index, dtype=int)
-    for zone in bpr["fvgs"]:
-        if 0 <= zone.index < len(df):
-            if zone.direction == "bullish":
-                fvg_bull.iloc[zone.index] = 1
-            elif zone.direction == "bearish":
-                fvg_bear.iloc[zone.index] = 1
-
-    bpr_bull = pd.Series(0, index=df.index, dtype=int)
-    bpr_bear = pd.Series(0, index=df.index, dtype=int)
-    for zone in bpr["bprs"]:
-        if 0 <= zone.index < len(df):
-            if zone.direction == "bullish":
-                bpr_bull.iloc[zone.index] = 1
-            elif zone.direction == "bearish":
-                bpr_bear.iloc[zone.index] = 1
-
-    df = df.copy()
-    df["fvg_bull"] = fvg_bull
-    df["fvg_bear"] = fvg_bear
-    df["bpr_bull"] = bpr_bull
-    df["bpr_bear"] = bpr_bear
-    return df
-
-
-def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
-    setup = calculate_setup_01(df)
-    signals = setup["signals"]
-    ote = calculate_fibonacci_ote(df)
-    states = ote["states"]
-
-    ote_low = pd.Series(float("nan"), index=df.index, dtype=float)
-    ote_high = pd.Series(float("nan"), index=df.index, dtype=float)
-    for idx, state in enumerate(states):
-        if idx >= len(df):
-            break
-        levels = sorted([float(level) for level in state.levels if level == level])
-        if len(levels) >= 2:
-            ote_low.iloc[idx] = levels[0]
-            ote_high.iloc[idx] = levels[-1]
-
-    entry_long = pd.Series(0, index=df.index, dtype=int)
-    entry_short = pd.Series(0, index=df.index, dtype=int)
-    closes = df["close"]
-    for signal in signals:
-        idx = signal.index
-        if 0 <= idx < len(df):
-            low = ote_low.iloc[idx]
-            high = ote_high.iloc[idx]
-            in_ote = low == low and high == high and low <= closes.iloc[idx] <= high
-            if signal.long_signal and in_ote:
-                entry_long.iloc[idx] = 1
-            if signal.short_signal and in_ote:
-                entry_short.iloc[idx] = 1
-
-    df = df.copy()
-    df["ote_low"] = ote_low
-    df["ote_high"] = ote_high
-    df["entry_long"] = entry_long
-    df["entry_short"] = entry_short
-    return df
-
-
-def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    session_lows = df[
-        ["asia_session_low", "london_session_low", "ny_session_low"]
-    ].replace(0, float("nan"))
-    session_highs = df[
-        ["asia_session_high", "london_session_high", "ny_session_high"]
-    ].replace(0, float("nan"))
-    liquidity_lows = df[["smc_liquidity_low", "liq_sellside_target"]].replace(
-        0, float("nan")
-    )
-    liquidity_highs = df[["smc_liquidity_high", "liq_buyside_target"]].replace(
-        0, float("nan")
-    )
-
-    stop_loss_long = pd.concat([session_lows, liquidity_lows, df[["low"]]], axis=1).min(
-        axis=1
-    )
-    stop_loss_short = pd.concat(
-        [session_highs, liquidity_highs, df[["high"]]], axis=1
-    ).max(axis=1)
-
-    df["stop_loss_long"] = stop_loss_long
-    df["stop_loss_short"] = stop_loss_short
-    return df
-
-
 def _align_index_to_hk_as_ny(df: pd.DataFrame) -> pd.DataFrame:
     index = df.index
     if index.tz is None:
@@ -618,6 +415,88 @@ def add_killzone_windows(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _build_sweep_series(candles: list, length: int) -> tuple[pd.Series, pd.Series]:
+    bull = pd.Series(0, index=range(length), dtype=int)
+    bear = pd.Series(0, index=range(length), dtype=int)
+    for candle in candles:
+        for sweep in candle.htf_sweeps:
+            if not sweep.formed or sweep.removed:
+                continue
+            idx = sweep.x2
+            if 0 <= idx < length:
+                if sweep.bull:
+                    bull.iloc[idx] = 1
+                else:
+                    bear.iloc[idx] = 1
+    return bull, bear
+
+
+def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
+    sweeps = calculate_htf_sweeps(
+        df,
+        timeframes=[
+            ("4H", 200, True),
+            ("1D", 200, True),
+        ],
+    )
+
+    htf_4h_bull, htf_4h_bear = _build_sweep_series(sweeps.get("4H", []), len(df))
+    htf_1d_bull, htf_1d_bear = _build_sweep_series(sweeps.get("1D", []), len(df))
+
+    session_highs = (
+        df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
+        .replace(0, pd.NA)
+        .max(axis=1, skipna=True)
+        .fillna(0.0)
+    )
+    session_lows = (
+        df[["asia_session_low", "london_session_low", "ny_session_low", "pd_low"]]
+        .replace(0, pd.NA)
+        .min(axis=1, skipna=True)
+        .fillna(0.0)
+    )
+
+    buyside_session_sweep = (
+        (session_highs > 0) & (df["high"] > session_highs) & (df["close"] < session_highs)
+    )
+    sellside_session_sweep = (
+        (session_lows > 0) & (df["low"] < session_lows) & (df["close"] > session_lows)
+    )
+
+    buyside_target_sweep = (
+        (df["liq_buyside_target"] > 0)
+        & (df["high"] > df["liq_buyside_target"])
+        & (df["close"] < df["liq_buyside_target"])
+    )
+    sellside_target_sweep = (
+        (df["liq_sellside_target"] > 0)
+        & (df["low"] < df["liq_sellside_target"])
+        & (df["close"] > df["liq_sellside_target"])
+    )
+
+    liquidity_sweep_bull = (
+        buyside_session_sweep
+        | buyside_target_sweep
+        | (htf_4h_bull.astype(bool))
+        | (htf_1d_bull.astype(bool))
+    )
+    liquidity_sweep_bear = (
+        sellside_session_sweep
+        | sellside_target_sweep
+        | (htf_4h_bear.astype(bool))
+        | (htf_1d_bear.astype(bool))
+    )
+
+    df = df.copy()
+    df["htf_sweep_4h_bull"] = htf_4h_bull.to_numpy()
+    df["htf_sweep_4h_bear"] = htf_4h_bear.to_numpy()
+    df["htf_sweep_1d_bull"] = htf_1d_bull.to_numpy()
+    df["htf_sweep_1d_bear"] = htf_1d_bear.to_numpy()
+    df["liquidity_sweep_bull"] = liquidity_sweep_bull.astype(int)
+    df["liquidity_sweep_bear"] = liquidity_sweep_bear.astype(int)
+    return df
+
+
 def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return (
         df.resample(rule)
@@ -638,11 +517,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_htf_poi(data_df)
     data_df = add_external_liquidity_targets(data_df)
     data_df = add_session_levels(data_df)
-    data_df = add_liquidity_sweep_signals(data_df)
-    data_df = add_market_structure_shift(data_df)
-    data_df = add_fvg_displacement_zones(data_df)
-    data_df = add_entry_signals(data_df)
-    data_df = add_stop_loss_levels(data_df)
+    data_df = add_liquidity_sweeps(data_df)
     data_df = add_killzone_windows(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
