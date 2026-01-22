@@ -12,8 +12,10 @@ Steps:
 8) Confirm MSS/CHOCH via market structure + CISD sweep signals.
 9) Identify FVGs formed during MSS displacement (Silver Bullet/SMZ/BPR).
 10) Trigger entry signals at FVG zones (Silver Bullet/TradingFinder/Fib OTE).
-11) Feed data into Backtrader and resample to 4H/1D.
-12) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+11) Build stop-loss placement levels from sweep/session liquidity.
+12) Identify target levels from liquidity, sweeps, and Monday range.
+13) Feed data into Backtrader and resample to 4H/1D.
+14) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -111,6 +113,13 @@ ICT_BPR_PATH = os.path.join(
 ict_bpr_module = SourceFileLoader("ict_bpr_fvg", ICT_BPR_PATH).load_module()
 calculate_bpr_indicator = ict_bpr_module.calculate_bpr_indicator
 
+MONDAY_RANGE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "Monday_Range__Lines_.py",
+)
+monday_range_module = SourceFileLoader("monday_range_lines", MONDAY_RANGE_PATH).load_module()
+calculate_monday_range = monday_range_module.calculate_monday_range
+
 MARKET_STRUCTURE_PATH = os.path.join(
     os.path.dirname(__file__),
     "Market Structure MTF Trend [Pt].py",
@@ -190,6 +199,10 @@ class PandasDataBias(bt.feeds.PandasData):
         "entry_ote_bear",
         "entry_fvg_bull",
         "entry_fvg_bear",
+        "stop_loss_bull",
+        "stop_loss_bear",
+        "target_bull",
+        "target_bear",
     )
     params = (
         ("datetime", None),
@@ -258,6 +271,10 @@ class PandasDataBias(bt.feeds.PandasData):
         ("entry_ote_bear", "entry_ote_bear"),
         ("entry_fvg_bull", "entry_fvg_bull"),
         ("entry_fvg_bear", "entry_fvg_bear"),
+        ("stop_loss_bull", "stop_loss_bull"),
+        ("stop_loss_bear", "stop_loss_bear"),
+        ("target_bull", "target_bull"),
+        ("target_bear", "target_bear"),
     )
 
 
@@ -546,6 +563,18 @@ def _build_sweep_series(candles: list, index: pd.Index) -> tuple[pd.Series, pd.S
     return bull, bear
 
 
+def _build_sweep_price_series(candles: list, index: pd.Index, bullish: bool) -> pd.Series:
+    series = pd.Series(0.0, index=index, dtype=float)
+    for candle in candles:
+        for sweep in candle.htf_sweeps:
+            if not sweep.formed or sweep.removed or sweep.bull != bullish:
+                continue
+            idx = sweep.x2
+            if 0 <= idx < len(series):
+                series.iloc[idx] = float(sweep.y)
+    return series
+
+
 def _bool_series_from_list(values: list[bool], index: pd.Index) -> pd.Series:
     series = pd.Series(0, index=index, dtype=int)
     if not values:
@@ -820,6 +849,141 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
+    sweeps = calculate_htf_sweeps(
+        df,
+        timeframes=[
+            ("4H", 200, True),
+            ("1D", 200, True),
+        ],
+    )
+    htf_bull_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, True)
+    htf_bear_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, False)
+    htf1d_bull_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, True)
+    htf1d_bear_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, False)
+
+    session_highs = (
+        df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
+        .replace(0, pd.NA)
+        .max(axis=1, skipna=True)
+        .fillna(0.0)
+    )
+    session_lows = (
+        df[["asia_session_low", "london_session_low", "ny_session_low", "pd_low"]]
+        .replace(0, pd.NA)
+        .min(axis=1, skipna=True)
+        .fillna(0.0)
+    )
+
+    sellside_liq = df.get("liq_sellside_target", pd.Series(0.0, index=df.index))
+    buyside_liq = df.get("liq_buyside_target", pd.Series(0.0, index=df.index))
+
+    bull_stop_candidates = pd.concat(
+        [
+            session_lows.replace(0, pd.NA),
+            sellside_liq.replace(0, pd.NA),
+            htf_bear_prices.replace(0, pd.NA),
+            htf1d_bear_prices.replace(0, pd.NA),
+        ],
+        axis=1,
+    ).min(axis=1, skipna=True)
+    bear_stop_candidates = pd.concat(
+        [
+            session_highs.replace(0, pd.NA),
+            buyside_liq.replace(0, pd.NA),
+            htf_bull_prices.replace(0, pd.NA),
+            htf1d_bull_prices.replace(0, pd.NA),
+        ],
+        axis=1,
+    ).max(axis=1, skipna=True)
+
+    sweep_bull = df.get("liquidity_sweep_bull", pd.Series(0, index=df.index)).astype(bool)
+    sweep_bear = df.get("liquidity_sweep_bear", pd.Series(0, index=df.index)).astype(bool)
+
+    stop_loss_bull = pd.Series(index=df.index, dtype="float")
+    stop_loss_bear = pd.Series(index=df.index, dtype="float")
+    stop_loss_bull.loc[sweep_bull] = bull_stop_candidates.loc[sweep_bull]
+    stop_loss_bear.loc[sweep_bear] = bear_stop_candidates.loc[sweep_bear]
+
+    stop_loss_bull = stop_loss_bull.ffill().fillna(0.0)
+    stop_loss_bear = stop_loss_bear.ffill().fillna(0.0)
+
+    df = df.copy()
+    df["stop_loss_bull"] = stop_loss_bull
+    df["stop_loss_bear"] = stop_loss_bear
+    return df
+
+
+def add_target_levels(df: pd.DataFrame) -> pd.DataFrame:
+    sweeps = calculate_htf_sweeps(
+        df,
+        timeframes=[
+            ("4H", 200, True),
+            ("1D", 200, True),
+        ],
+    )
+    htf_bull_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, True)
+    htf_bear_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, False)
+    htf1d_bull_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, True)
+    htf1d_bear_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, False)
+
+    session_highs = (
+        df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
+        .replace(0, pd.NA)
+        .max(axis=1, skipna=True)
+        .fillna(0.0)
+    )
+    session_lows = (
+        df[["asia_session_low", "london_session_low", "ny_session_low", "pd_low"]]
+        .replace(0, pd.NA)
+        .min(axis=1, skipna=True)
+        .fillna(0.0)
+    )
+
+    monday_range = calculate_monday_range(
+        df,
+        chart_timeframe=format_chart_timeframe(infer_chart_timeframe_minutes(df)),
+    )
+    monday_high = pd.Series(0.0, index=df.index, dtype=float)
+    monday_low = pd.Series(0.0, index=df.index, dtype=float)
+    for monday in monday_range.mondays.values():
+        mask = (df.index >= monday.wk_start) & (df.index <= monday.wk_end)
+        monday_high.loc[mask] = float(monday.high)
+        monday_low.loc[mask] = float(monday.low)
+
+    buyside_liq = df.get("liq_buyside_target", pd.Series(0.0, index=df.index))
+    sellside_liq = df.get("liq_sellside_target", pd.Series(0.0, index=df.index))
+
+    target_bull = pd.concat(
+        [
+            session_highs.replace(0, pd.NA),
+            buyside_liq.replace(0, pd.NA),
+            htf_bull_prices.replace(0, pd.NA),
+            htf1d_bull_prices.replace(0, pd.NA),
+            monday_high.replace(0, pd.NA),
+        ],
+        axis=1,
+    ).max(axis=1, skipna=True)
+    target_bear = pd.concat(
+        [
+            session_lows.replace(0, pd.NA),
+            sellside_liq.replace(0, pd.NA),
+            htf_bear_prices.replace(0, pd.NA),
+            htf1d_bear_prices.replace(0, pd.NA),
+            monday_low.replace(0, pd.NA),
+        ],
+        axis=1,
+    ).min(axis=1, skipna=True)
+
+    target_bull = target_bull.fillna(0.0)
+    target_bear = target_bear.fillna(0.0)
+
+    df = df.copy()
+    df["target_bull"] = target_bull
+    df["target_bear"] = target_bear
+    return df
+
+
 def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return (
         df.resample(rule)
@@ -851,6 +1015,8 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_mss_choch_signals(data_df)
     data_df = add_mss_fvg_signals(data_df)
     data_df = add_entry_signals(data_df)
+    data_df = add_stop_loss_levels(data_df)
+    data_df = add_target_levels(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
 
