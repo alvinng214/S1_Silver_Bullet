@@ -10,8 +10,9 @@ Steps:
 6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
 7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
 8) Confirm MSS/CHOCH via market structure + CISD sweep signals.
-9) Feed data into Backtrader and resample to 4H/1D.
-10) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+9) Identify FVGs formed during MSS displacement (Silver Bullet/SMZ/BPR).
+10) Feed data into Backtrader and resample to 4H/1D.
+11) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -88,6 +89,13 @@ HTF_SWEEPS_PATH = os.path.join(
 htf_sweeps_module = SourceFileLoader("candela_htf_sweeps", HTF_SWEEPS_PATH).load_module()
 calculate_htf_sweeps = htf_sweeps_module.calculate_htf_sweeps
 
+ICT_BPR_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT Balanced Price Range [TradingFinder] BPR FVG + IFVG.py",
+)
+ict_bpr_module = SourceFileLoader("ict_bpr_fvg", ICT_BPR_PATH).load_module()
+calculate_bpr_indicator = ict_bpr_module.calculate_bpr_indicator
+
 MARKET_STRUCTURE_PATH = os.path.join(
     os.path.dirname(__file__),
     "Market Structure MTF Trend [Pt].py",
@@ -151,6 +159,14 @@ class PandasDataBias(bt.feeds.PandasData):
         "cisd_bear",
         "mss_bull",
         "mss_bear",
+        "fvg_sb_bull",
+        "fvg_sb_bear",
+        "fvg_smz_bull",
+        "fvg_smz_bear",
+        "fvg_bpr_bull",
+        "fvg_bpr_bear",
+        "mss_fvg_bull",
+        "mss_fvg_bear",
     )
     params = (
         ("datetime", None),
@@ -203,6 +219,14 @@ class PandasDataBias(bt.feeds.PandasData):
         ("cisd_bear", "cisd_bear"),
         ("mss_bull", "mss_bull"),
         ("mss_bear", "mss_bear"),
+        ("fvg_sb_bull", "fvg_sb_bull"),
+        ("fvg_sb_bear", "fvg_sb_bear"),
+        ("fvg_smz_bull", "fvg_smz_bull"),
+        ("fvg_smz_bear", "fvg_smz_bear"),
+        ("fvg_bpr_bull", "fvg_bpr_bull"),
+        ("fvg_bpr_bear", "fvg_bpr_bear"),
+        ("mss_fvg_bull", "mss_fvg_bull"),
+        ("mss_fvg_bear", "mss_fvg_bear"),
     )
 
 
@@ -500,6 +524,25 @@ def _bool_series_from_list(values: list[bool], index: pd.Index) -> pd.Series:
     return series
 
 
+def _series_from_indices(indices: list[int], index: pd.Index) -> pd.Series:
+    series = pd.Series(0, index=index, dtype=int)
+    for idx in indices:
+        if 0 <= idx < len(series):
+            series.iloc[idx] = 1
+    return series
+
+
+def _smz_fvg_series(zones: list, index: pd.Index, bullish: bool) -> pd.Series:
+    series = pd.Series(0, index=index, dtype=int)
+    for zone in zones:
+        if zone.is_bullish != bullish:
+            continue
+        created_at = int(zone.created_at)
+        if 0 <= created_at < len(series):
+            series.iloc[created_at] = 1
+    return series
+
+
 def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
     sweeps = calculate_htf_sweeps(
         df,
@@ -640,6 +683,55 @@ def add_mss_choch_signals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_mss_fvg_signals(df: pd.DataFrame) -> pd.DataFrame:
+    hk_aligned = _align_index_to_hk_as_ny(df)
+    sb = detect_silver_bullet_signals(hk_aligned)
+    sb_signals = sb["signals"]
+    sb_fvg_bull = pd.Series(sb_signals["bull_fvg_formed"].to_numpy(), index=df.index).astype(int)
+    sb_fvg_bear = pd.Series(sb_signals["bear_fvg_formed"].to_numpy(), index=df.index).astype(int)
+
+    smz = calculate_smart_money_zones(df, show_ob=False)
+    smz_fvg_bull = _smz_fvg_series(smz["bull_fvg"], df.index, True)
+    smz_fvg_bear = _smz_fvg_series(smz["bear_fvg"], df.index, False)
+
+    bpr = calculate_bpr_indicator(df)
+    bpr_fvg_bull = _series_from_indices(
+        [zone.index for zone in bpr["fvgs"] if zone.direction == "bullish"],
+        df.index,
+    )
+    bpr_fvg_bear = _series_from_indices(
+        [zone.index for zone in bpr["fvgs"] if zone.direction == "bearish"],
+        df.index,
+    )
+
+    mss_bull = df.get("mss_bull", pd.Series(0, index=df.index)).astype(bool)
+    mss_bear = df.get("mss_bear", pd.Series(0, index=df.index)).astype(bool)
+
+    fvg_bull_sources = sb_fvg_bull.astype(bool) | smz_fvg_bull.astype(bool) | bpr_fvg_bull.astype(bool)
+    fvg_bear_sources = sb_fvg_bear.astype(bool) | smz_fvg_bear.astype(bool) | bpr_fvg_bear.astype(bool)
+
+    lux_cols = ["sb_lux_ln", "sb_lux_am", "sb_lux_pm"]
+    lux_available = [col for col in lux_cols if col in df.columns]
+    if lux_available:
+        lux_active = df[lux_available].astype(bool).any(axis=1)
+    else:
+        lux_active = pd.Series(True, index=df.index)
+
+    mss_fvg_bull = mss_bull & fvg_bull_sources & lux_active
+    mss_fvg_bear = mss_bear & fvg_bear_sources & lux_active
+
+    df = df.copy()
+    df["fvg_sb_bull"] = sb_fvg_bull
+    df["fvg_sb_bear"] = sb_fvg_bear
+    df["fvg_smz_bull"] = smz_fvg_bull
+    df["fvg_smz_bear"] = smz_fvg_bear
+    df["fvg_bpr_bull"] = bpr_fvg_bull
+    df["fvg_bpr_bear"] = bpr_fvg_bear
+    df["mss_fvg_bull"] = mss_fvg_bull.astype(int)
+    df["mss_fvg_bear"] = mss_fvg_bear.astype(int)
+    return df
+
+
 def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     return (
         df.resample(rule)
@@ -669,6 +761,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_killzone_windows(data_df)
     data_df = add_liquidity_sweeps(data_df)
     data_df = add_mss_choch_signals(data_df)
+    data_df = add_mss_fvg_signals(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
 
