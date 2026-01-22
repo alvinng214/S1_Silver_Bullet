@@ -9,8 +9,9 @@ Steps:
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
 6) Mark session highs/lows, daily 50%, CRT, and HTF sweeps for Step 4/6 preparation.
 7) Confirm MSS/CHOCH via MTF market structure trend outputs.
-8) Feed data into Backtrader and resample to 4H/1D.
-9) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+8) Identify FVG/BPR zones during MSS displacement leg.
+9) Feed data into Backtrader and resample to 4H/1D.
+10) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
 """
 
 from __future__ import annotations
@@ -98,6 +99,13 @@ TRADINGFINDER_SB_PATH = os.path.join(
 tradingfinder_module = SourceFileLoader("tradingfinder_silver_bullet", TRADINGFINDER_SB_PATH).load_module()
 calculate_tradingfinder_silver_bullet = tradingfinder_module.calculate_tradingfinder_silver_bullet
 
+BPR_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT Balanced Price Range [TradingFinder] BPR FVG + IFVG.py",
+)
+bpr_module = SourceFileLoader("ict_bpr_fvg", BPR_PATH).load_module()
+calculate_bpr_indicator = bpr_module.calculate_bpr_indicator
+
 
 class PandasDataBias(bt.feeds.PandasData):
     lines = (
@@ -140,6 +148,10 @@ class PandasDataBias(bt.feeds.PandasData):
         "ms_bos",
         "ms_bullish_choch",
         "ms_bearish_choch",
+        "bpr_bull",
+        "bpr_bear",
+        "fvg_bull",
+        "fvg_bear",
     )
     params = (
         ("datetime", None),
@@ -188,6 +200,10 @@ class PandasDataBias(bt.feeds.PandasData):
         ("ms_bos", "ms_bos"),
         ("ms_bullish_choch", "ms_bullish_choch"),
         ("ms_bearish_choch", "ms_bearish_choch"),
+        ("bpr_bull", "bpr_bull"),
+        ("bpr_bear", "bpr_bear"),
+        ("fvg_bull", "fvg_bull"),
+        ("fvg_bear", "fvg_bear"),
     )
 
 
@@ -424,6 +440,34 @@ def add_market_structure_shift(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_fvg_displacement_zones(df: pd.DataFrame) -> pd.DataFrame:
+    bpr = calculate_bpr_indicator(df)
+    fvg_bull = pd.Series(0, index=df.index, dtype=int)
+    fvg_bear = pd.Series(0, index=df.index, dtype=int)
+    for zone in bpr["fvgs"]:
+        if 0 <= zone.index < len(df):
+            if zone.direction == "bullish":
+                fvg_bull.iloc[zone.index] = 1
+            elif zone.direction == "bearish":
+                fvg_bear.iloc[zone.index] = 1
+
+    bpr_bull = pd.Series(0, index=df.index, dtype=int)
+    bpr_bear = pd.Series(0, index=df.index, dtype=int)
+    for zone in bpr["bprs"]:
+        if 0 <= zone.index < len(df):
+            if zone.direction == "bullish":
+                bpr_bull.iloc[zone.index] = 1
+            elif zone.direction == "bearish":
+                bpr_bear.iloc[zone.index] = 1
+
+    df = df.copy()
+    df["fvg_bull"] = fvg_bull
+    df["fvg_bear"] = fvg_bear
+    df["bpr_bull"] = bpr_bull
+    df["bpr_bear"] = bpr_bear
+    return df
+
+
 def _align_index_to_hk_as_ny(df: pd.DataFrame) -> pd.DataFrame:
     index = df.index
     if index.tz is None:
@@ -504,6 +548,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_session_levels(data_df)
     data_df = add_liquidity_sweep_signals(data_df)
     data_df = add_market_structure_shift(data_df)
+    data_df = add_fvg_displacement_zones(data_df)
     data_df = add_killzone_windows(data_df)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
