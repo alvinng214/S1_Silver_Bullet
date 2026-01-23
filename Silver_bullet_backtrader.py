@@ -31,7 +31,7 @@ from importlib.machinery import SourceFileLoader
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "strategies"))
 
-from htf_bias_strategy import HTFBiasStrategy
+from htf_bias_strategy import HTFBiasStrategy, SilverBulletStrategy
 from ICT_Silver_Bullet_with_signals import detect_silver_bullet_signals
 from Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_ import calculate_smc_tradingfinder
 from Smart_Money_Zones__FVG___OB____MTF_Trend_Panel import calculate_smart_money_zones
@@ -829,6 +829,10 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     mss_fvg_bull = df.get("mss_fvg_bull", pd.Series(0, index=df.index)).astype(bool)
     mss_fvg_bear = df.get("mss_fvg_bear", pd.Series(0, index=df.index)).astype(bool)
+    disable_mss_fvg_gate = _env_bool("SB_DISABLE_MSS_FVG_GATE", default=False)
+    if disable_mss_fvg_gate:
+        mss_fvg_bull = pd.Series(True, index=df.index)
+        mss_fvg_bear = pd.Series(True, index=df.index)
 
     entry_fvg_bull = mss_fvg_bull & (
         sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
@@ -1001,6 +1005,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     max_rows = _env_int("SB_MAX_ROWS")
     enable_custom_50 = not _env_bool("SB_DISABLE_CUSTOM_50", default=False)
     enable_crt = not _env_bool("SB_DISABLE_CRT", default=False)
+    debug_signals = _env_bool("SB_DEBUG_SIGNALS", default=False)
 
     data_df = add_smart_money_trends(load_data(csv_file, max_rows=max_rows))
     data_df = add_htf_poi(data_df)
@@ -1025,7 +1030,13 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_1d = bt.feeds.PandasData(dataname=data_1d_df)
 
     cerebro = bt.Cerebro()
-    cerebro.addstrategy(HTFBiasStrategy, print_bias=True)
+    cerebro.addstrategy(
+        SilverBulletStrategy,
+        print_trades=True,
+        pivot_strength=15,
+        risk_per_trade=0.02,
+        debug_signals=debug_signals,
+    )
     cerebro.adddata(data)
     cerebro.adddata(data_4h)
     cerebro.adddata(data_1d)
