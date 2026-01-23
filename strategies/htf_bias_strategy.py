@@ -163,3 +163,206 @@ class HTFBiasStrategy(bt.Strategy):
                 )
             )
             self.last_killzone_state = killzone_state
+
+
+class SilverBulletStrategy(bt.Strategy):
+    params = (
+        ("pivot_strength", 15),
+        ("risk_per_trade", 0.02),
+        ("print_trades", True),
+        ("debug_signals", False),
+    )
+
+    def __init__(self) -> None:
+        self.ms_base = MarketStructureIndicator(
+            self.data,
+            pivot_strength=self.params.pivot_strength,
+        )
+        self.order = None
+        self.signal_stats = {
+            "mss_fvg_bull": 0,
+            "mss_fvg_bear": 0,
+            "entry_bull": 0,
+            "entry_bear": 0,
+            "entry_sb_bull": 0,
+            "entry_sb_bear": 0,
+            "entry_setup01_bull": 0,
+            "entry_setup01_bear": 0,
+            "entry_ote_bull": 0,
+            "entry_ote_bear": 0,
+            "stop_invalid_long": 0,
+            "stop_invalid_short": 0,
+            "target_invalid_long": 0,
+            "target_invalid_short": 0,
+            "orders_placed": 0,
+        }
+
+    def log(self, message: str) -> None:
+        if not self.params.print_trades:
+            return
+        dt = self.data.datetime.datetime(0)
+        print(f"{dt.isoformat()}: {message}")
+
+    @staticmethod
+    def _valid_price(value: float | None) -> float | None:
+        if value is None:
+            return None
+        if value != value or math.isnan(value):
+            return None
+        if float(value) <= 0:
+            return None
+        return float(value)
+
+    def _resolve_stop_long(self) -> float | None:
+        pivot_low = self._valid_price(self.ms_base.lines.pivot_low[0])
+        stop_series = self._valid_price(float(self.data.stop_loss_bull[0]))
+        return pivot_low if pivot_low is not None else stop_series
+
+    def _resolve_stop_short(self) -> float | None:
+        pivot_high = self._valid_price(self.ms_base.lines.pivot_high[0])
+        stop_series = self._valid_price(float(self.data.stop_loss_bear[0]))
+        return pivot_high if pivot_high is not None else stop_series
+
+    def _resolve_target_long(self, entry_price: float, risk_per_unit: float) -> float | None:
+        rr_target = entry_price + risk_per_unit * 2
+        target_series = self._valid_price(float(self.data.target_bull[0]))
+        if target_series is not None and target_series > rr_target:
+            return target_series
+        return rr_target
+
+    def _resolve_target_short(self, entry_price: float, risk_per_unit: float) -> float | None:
+        rr_target = entry_price - risk_per_unit * 2
+        target_series = self._valid_price(float(self.data.target_bear[0]))
+        if target_series is not None and target_series < rr_target:
+            return target_series
+        return rr_target
+
+    def notify_order(self, order: bt.Order) -> None:
+        if order.status in {order.Completed, order.Canceled, order.Margin, order.Rejected}:
+            self.order = None
+            return
+
+    def _track_signal_counts(self) -> None:
+        if not self.params.debug_signals:
+            return
+        if int(self.data.mss_fvg_bull[0]) == 1:
+            self.signal_stats["mss_fvg_bull"] += 1
+        if int(self.data.mss_fvg_bear[0]) == 1:
+            self.signal_stats["mss_fvg_bear"] += 1
+        if int(self.data.entry_fvg_bull[0]) == 1:
+            self.signal_stats["entry_bull"] += 1
+        if int(self.data.entry_fvg_bear[0]) == 1:
+            self.signal_stats["entry_bear"] += 1
+        if int(self.data.entry_sb_bull[0]) == 1:
+            self.signal_stats["entry_sb_bull"] += 1
+        if int(self.data.entry_sb_bear[0]) == 1:
+            self.signal_stats["entry_sb_bear"] += 1
+        if int(self.data.entry_setup01_bull[0]) == 1:
+            self.signal_stats["entry_setup01_bull"] += 1
+        if int(self.data.entry_setup01_bear[0]) == 1:
+            self.signal_stats["entry_setup01_bear"] += 1
+        if int(self.data.entry_ote_bull[0]) == 1:
+            self.signal_stats["entry_ote_bull"] += 1
+        if int(self.data.entry_ote_bear[0]) == 1:
+            self.signal_stats["entry_ote_bear"] += 1
+
+    def next(self) -> None:
+        self._track_signal_counts()
+        if self.order:
+            return
+        if self.position:
+            return
+
+        long_signal = int(self.data.entry_fvg_bull[0]) == 1
+        short_signal = int(self.data.entry_fvg_bear[0]) == 1
+
+        if not long_signal and not short_signal:
+            return
+
+        entry_price = float(self.data.close[0])
+        risk_cash = self.broker.getvalue() * self.params.risk_per_trade
+
+        if long_signal:
+            stop_price = self._resolve_stop_long()
+            if stop_price is None or stop_price >= entry_price:
+                self.signal_stats["stop_invalid_long"] += 1
+                return
+            risk_per_unit = entry_price - stop_price
+            size = risk_cash / risk_per_unit
+            if size <= 0:
+                return
+            target_price = self._resolve_target_long(entry_price, risk_per_unit)
+            if target_price is None or target_price <= entry_price:
+                self.signal_stats["target_invalid_long"] += 1
+                return
+            self.order = self.buy_bracket(
+                size=size,
+                stopprice=stop_price,
+                limitprice=target_price,
+            )
+            self.signal_stats["orders_placed"] += 1
+            self.log(
+                "LONG entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f}".format(
+                    entry=entry_price,
+                    stop=stop_price,
+                    target=target_price,
+                    size=size,
+                )
+            )
+
+        if short_signal:
+            stop_price = self._resolve_stop_short()
+            if stop_price is None or stop_price <= entry_price:
+                self.signal_stats["stop_invalid_short"] += 1
+                return
+            risk_per_unit = stop_price - entry_price
+            size = risk_cash / risk_per_unit
+            if size <= 0:
+                return
+            target_price = self._resolve_target_short(entry_price, risk_per_unit)
+            if target_price is None or target_price >= entry_price:
+                self.signal_stats["target_invalid_short"] += 1
+                return
+            self.order = self.sell_bracket(
+                size=size,
+                stopprice=stop_price,
+                limitprice=target_price,
+            )
+            self.signal_stats["orders_placed"] += 1
+            self.log(
+                "SHORT entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f}".format(
+                    entry=entry_price,
+                    stop=stop_price,
+                    target=target_price,
+                    size=size,
+                )
+            )
+
+    def stop(self) -> None:
+        if not self.params.debug_signals:
+            return
+        self.log(
+            "Signal summary | mss_fvg_bull={mss_fvg_bull} mss_fvg_bear={mss_fvg_bear} "
+            "entry_bull={entry_bull} entry_bear={entry_bear} "
+            "entry_sb_bull={entry_sb_bull} entry_sb_bear={entry_sb_bear} "
+            "entry_setup01_bull={entry_setup01_bull} entry_setup01_bear={entry_setup01_bear} "
+            "entry_ote_bull={entry_ote_bull} entry_ote_bear={entry_ote_bear} "
+            "orders={orders} stop_invalid_long={stop_long} stop_invalid_short={stop_short} "
+            "target_invalid_long={target_long} target_invalid_short={target_short}".format(
+                mss_fvg_bull=self.signal_stats["mss_fvg_bull"],
+                mss_fvg_bear=self.signal_stats["mss_fvg_bear"],
+                entry_bull=self.signal_stats["entry_bull"],
+                entry_bear=self.signal_stats["entry_bear"],
+                entry_sb_bull=self.signal_stats["entry_sb_bull"],
+                entry_sb_bear=self.signal_stats["entry_sb_bear"],
+                entry_setup01_bull=self.signal_stats["entry_setup01_bull"],
+                entry_setup01_bear=self.signal_stats["entry_setup01_bear"],
+                entry_ote_bull=self.signal_stats["entry_ote_bull"],
+                entry_ote_bear=self.signal_stats["entry_ote_bear"],
+                orders=self.signal_stats["orders_placed"],
+                stop_long=self.signal_stats["stop_invalid_long"],
+                stop_short=self.signal_stats["stop_invalid_short"],
+                target_long=self.signal_stats["target_invalid_long"],
+                target_short=self.signal_stats["target_invalid_short"],
+            )
+        )
