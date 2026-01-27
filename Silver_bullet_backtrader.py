@@ -5,7 +5,7 @@ Steps:
 1) Load OHLC data from CSV and set a datetime index.
 2) Compute Smart Money Zones MTF trends (4H/1D) with pandas.
 3) Attach Smart Money trend columns to the base dataframe.
-4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple.
+4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple and ICT HTF Candles FVGs.
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
 6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
 7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
@@ -42,6 +42,15 @@ THREEPLE_PATH = os.path.join(
 )
 threeple_module = SourceFileLoader("mirpapa_threeple", THREEPLE_PATH).load_module()
 calculate_fvg_ob_threeple = threeple_module.calculate_fvg_ob_threeple
+
+ICT_HTF_CANDLES_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT HTF Candles (fadi).py",
+)
+ict_htf_candles_module = SourceFileLoader("ict_htf_candles", ICT_HTF_CANDLES_PATH).load_module()
+calculate_ict_htf_candles = ict_htf_candles_module.calculate_ict_htf_candles
+CandleSettings = ict_htf_candles_module.CandleSettings
+Settings = ict_htf_candles_module.Settings
 
 LIQUIDITY_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -146,6 +155,10 @@ class PandasDataBias(bt.feeds.PandasData):
         "poi_high_bear",
         "poi_mid_bull",
         "poi_mid_bear",
+        "htf_fvg_1h_bull",
+        "htf_fvg_1h_bear",
+        "htf_fvg_4h_bull",
+        "htf_fvg_4h_bear",
         "smc_liquidity_high",
         "smc_liquidity_low",
         "liq_buyside_target",
@@ -218,6 +231,10 @@ class PandasDataBias(bt.feeds.PandasData):
         ("poi_high_bear", "poi_high_bear"),
         ("poi_mid_bull", "poi_mid_bull"),
         ("poi_mid_bear", "poi_mid_bear"),
+        ("htf_fvg_1h_bull", "htf_fvg_1h_bull"),
+        ("htf_fvg_1h_bear", "htf_fvg_1h_bear"),
+        ("htf_fvg_4h_bull", "htf_fvg_4h_bull"),
+        ("htf_fvg_4h_bear", "htf_fvg_4h_bear"),
         ("smc_liquidity_high", "smc_liquidity_high"),
         ("smc_liquidity_low", "smc_liquidity_low"),
         ("liq_buyside_target", "liq_buyside_target"),
@@ -371,16 +388,78 @@ def add_htf_poi(df: pd.DataFrame) -> pd.DataFrame:
             if start <= end:
                 series.iloc[start : end + 1] += 1
 
+    def apply_htf_fvg(series: pd.Series, candles, is_bull: bool) -> None:
+        if len(candles) <= 3:
+            return
+        for i in range(0, len(candles) - 2):
+            candle1 = candles[i]
+            candle2 = candles[i + 2]
+            if (
+                candle1.l > candle2.h
+                and min(candle1.o, candle1.c) > max(candle2.o, candle2.c)
+                and is_bull
+            ):
+                start_idx = min(candle2.o_idx, candle1.c_idx)
+                end_idx = max(candle2.o_idx, candle1.c_idx)
+            elif (
+                candle1.h < candle2.l
+                and max(candle1.o, candle1.c) < min(candle2.o, candle2.c)
+                and not is_bull
+            ):
+                start_idx = min(candle1.o_idx, candle2.c_idx)
+                end_idx = max(candle1.o_idx, candle2.c_idx)
+            else:
+                continue
+
+            start_idx = max(int(start_idx), 0)
+            end_idx = min(int(end_idx), length - 1)
+            if start_idx <= end_idx:
+                series.iloc[start_idx : end_idx + 1] = 1
+
     apply_boxes(high_bull, outputs.high_tf_boxes, True)
     apply_boxes(high_bear, outputs.high_tf_boxes, False)
     apply_boxes(mid_bull, outputs.mid_tf_boxes, True)
     apply_boxes(mid_bear, outputs.mid_tf_boxes, False)
+
+    htf_settings = [
+        CandleSettings(show=True, htf="1H", max_display=200),
+        CandleSettings(show=True, htf="4H", max_display=200),
+    ]
+    htf_results = calculate_ict_htf_candles(
+        df,
+        settings=Settings(
+            max_sets=2,
+            trace_show=False,
+            label_show=False,
+            htf_label_show=False,
+            htf_timer_show=False,
+        ),
+        htf_settings=htf_settings,
+    )
+    htf_1h_bull = pd.Series(0, index=df.index, dtype=int)
+    htf_1h_bear = pd.Series(0, index=df.index, dtype=int)
+    htf_4h_bull = pd.Series(0, index=df.index, dtype=int)
+    htf_4h_bear = pd.Series(0, index=df.index, dtype=int)
+
+    candles_1h = htf_results.candle_sets.get("1H")
+    if candles_1h:
+        apply_htf_fvg(htf_1h_bull, candles_1h.candles, True)
+        apply_htf_fvg(htf_1h_bear, candles_1h.candles, False)
+
+    candles_4h = htf_results.candle_sets.get("4H")
+    if candles_4h:
+        apply_htf_fvg(htf_4h_bull, candles_4h.candles, True)
+        apply_htf_fvg(htf_4h_bear, candles_4h.candles, False)
 
     df = df.copy()
     df["poi_high_bull"] = high_bull
     df["poi_high_bear"] = high_bear
     df["poi_mid_bull"] = mid_bull
     df["poi_mid_bear"] = mid_bear
+    df["htf_fvg_1h_bull"] = htf_1h_bull
+    df["htf_fvg_1h_bear"] = htf_1h_bear
+    df["htf_fvg_4h_bull"] = htf_4h_bull
+    df["htf_fvg_4h_bear"] = htf_4h_bear
     return df
 
 
