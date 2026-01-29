@@ -174,10 +174,6 @@ class SilverBulletStrategy(bt.Strategy):
     )
 
     def __init__(self) -> None:
-        self.ms_base = MarketStructureIndicator(
-            self.data,
-            pivot_strength=self.params.pivot_strength,
-        )
         self.order = None
         self.signal_stats = {
             "mss_fvg_bull": 0,
@@ -214,28 +210,18 @@ class SilverBulletStrategy(bt.Strategy):
         return float(value)
 
     def _resolve_stop_long(self) -> float | None:
-        pivot_low = self._valid_price(self.ms_base.lines.pivot_low[0])
-        stop_series = self._valid_price(float(self.data.stop_loss_bull[0]))
-        return pivot_low if pivot_low is not None else stop_series
+        sellside_liquidity = self._valid_price(float(self.data.liq_sellside_target[0]))
+        return sellside_liquidity
 
     def _resolve_stop_short(self) -> float | None:
-        pivot_high = self._valid_price(self.ms_base.lines.pivot_high[0])
-        stop_series = self._valid_price(float(self.data.stop_loss_bear[0]))
-        return pivot_high if pivot_high is not None else stop_series
+        buyside_liquidity = self._valid_price(float(self.data.liq_buyside_target[0]))
+        return buyside_liquidity
 
     def _resolve_target_long(self, entry_price: float, risk_per_unit: float) -> float | None:
-        rr_target = entry_price + risk_per_unit * 2
-        target_series = self._valid_price(float(self.data.target_bull[0]))
-        if target_series is not None and target_series > rr_target:
-            return target_series
-        return rr_target
+        return entry_price + risk_per_unit * 2
 
     def _resolve_target_short(self, entry_price: float, risk_per_unit: float) -> float | None:
-        rr_target = entry_price - risk_per_unit * 2
-        target_series = self._valid_price(float(self.data.target_bear[0]))
-        if target_series is not None and target_series < rr_target:
-            return target_series
-        return rr_target
+        return entry_price - risk_per_unit * 2
 
     def notify_order(self, order: bt.Order) -> None:
         if order.status in {order.Completed, order.Canceled, order.Margin, order.Rejected}:
@@ -281,6 +267,7 @@ class SilverBulletStrategy(bt.Strategy):
 
         entry_price = float(self.data.close[0])
         risk_cash = self.broker.getvalue() * self.params.risk_per_trade
+        max_cash = self.broker.getcash()
 
         if long_signal:
             stop_price = self._resolve_stop_long()
@@ -289,6 +276,7 @@ class SilverBulletStrategy(bt.Strategy):
                 return
             risk_per_unit = entry_price - stop_price
             size = risk_cash / risk_per_unit
+            size = min(size, max_cash / entry_price)
             if size <= 0:
                 return
             target_price = self._resolve_target_long(entry_price, risk_per_unit)
@@ -317,6 +305,7 @@ class SilverBulletStrategy(bt.Strategy):
                 return
             risk_per_unit = stop_price - entry_price
             size = risk_cash / risk_per_unit
+            size = min(size, max_cash / entry_price)
             if size <= 0:
                 return
             target_price = self._resolve_target_short(entry_price, risk_per_unit)
