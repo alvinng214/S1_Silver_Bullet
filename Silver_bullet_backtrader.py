@@ -5,7 +5,7 @@ Steps:
 1) Load OHLC data from CSV and set a datetime index.
 2) Compute Smart Money Zones MTF trends (4H/1D) with pandas.
 3) Attach Smart Money trend columns to the base dataframe.
-4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple.
+4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple and ICT HTF Candles FVGs.
 5) Identify external liquidity targets (profit targets) via SMC + inducements.
 6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
 7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
@@ -42,6 +42,15 @@ THREEPLE_PATH = os.path.join(
 )
 threeple_module = SourceFileLoader("mirpapa_threeple", THREEPLE_PATH).load_module()
 calculate_fvg_ob_threeple = threeple_module.calculate_fvg_ob_threeple
+
+ICT_HTF_CANDLES_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT HTF Candles (fadi).py",
+)
+ict_htf_candles_module = SourceFileLoader("ict_htf_candles", ICT_HTF_CANDLES_PATH).load_module()
+calculate_ict_htf_candles = ict_htf_candles_module.calculate_ict_htf_candles
+CandleSettings = ict_htf_candles_module.CandleSettings
+Settings = ict_htf_candles_module.Settings
 
 LIQUIDITY_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -137,15 +146,29 @@ CD_SWEEP_CISD_PATH = os.path.join(
 cd_sweep_module = SourceFileLoader("cd_sweep_cisd", CD_SWEEP_CISD_PATH).load_module()
 detect_cd_sweep_cisd = cd_sweep_module.detect_cd_sweep_cisd
 
+BIGBELUGA_SMC_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "BigBeluga_SMC.py",
+)
+bigbeluga_module = SourceFileLoader("bigbeluga_smc", BIGBELUGA_SMC_PATH).load_module()
+calculate_bigbeluga_smc = bigbeluga_module.calculate_bigbeluga_smc
+
 
 class PandasDataBias(bt.feeds.PandasData):
     lines = (
         "smz_trend_4h",
+        "smz_trend_1h",
         "smz_trend_1d",
+        "bb_pivot_high",
+        "bb_pivot_low",
         "poi_high_bull",
         "poi_high_bear",
         "poi_mid_bull",
         "poi_mid_bear",
+        "htf_fvg_1h_bull",
+        "htf_fvg_1h_bear",
+        "htf_fvg_4h_bull",
+        "htf_fvg_4h_bear",
         "smc_liquidity_high",
         "smc_liquidity_low",
         "liq_buyside_target",
@@ -213,11 +236,18 @@ class PandasDataBias(bt.feeds.PandasData):
         ("volume", -1),
         ("openinterest", -1),
         ("smz_trend_4h", "smz_trend_4h"),
+        ("smz_trend_1h", "smz_trend_1h"),
         ("smz_trend_1d", "smz_trend_1d"),
+        ("bb_pivot_high", "bb_pivot_high"),
+        ("bb_pivot_low", "bb_pivot_low"),
         ("poi_high_bull", "poi_high_bull"),
         ("poi_high_bear", "poi_high_bear"),
         ("poi_mid_bull", "poi_mid_bull"),
         ("poi_mid_bear", "poi_mid_bear"),
+        ("htf_fvg_1h_bull", "htf_fvg_1h_bull"),
+        ("htf_fvg_1h_bear", "htf_fvg_1h_bear"),
+        ("htf_fvg_4h_bull", "htf_fvg_4h_bull"),
+        ("htf_fvg_4h_bear", "htf_fvg_4h_bear"),
         ("smc_liquidity_high", "smc_liquidity_high"),
         ("smc_liquidity_low", "smc_liquidity_low"),
         ("liq_buyside_target", "liq_buyside_target"),
@@ -318,12 +348,25 @@ def limit_bars(df: pd.DataFrame, max_bars: int | None) -> pd.DataFrame:
 
 def add_smart_money_trends(df: pd.DataFrame) -> pd.DataFrame:
     results = calculate_smart_money_zones(df)
+    trend_1h = results["mtf_trends"]["1h"].astype(int).replace({0: -1})
     trend_4h = results["mtf_trends"]["4h"].astype(int).replace({0: -1})
     trend_1d = results["mtf_trends"]["1d"].astype(int).replace({0: -1})
 
     df = df.copy()
+    df["smz_trend_1h"] = trend_1h
     df["smz_trend_4h"] = trend_4h
     df["smz_trend_1d"] = trend_1d
+    return df
+
+
+def add_bigbeluga_pivots(df: pd.DataFrame) -> pd.DataFrame:
+    outputs = calculate_bigbeluga_smc(df)
+    pivot_high = outputs.swing_highs.ffill()
+    pivot_low = outputs.swing_lows.ffill()
+
+    df = df.copy()
+    df["bb_pivot_high"] = pivot_high
+    df["bb_pivot_low"] = pivot_low
     return df
 
 
@@ -371,16 +414,78 @@ def add_htf_poi(df: pd.DataFrame) -> pd.DataFrame:
             if start <= end:
                 series.iloc[start : end + 1] += 1
 
+    def apply_htf_fvg(series: pd.Series, candles, is_bull: bool) -> None:
+        if len(candles) <= 3:
+            return
+        for i in range(0, len(candles) - 2):
+            candle1 = candles[i]
+            candle2 = candles[i + 2]
+            if (
+                candle1.l > candle2.h
+                and min(candle1.o, candle1.c) > max(candle2.o, candle2.c)
+                and is_bull
+            ):
+                start_idx = min(candle2.o_idx, candle1.c_idx)
+                end_idx = max(candle2.o_idx, candle1.c_idx)
+            elif (
+                candle1.h < candle2.l
+                and max(candle1.o, candle1.c) < min(candle2.o, candle2.c)
+                and not is_bull
+            ):
+                start_idx = min(candle1.o_idx, candle2.c_idx)
+                end_idx = max(candle1.o_idx, candle2.c_idx)
+            else:
+                continue
+
+            start_idx = max(int(start_idx), 0)
+            end_idx = min(int(end_idx), length - 1)
+            if start_idx <= end_idx:
+                series.iloc[start_idx : end_idx + 1] = 1
+
     apply_boxes(high_bull, outputs.high_tf_boxes, True)
     apply_boxes(high_bear, outputs.high_tf_boxes, False)
     apply_boxes(mid_bull, outputs.mid_tf_boxes, True)
     apply_boxes(mid_bear, outputs.mid_tf_boxes, False)
+
+    htf_settings = [
+        CandleSettings(show=True, htf="1H", max_display=200),
+        CandleSettings(show=True, htf="4H", max_display=200),
+    ]
+    htf_results = calculate_ict_htf_candles(
+        df,
+        settings=Settings(
+            max_sets=2,
+            trace_show=False,
+            label_show=False,
+            htf_label_show=False,
+            htf_timer_show=False,
+        ),
+        htf_settings=htf_settings,
+    )
+    htf_1h_bull = pd.Series(0, index=df.index, dtype=int)
+    htf_1h_bear = pd.Series(0, index=df.index, dtype=int)
+    htf_4h_bull = pd.Series(0, index=df.index, dtype=int)
+    htf_4h_bear = pd.Series(0, index=df.index, dtype=int)
+
+    candles_1h = htf_results.candle_sets.get("1H")
+    if candles_1h:
+        apply_htf_fvg(htf_1h_bull, candles_1h.candles, True)
+        apply_htf_fvg(htf_1h_bear, candles_1h.candles, False)
+
+    candles_4h = htf_results.candle_sets.get("4H")
+    if candles_4h:
+        apply_htf_fvg(htf_4h_bull, candles_4h.candles, True)
+        apply_htf_fvg(htf_4h_bear, candles_4h.candles, False)
 
     df = df.copy()
     df["poi_high_bull"] = high_bull
     df["poi_high_bear"] = high_bear
     df["poi_mid_bull"] = mid_bull
     df["poi_mid_bear"] = mid_bear
+    df["htf_fvg_1h_bull"] = htf_1h_bull
+    df["htf_fvg_1h_bear"] = htf_1h_bear
+    df["htf_fvg_4h_bull"] = htf_4h_bull
+    df["htf_fvg_4h_bear"] = htf_4h_bear
     return df
 
 
@@ -829,15 +934,20 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     mss_fvg_bull = df.get("mss_fvg_bull", pd.Series(0, index=df.index)).astype(bool)
     mss_fvg_bear = df.get("mss_fvg_bear", pd.Series(0, index=df.index)).astype(bool)
-    disable_mss_fvg_gate = _env_bool("SB_DISABLE_MSS_FVG_GATE", default=False)
+    disable_mss_fvg_gate = _env_bool("SB_DISABLE_MSS_FVG_GATE", default=True)
     if disable_mss_fvg_gate:
         mss_fvg_bull = pd.Series(True, index=df.index)
         mss_fvg_bear = pd.Series(True, index=df.index)
 
-    entry_fvg_bull = mss_fvg_bull & (
+    smz_trend_1h = df.get("smz_trend_1h", pd.Series(0, index=df.index)).astype(int)
+    smz_trend_4h = df.get("smz_trend_4h", pd.Series(0, index=df.index)).astype(int)
+    htf_bull = (smz_trend_1h == 1) & (smz_trend_4h == 1)
+    htf_bear = (smz_trend_1h == -1) & (smz_trend_4h == -1)
+
+    entry_fvg_bull = htf_bull & mss_fvg_bull & (
         sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
     )
-    entry_fvg_bear = mss_fvg_bear & (
+    entry_fvg_bear = htf_bear & mss_fvg_bear & (
         sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
     )
 
@@ -996,7 +1106,11 @@ def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     )
 
 
-def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
+def run_backtest(
+    csv_file: str,
+    max_bars: int | None = None,
+    export_csv: str | None = None,
+) -> None:
     if not os.path.exists(csv_file):
         raise FileNotFoundError(f"CSV file not found: {csv_file}")
 
@@ -1020,8 +1134,11 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     data_df = add_mss_choch_signals(data_df)
     data_df = add_mss_fvg_signals(data_df)
     data_df = add_entry_signals(data_df)
+    data_df = add_bigbeluga_pivots(data_df)
     data_df = add_stop_loss_levels(data_df)
     data_df = add_target_levels(data_df)
+    if export_csv:
+        data_df.to_csv(export_csv)
     data_4h_df = resample_ohlc(data_df, "4H")
     data_1d_df = resample_ohlc(data_df, "1D")
 
@@ -1037,6 +1154,7 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
         risk_per_trade=0.02,
         debug_signals=debug_signals,
     )
+    cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trade_analyzer")
     cerebro.adddata(data)
     cerebro.adddata(data_4h)
     cerebro.adddata(data_1d)
@@ -1046,10 +1164,21 @@ def run_backtest(csv_file: str, max_bars: int | None = None) -> None:
     print(f"Starting Portfolio Value: ${cerebro.broker.getvalue():.2f}")
     print("=" * 80 + "\n")
 
-    cerebro.run()
+    results = cerebro.run()
+    analyzer = results[0].analyzers.trade_analyzer.get_analysis()
+    total_trades = analyzer.get("total", {}).get("closed", 0)
+    total_won = analyzer.get("won", {}).get("total", 0)
+    total_lost = analyzer.get("lost", {}).get("total", 0)
 
     print("\n" + "=" * 80)
     print(f"Final Portfolio Value: ${cerebro.broker.getvalue():.2f}")
+    print(
+        "Closed Trades: {total} | Wins: {wins} | Losses: {losses}".format(
+            total=total_trades,
+            wins=total_won,
+            losses=total_lost,
+        )
+    )
     print("=" * 80)
 
 
@@ -1066,9 +1195,15 @@ def main() -> None:
         default=int(os.environ.get("SILVER_BULLET_MAX_BARS", "0")),
         help="Limit the number of most recent bars processed (0 = no limit).",
     )
+    parser.add_argument(
+        "--export-csv",
+        default="",
+        help="Optional path to write the enriched indicator dataframe.",
+    )
     args = parser.parse_args()
     max_bars = args.max_bars if args.max_bars > 0 else None
-    run_backtest(args.csv_file, max_bars=max_bars)
+    export_csv = args.export_csv if args.export_csv.strip() else None
+    run_backtest(args.csv_file, max_bars=max_bars, export_csv=export_csv)
 
 
 if __name__ == "__main__":

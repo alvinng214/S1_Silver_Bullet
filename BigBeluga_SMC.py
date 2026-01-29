@@ -105,6 +105,8 @@ class SMCOutputs:
     trend: pd.Series
     swing_highs: pd.Series
     swing_lows: pd.Series
+    pivot_highs: pd.Series
+    pivot_lows: pd.Series
     events: List[StructureEvent]
     order_blocks: List[OrderBlock]
     fvgs: List[FVG]
@@ -936,6 +938,8 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
     pivot_highs: List[float] = []
     pivot_low_idx: List[int] = []
     pivot_lows: List[float] = []
+    pivot_high_series = pd.Series(np.nan, index=df.index)
+    pivot_low_series = pd.Series(np.nan, index=df.index)
 
     # Pending FVG tracking (Pine creates FVG one bar after detection)
     pending_bull_fvg: List[bool] = [False]
@@ -983,6 +987,11 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
         if pivot_lows and low < pivot_lows[0]:
             pivot_lows.clear()
             pivot_low_idx.clear()
+
+        if pivot_highs:
+            pivot_high_series.iloc[i] = float(pivot_highs[0])
+        if pivot_lows:
+            pivot_low_series.iloc[i] = float(pivot_lows[0])
 
         if structure_state.up is None:
             structure_state.up = high
@@ -1156,6 +1165,8 @@ def calculate_bigbeluga_smc(df: pd.DataFrame, config: Optional[SMCConfig] = None
         trend=trend,
         swing_highs=swing_highs,
         swing_lows=swing_lows,
+        pivot_highs=pivot_high_series,
+        pivot_lows=pivot_low_series,
         events=events,
         order_blocks=order_blocks,
         fvgs=fvgs,
