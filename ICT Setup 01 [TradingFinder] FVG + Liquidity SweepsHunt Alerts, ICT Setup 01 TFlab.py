@@ -73,6 +73,15 @@ class AlertEvent:
 
 
 def _atr(df: pd.DataFrame, length: int = 55) -> pd.Series:
+    """Calculate ATR with warmup handling to match Pine Script behavior.
+
+    Pine Script's ta.atr() in TradingView has access to historical data before
+    the visible chart starts. This means ATR values are available from bar 0.
+
+    To replicate this behavior, we use an expanding mean for early bars
+    (before we have enough data for the full rolling window), then switch
+    to the standard rolling mean once we have sufficient data.
+    """
     tr = np.maximum(
         df["high"] - df["low"],
         np.maximum(
@@ -80,7 +89,17 @@ def _atr(df: pd.DataFrame, length: int = 55) -> pd.Series:
             (df["low"] - df["close"].shift(1)).abs(),
         ),
     )
-    return tr.rolling(length).mean()
+    # Use rolling mean for standard calculation
+    rolling_atr = tr.rolling(length).mean()
+
+    # Use expanding mean for warmup period (first length-1 bars)
+    # This provides reasonable ATR estimates before we have full window
+    expanding_atr = tr.expanding().mean()
+
+    # Fill NaN values from rolling with expanding values
+    atr = rolling_atr.fillna(expanding_atr)
+
+    return atr
 
 
 def calculate_setup_01(
