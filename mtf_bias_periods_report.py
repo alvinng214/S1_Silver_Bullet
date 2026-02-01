@@ -1,67 +1,44 @@
 """MTF Bias Report - Consolidated into Periods.
 
+Uses the same trend calculation as Smart_Money_Zones__FVG___OB____MTF_Trend_Panel.py
+to match Pine Script request.security(..., lookahead_on) behavior exactly.
+
 Groups consecutive bullish/bearish bars into date ranges.
 """
 
-import backtrader as bt
+import pandas as pd
 from datetime import timedelta
 
-
-class MtfBiasStrategy(bt.Strategy):
-    params = dict(
-        ma_period=50,
-    )
-
-    def __init__(self):
-        self.data_15m = self.datas[1]
-        self.data_1h = self.datas[2]
-
-        self.ma_15m = bt.indicators.SimpleMovingAverage(self.data_15m.close, period=self.p.ma_period)
-        self.ma_1h = bt.indicators.SimpleMovingAverage(self.data_1h.close, period=self.p.ma_period)
-
-        self._last_len_15m = 0
-        self._last_len_1h = 0
-
-        self.records = {
-            "15m": {"bullish": [], "bearish": []},
-            "1h": {"bullish": [], "bearish": []},
-        }
-
-    def next(self):
-        if len(self.data_15m) > self._last_len_15m:
-            self._last_len_15m = len(self.data_15m)
-            if len(self.data_15m) >= self.p.ma_period:
-                dt = self.data_15m.datetime.datetime(0)
-                if self.data_15m.close[0] > self.ma_15m[0]:
-                    self.records["15m"]["bullish"].append(dt)
-                elif self.data_15m.close[0] < self.ma_15m[0]:
-                    self.records["15m"]["bearish"].append(dt)
-
-        if len(self.data_1h) > self._last_len_1h:
-            self._last_len_1h = len(self.data_1h)
-            if len(self.data_1h) >= self.p.ma_period:
-                dt = self.data_1h.datetime.datetime(0)
-                if self.data_1h.close[0] > self.ma_1h[0]:
-                    self.records["1h"]["bullish"].append(dt)
-                elif self.data_1h.close[0] < self.ma_1h[0]:
-                    self.records["1h"]["bearish"].append(dt)
+# Import the trend calculation function from the Smart Money Zones module
+from Smart_Money_Zones__FVG___OB____MTF_Trend_Panel import _trend_series
 
 
-def consolidate_to_periods(datetimes, interval_minutes):
-    """Convert list of datetimes to periods (start, end) for consecutive bars."""
-    if not datetimes:
+def consolidate_to_periods(series: pd.Series, interval_minutes: int):
+    """Convert boolean Series to periods (start, end) for consecutive True values.
+
+    Args:
+        series: Boolean pandas Series with datetime index (True = bias active)
+        interval_minutes: Expected interval between consecutive bars
+
+    Returns:
+        List of (start, end) datetime tuples for consecutive True periods
+    """
+    if series.empty or not series.any():
         return []
 
-    datetimes = sorted(datetimes)
+    # Get timestamps where the condition is True
+    active_times = series[series].index.tolist()
+    if not active_times:
+        return []
+
     periods = []
-    period_start = datetimes[0]
-    period_end = datetimes[0]
+    period_start = active_times[0]
+    period_end = active_times[0]
 
     # Allow some tolerance for gaps (up to 2x the interval to handle weekends/gaps)
     max_gap = timedelta(minutes=interval_minutes * 2)
 
-    for dt in datetimes[1:]:
-        expected_next = period_end + timedelta(minutes=interval_minutes)
+    for dt in active_times[1:]:
         gap = dt - period_end
 
         # If this datetime is consecutive (or within acceptable gap for market hours)
@@ -80,56 +57,85 @@ def consolidate_to_periods(datetimes, interval_minutes):
 
 
 def main() -> None:
-    cerebro = bt.Cerebro()
+    ma_period = 50
 
-    data = bt.feeds.GenericCSVData(
-        dataname="PEPPERSTONE_XAUUSD, 5.csv",
-        dtformat="%Y-%m-%dT%H:%M:%S%z",
-        datetime=0,
-        open=1,
-        high=2,
-        low=3,
-        close=4,
-        volume=-1,
-        openinterest=-1,
-        timeframe=bt.TimeFrame.Minutes,
-        compression=5,
-        separator=",",
-        headers=True,
-    )
+    # Load data
+    print("Loading data...")
+    data = pd.read_csv("PEPPERSTONE_XAUUSD, 5.csv")
+    data["datetime"] = pd.to_datetime(data["time"])
+    data = data.set_index("datetime").sort_index()
 
-    cerebro.adddata(data)
-    cerebro.resampledata(data, timeframe=bt.TimeFrame.Minutes, compression=15)
-    cerebro.resampledata(data, timeframe=bt.TimeFrame.Minutes, compression=60)
-    cerebro.addstrategy(MtfBiasStrategy)
+    # Rename columns to match expected format
+    data = data.rename(columns={
+        "open": "open",
+        "high": "high",
+        "low": "low",
+        "close": "close"
+    })
 
-    results = cerebro.run()
-    strategy = results[0]
+    print(f"Data range: {data.index.min()} to {data.index.max()}")
+    print(f"Total bars: {len(data)}")
 
-    # Consolidate and print results
+    # Calculate MTF trends using the same function as Smart Money Zones
+    # This matches Pine Script request.security(..., lookahead_on) behavior
+    print("\nCalculating MTF trends (matching Pine Script lookahead_on behavior)...")
+
     timeframes = {
-        "15m": 15,
-        "1h": 60,
+        "15m": ("15min", 15),
+        "1h": ("60min", 60),
     }
 
-    for tf, interval in timeframes.items():
+    for tf_name, (tf_code, interval) in timeframes.items():
         print(f"\n{'='*60}")
-        print(f"{tf.upper()} BULLISH PERIODS (close > SMA{strategy.p.ma_period})")
+        print(f"{tf_name.upper()} TREND ANALYSIS (close > SMA{ma_period})")
         print(f"{'='*60}")
-        periods = consolidate_to_periods(strategy.records[tf]["bullish"], interval)
-        print(f"Total: {len(periods)} periods\n")
-        for start, end in periods:
+
+        # Calculate trend using the corrected function
+        trend = _trend_series(data, tf_code, ma_period)
+
+        # Bullish = True, Bearish = False (and close < SMA)
+        bullish = trend
+
+        # For bearish, we need close < SMA, not just "not bullish"
+        # Recalculate to get the actual bearish condition
+        resampled = data.resample(tf_code, label="left", closed="left").agg({
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+        }).dropna()
+        ma = resampled["close"].rolling(window=ma_period).mean()
+        bearish_htf = resampled["close"] < ma
+
+        # Handle gaps
+        if not bearish_htf.empty:
+            full_index = pd.date_range(
+                start=bearish_htf.index.min(),
+                end=bearish_htf.index.max(),
+                freq=tf_code,
+                tz=bearish_htf.index.tz,
+            )
+            bearish_htf = bearish_htf.reindex(full_index).ffill()
+
+        bearish = bearish_htf.reindex(data.index, method="ffill").fillna(False)
+
+        # Bullish periods
+        print(f"\n{tf_name.upper()} BULLISH PERIODS")
+        print("-" * 40)
+        bullish_periods = consolidate_to_periods(bullish, interval)
+        print(f"Total: {len(bullish_periods)} periods\n")
+        for start, end in bullish_periods:
             if start == end:
                 print(f"  {start.isoformat()}")
             else:
                 print(f"  {start.isoformat()} to {end.isoformat()}")
 
-        print(f"\n{'='*60}")
-        print(f"{tf.upper()} BEARISH PERIODS (close < SMA{strategy.p.ma_period})")
-        print(f"{'='*60}")
-        periods = consolidate_to_periods(strategy.records[tf]["bearish"], interval)
-        print(f"Total: {len(periods)} periods\n")
-        for start, end in periods:
+        # Bearish periods
+        print(f"\n{tf_name.upper()} BEARISH PERIODS")
+        print("-" * 40)
+        bearish_periods = consolidate_to_periods(bearish, interval)
+        print(f"Total: {len(bearish_periods)} periods\n")
+        for start, end in bearish_periods:
             if start == end:
                 print(f"  {start.isoformat()}")
             else:

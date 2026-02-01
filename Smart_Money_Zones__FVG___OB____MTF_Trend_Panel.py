@@ -88,15 +88,26 @@ def _enforce_cap(zones: List[SMZone], cap: int) -> None:
 
 
 def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
-    resampled = df.resample(tf, label="right", closed="right").agg({
+    """Calculate MTF trend series matching Pine Script request.security behavior.
+
+    Pine Script with lookahead_on:
+    - HTF bar is labeled by its OPEN time (left boundary)
+    - All LTF bars within a HTF period see the FINAL value of that period
+    - This is achieved by: resample with label="left", closed="left", then ffill
+    """
+    # Use left-closed intervals [start, end) to match TradingView behavior
+    # A 15M bar "21:45" contains 5M bars at: 21:45, 21:50, 21:55
+    resampled = df.resample(tf, label="left", closed="left").agg({
         "open": "first",
         "high": "max",
         "low": "min",
         "close": "last",
     }).dropna()
+
     ma = resampled["close"].rolling(window=ma_period).mean()
     trend = resampled["close"] > ma
 
+    # Handle gaps in the resampled data (e.g., weekends)
     if not trend.empty:
         full_index = pd.date_range(
             start=trend.index.min(),
@@ -106,10 +117,11 @@ def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
         )
         trend = trend.reindex(full_index).ffill()
 
-    # Pine's request.security(..., gaps_off, lookahead_on) maps the current HTF
-    # bar value across all LTF bars in the window (bfill), and carries forward
-    # the last value across gaps (ffill above).
-    return trend.reindex(df.index, method="bfill").fillna(False)
+    # Pine's request.security(..., gaps_off, lookahead_on):
+    # - lookahead_on: All LTF bars in a HTF period see that period's final value
+    # - gaps_off: Use last known value during market gaps
+    # Forward-fill from each HTF bar's open to all LTF bars within that period
+    return trend.reindex(df.index, method="ffill").fillna(False)
 
 
 def calculate_smart_money_zones(
