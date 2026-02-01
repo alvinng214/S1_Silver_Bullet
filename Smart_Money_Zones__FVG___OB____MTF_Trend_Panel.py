@@ -88,7 +88,7 @@ def _enforce_cap(zones: List[SMZone], cap: int) -> None:
 
 
 def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
-    resampled = df.resample(tf).agg({
+    resampled = df.resample(tf, label="right", closed="right").agg({
         "open": "first",
         "high": "max",
         "low": "min",
@@ -96,7 +96,20 @@ def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
     }).dropna()
     ma = resampled["close"].rolling(window=ma_period).mean()
     trend = resampled["close"] > ma
-    return trend.reindex(df.index, method="ffill").fillna(False)
+
+    if not trend.empty:
+        full_index = pd.date_range(
+            start=trend.index.min(),
+            end=trend.index.max(),
+            freq=tf,
+            tz=trend.index.tz,
+        )
+        trend = trend.reindex(full_index).ffill()
+
+    # Pine's request.security(..., gaps_off, lookahead_on) maps the current HTF
+    # bar value across all LTF bars in the window (bfill), and carries forward
+    # the last value across gaps (ffill above).
+    return trend.reindex(df.index, method="bfill").fillna(False)
 
 
 def calculate_smart_money_zones(
