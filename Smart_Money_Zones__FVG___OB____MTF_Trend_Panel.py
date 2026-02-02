@@ -90,10 +90,10 @@ def _enforce_cap(zones: List[SMZone], cap: int) -> None:
 def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
     """Calculate MTF trend series matching Pine Script request.security behavior.
 
-    Pine Script with lookahead_on:
-    - HTF bar is labeled by its OPEN time (left boundary)
-    - All LTF bars within a HTF period see the FINAL value of that period
-    - This is achieved by: resample with label="left", closed="left", then ffill
+    Pine Script with lookahead_on=true:
+    - The HTF bar's value is known only AFTER it closes
+    - The signal appears at the START of the NEXT period
+    - Example: 15M bar [21:45, 22:00) closes bullish -> signal visible at 22:00
     """
     # Use left-closed intervals [start, end) to match TradingView behavior
     # A 15M bar "21:45" contains 5M bars at: 21:45, 21:50, 21:55
@@ -117,10 +117,13 @@ def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
         )
         trend = trend.reindex(full_index).ffill()
 
-    # Pine's request.security(..., gaps_off, lookahead_on):
-    # - lookahead_on: All LTF bars in a HTF period see that period's final value
-    # - gaps_off: Use last known value during market gaps
-    # Forward-fill from each HTF bar's open to all LTF bars within that period
+    # Shift the trend forward by 1 period so the signal appears AFTER the bar closes
+    # Example: 15M bar [21:45, 22:00) calculates bullish -> value moves to 22:00 index
+    # This matches TradingView where the signal is confirmed after bar close
+    trend = trend.shift(1)
+
+    # Forward-fill to all LTF bars within each period
+    # Bars at 22:00, 22:05, 22:10 will see the bullish signal from the closed 21:45 bar
     return trend.reindex(df.index, method="ffill").fillna(False)
 
 

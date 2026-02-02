@@ -117,6 +117,9 @@ def main() -> None:
             )
             bearish_htf = bearish_htf.reindex(full_index).ffill()
 
+        # Shift forward by 1 period so signal appears AFTER bar closes
+        bearish_htf = bearish_htf.shift(1)
+
         bearish = bearish_htf.reindex(data.index, method="ffill").fillna(False)
 
         # Bullish periods
