@@ -26,6 +26,7 @@ import sys
 import warnings
 
 import backtrader as bt
+import numpy as np
 import pandas as pd
 from importlib.machinery import SourceFileLoader
 
@@ -1014,10 +1015,10 @@ def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
     sweep_bull = df.get("liquidity_sweep_bull", pd.Series(0, index=df.index)).astype(bool)
     sweep_bear = df.get("liquidity_sweep_bear", pd.Series(0, index=df.index)).astype(bool)
 
-    stop_loss_bull = pd.Series(index=df.index, dtype="float")
-    stop_loss_bear = pd.Series(index=df.index, dtype="float")
-    stop_loss_bull.loc[sweep_bull] = bull_stop_candidates.loc[sweep_bull]
-    stop_loss_bear.loc[sweep_bear] = bear_stop_candidates.loc[sweep_bear]
+    stop_loss_bull = np.where(sweep_bull, bull_stop_candidates, 0.0)
+    stop_loss_bear = np.where(sweep_bear, bear_stop_candidates, 0.0)
+    stop_loss_bull = pd.Series(stop_loss_bull, index=df.index, dtype=float)
+    stop_loss_bear = pd.Series(stop_loss_bear, index=df.index, dtype=float)
 
     stop_loss_bull = stop_loss_bull.ffill().fillna(0.0)
     stop_loss_bear = stop_loss_bear.ffill().fillna(0.0)
@@ -1139,7 +1140,7 @@ def run_backtest(
     data_df = add_target_levels(data_df)
     if export_csv:
         data_df.to_csv(export_csv)
-    data_4h_df = resample_ohlc(data_df, "4H")
+    data_4h_df = resample_ohlc(data_df, "4h")
     data_1d_df = resample_ohlc(data_df, "1D")
 
     data = PandasDataBias(dataname=data_df)

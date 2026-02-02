@@ -97,7 +97,7 @@ def _resample_ohlc(df: pd.DataFrame, rule: str, label: str = "left") -> pd.DataF
 
 
 def _align_series(series: pd.Series, target_index: pd.Index) -> pd.Series:
-    return series.reindex(target_index, method="ffill").fillna(method="bfill")
+    return series.reindex(target_index, method="ffill").bfill()
 
 
 def _get_extension_end(
