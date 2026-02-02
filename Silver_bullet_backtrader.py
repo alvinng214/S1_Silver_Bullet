@@ -157,6 +157,7 @@ calculate_bigbeluga_smc = bigbeluga_module.calculate_bigbeluga_smc
 
 class PandasDataBias(bt.feeds.PandasData):
     lines = (
+        "smz_trend_15m",
         "smz_trend_4h",
         "smz_trend_1h",
         "smz_trend_1d",
@@ -236,6 +237,7 @@ class PandasDataBias(bt.feeds.PandasData):
         ("close", "close"),
         ("volume", -1),
         ("openinterest", -1),
+        ("smz_trend_15m", "smz_trend_15m"),
         ("smz_trend_4h", "smz_trend_4h"),
         ("smz_trend_1h", "smz_trend_1h"),
         ("smz_trend_1d", "smz_trend_1d"),
@@ -349,11 +351,13 @@ def limit_bars(df: pd.DataFrame, max_bars: int | None) -> pd.DataFrame:
 
 def add_smart_money_trends(df: pd.DataFrame) -> pd.DataFrame:
     results = calculate_smart_money_zones(df)
+    trend_15m = results["mtf_trends"]["15m"].astype(int).replace({0: -1})
     trend_1h = results["mtf_trends"]["1h"].astype(int).replace({0: -1})
     trend_4h = results["mtf_trends"]["4h"].astype(int).replace({0: -1})
     trend_1d = results["mtf_trends"]["1d"].astype(int).replace({0: -1})
 
     df = df.copy()
+    df["smz_trend_15m"] = trend_15m
     df["smz_trend_1h"] = trend_1h
     df["smz_trend_4h"] = trend_4h
     df["smz_trend_1d"] = trend_1d
@@ -940,10 +944,11 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
         mss_fvg_bull = pd.Series(True, index=df.index)
         mss_fvg_bear = pd.Series(True, index=df.index)
 
+    # Use 15M and 1H for HTF bias filter (both must agree for trade direction)
+    smz_trend_15m = df.get("smz_trend_15m", pd.Series(0, index=df.index)).astype(int)
     smz_trend_1h = df.get("smz_trend_1h", pd.Series(0, index=df.index)).astype(int)
-    smz_trend_4h = df.get("smz_trend_4h", pd.Series(0, index=df.index)).astype(int)
-    htf_bull = (smz_trend_1h == 1) & (smz_trend_4h == 1)
-    htf_bear = (smz_trend_1h == -1) & (smz_trend_4h == -1)
+    htf_bull = (smz_trend_15m == 1) & (smz_trend_1h == 1)
+    htf_bear = (smz_trend_15m == -1) & (smz_trend_1h == -1)
 
     entry_fvg_bull = htf_bull & mss_fvg_bull & (
         sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
