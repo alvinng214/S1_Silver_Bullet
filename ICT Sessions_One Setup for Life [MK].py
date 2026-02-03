@@ -388,7 +388,7 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
         last_bar_time = pd.Timestamp.now(tz=tz)
 
     weekly_frame = (
-        df["open"].resample("W-MON", label="left", closed="left").first().to_frame("open")
+        df["open"].resample("W-SUN", label="left", closed="left").first().to_frame("open")
     )
     weekly_frame["time"] = weekly_frame.index
     monthly_frame = df["open"].resample("MS", label="left", closed="left").first().to_frame("open")
