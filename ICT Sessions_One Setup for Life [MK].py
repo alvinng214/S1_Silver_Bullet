@@ -91,6 +91,9 @@ class OpenLevel:
     timeframe: str  # "weekly", "monthly", "yearly"
     time: pd.Timestamp
     price: float
+    label_index: int
+    anchor_index: int
+    padding: int
 
 
 @dataclass
@@ -182,6 +185,15 @@ def _timeframe_flags(bar_delta: timedelta) -> Tuple[bool, bool, bool, bool]:
     is_weekly = timedelta(days=7) <= bar_delta < timedelta(days=28)
     is_monthly = bar_delta >= timedelta(days=28)
     return is_intraday, is_daily, is_weekly, is_monthly
+
+
+def _get_padding(last_opens: List[float], index: int, can_show_weekly: bool, can_show_monthly: bool) -> int:
+    padding = 0
+    if index > 1 and can_show_weekly and last_opens[1] == last_opens[index]:
+        padding += 1
+    if index > 2 and can_show_monthly and last_opens[2] == last_opens[index]:
+        padding += 1
+    return padding
 
 
 def _parse_session(session: str) -> Tuple[time, time]:
@@ -378,6 +390,8 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
     open_lines_buffer: List[OpeningLine] = []
 
     open_levels: List[OpenLevel] = []
+    last_opens = [np.nan, np.nan, np.nan, np.nan]
+    offset_padding = 4
     weekly_open = np.nan
     monthly_open = np.nan
     yearly_open = np.nan
@@ -388,7 +402,7 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
         last_bar_time = pd.Timestamp.now(tz=tz)
 
     weekly_frame = (
-        df["open"].resample("W-SUN", label="left", closed="left").first().to_frame("open")
+        df["open"].resample("W-MON", label="left", closed="left").first().to_frame("open")
     )
     weekly_frame["time"] = weekly_frame.index
     monthly_frame = df["open"].resample("MS", label="left", closed="left").first().to_frame("open")
@@ -413,7 +427,7 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
 
     open_series = pd.DataFrame(index=df.index, columns=["weekly", "monthly", "yearly"], dtype=float)
 
-    for idx, row in df.iterrows():
+    for bar_index, (idx, row) in enumerate(df.iterrows()):
         bar_end = idx + bar_delta
         in_pre_range = bool(pre_range.loc[idx]) if len(pre_range) else True
 
@@ -592,7 +606,22 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                 week_changed = prev_dt is None or weekly_time != prev_week_time
             if week_changed:
                 weekly_open = float(row["open"]) if config.discover_prices else float(weekly_open_value)
-                open_levels.append(OpenLevel(timeframe="weekly", time=idx, price=weekly_open))
+                last_opens[1] = weekly_open
+                padding = _get_padding(last_opens, 1, can_show_weekly, can_show_monthly)
+                label_index = bar_index + config.right_offset + padding * offset_padding
+                anchor_index = bar_index
+                if is_weekly and pd.notna(weekly_time) and idx.day > weekly_time.day and bar_index > 0:
+                    anchor_index = bar_index - 1
+                open_levels.append(
+                    OpenLevel(
+                        timeframe="weekly",
+                        time=idx,
+                        price=weekly_open,
+                        label_index=label_index,
+                        anchor_index=anchor_index,
+                        padding=padding,
+                    )
+                )
 
         if can_show_monthly:
             month_changed = False
@@ -605,7 +634,22 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                 month_changed = prev_dt is None or monthly_time != prev_month_time
             if month_changed:
                 monthly_open = float(row["open"]) if config.discover_prices else float(monthly_open_value)
-                open_levels.append(OpenLevel(timeframe="monthly", time=idx, price=monthly_open))
+                last_opens[2] = monthly_open
+                padding = _get_padding(last_opens, 2, can_show_weekly, can_show_monthly)
+                label_index = bar_index + config.right_offset + padding * offset_padding
+                anchor_index = bar_index
+                if is_weekly and pd.notna(monthly_time) and idx.day > monthly_time.day and bar_index > 0:
+                    anchor_index = bar_index - 1
+                open_levels.append(
+                    OpenLevel(
+                        timeframe="monthly",
+                        time=idx,
+                        price=monthly_open,
+                        label_index=label_index,
+                        anchor_index=anchor_index,
+                        padding=padding,
+                    )
+                )
 
         if can_show_yearly:
             year_changed = False
@@ -618,7 +662,22 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                 year_changed = prev_dt is None or yearly_time != prev_year_time
             if year_changed:
                 yearly_open = float(row["open"]) if config.discover_prices else float(yearly_open_value)
-                open_levels.append(OpenLevel(timeframe="yearly", time=idx, price=yearly_open))
+                last_opens[3] = yearly_open
+                padding = _get_padding(last_opens, 3, can_show_weekly, can_show_monthly)
+                label_index = bar_index + config.right_offset + padding * offset_padding
+                anchor_index = bar_index
+                if is_weekly and pd.notna(yearly_time) and idx.day > yearly_time.day and bar_index > 0:
+                    anchor_index = bar_index - 1
+                open_levels.append(
+                    OpenLevel(
+                        timeframe="yearly",
+                        time=idx,
+                        price=yearly_open,
+                        label_index=label_index,
+                        anchor_index=anchor_index,
+                        padding=padding,
+                    )
+                )
 
         open_series.loc[idx, "weekly"] = weekly_open
         open_series.loc[idx, "monthly"] = monthly_open
