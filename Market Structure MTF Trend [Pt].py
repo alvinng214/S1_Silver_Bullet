@@ -92,9 +92,14 @@ def _infer_base_minutes(df: pd.DataFrame) -> int:
 
 
 def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Resample OHLC data to a higher timeframe.
+
+    Uses label="left", closed="left" to match TradingView bar labeling:
+    - A 15M bar labeled "21:45" contains ticks from 21:45:00 to 21:59:59
+    """
     return (
         df[["open", "high", "low", "close"]]
-        .resample(rule, label="right", closed="right")
+        .resample(rule, label="left", closed="left")
         .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
         .dropna()
     )
@@ -243,7 +248,7 @@ def _align_lower_tf_series(
     lookahead_on: bool,
 ) -> MarketStructureSeries:
     def _downsample(values: pd.Series) -> pd.Series:
-        resampled = values.resample(base_rule, label="right", closed="right").last().dropna()
+        resampled = values.resample(base_rule, label="left", closed="left").last().dropna()
         return _align_series(resampled, base_index, lookahead_on)
 
     return MarketStructureSeries(
@@ -263,6 +268,13 @@ def _market_structure_for_timeframe(
     lookahead_on: bool,
     lower_tf_data: Optional[pd.DataFrame] = None,
 ) -> MarketStructureSeries:
+    """Calculate market structure for a specific timeframe.
+
+    For HTF data with lookahead_off:
+    - The HTF bar's value is only available AFTER the bar closes
+    - We shift the HTF series by 1 period before aligning to LTF
+    - This matches TradingView's request.security behavior
+    """
     base_minutes = _infer_base_minutes(df)
     tf_minutes = _parse_timeframe_to_minutes(timeframe)
 
@@ -280,6 +292,18 @@ def _market_structure_for_timeframe(
     rule = f"{tf_minutes}min"
     htf = _resample_ohlc(df, rule)
     htf_series = calculate_market_structure_trend(htf, pivot_len)
+
+    # For lookahead_off (HTF data), shift by 1 period so the signal
+    # appears AFTER the HTF bar closes, not at its open
+    if not lookahead_on:
+        htf_series = MarketStructureSeries(
+            trend=htf_series.trend.shift(1),
+            bos=htf_series.bos.shift(1),
+            pivot_high_time=htf_series.pivot_high_time.shift(1),
+            pivot_low_time=htf_series.pivot_low_time.shift(1),
+            prev_pivot_high=htf_series.prev_pivot_high.shift(1),
+            prev_pivot_low=htf_series.prev_pivot_low.shift(1),
+        )
 
     aligned_trend = _align_series(htf_series.trend, df.index, lookahead_on)
     aligned_bos = _align_series(htf_series.bos, df.index, lookahead_on)
