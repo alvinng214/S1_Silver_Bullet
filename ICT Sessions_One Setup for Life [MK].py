@@ -357,7 +357,7 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
         "Asia": (config.asia_session, config.show_asia, True),
         "London": (config.europe_session, config.show_europe, True),
         "NY AM": (config.usa_session, config.show_usa, True),
-        "NY Lunch": (config.nyl_session, config.show_nyl, False),
+        "NY\nLunch": (config.nyl_session, config.show_nyl, False),
         "NY PM": (config.usa2_session, config.show_usa2, True),
     }
 
@@ -402,7 +402,7 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
         last_bar_time = pd.Timestamp.now(tz=tz)
 
     weekly_frame = (
-        df["open"].resample("W-MON", label="left", closed="left").first().to_frame("open")
+        df["open"].resample("W-SUN", label="left", closed="left").first().to_frame("open")
     )
     weekly_frame["time"] = weekly_frame.index
     monthly_frame = df["open"].resample("MS", label="left", closed="left").first().to_frame("open")
@@ -461,8 +461,8 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                         state,
                     )
 
-        # RTH gap logic
-        if disp_rth and config.show_rth_gap:
+        # RTH gap logic (Pine Script has pre_range/disp_RTHsess commented out)
+        if config.show_rth_gap:
             if bar_end.time() == time(16, 15):
                 four_pm_close = float(row["close"])
             if idx.time() == time(9, 30) and not np.isnan(four_pm_close):
