@@ -485,15 +485,15 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                     rth_boxes.pop(0)
 
                 rth_q75_lines.append(RTHLine(kind="q75", start=idx, end=projected_end, price=gap.q75))
-                if len(rth_q75_lines) > max(config.boxes_to_show - 1, 1):
+                if len(rth_q75_lines) > config.boxes_to_show:
                     rth_q75_lines.pop(0)
 
                 rth_q25_lines.append(RTHLine(kind="q25", start=idx, end=projected_end, price=gap.q25))
-                if len(rth_q25_lines) > max(config.boxes_to_show - 1, 1):
+                if len(rth_q25_lines) > config.boxes_to_show:
                     rth_q25_lines.pop(0)
 
                 rth_mid_lines.append(RTHLine(kind="mid", start=idx, end=projected_end, price=gap.mid))
-                if len(rth_mid_lines) > max(config.boxes_to_show - 1, 1):
+                if len(rth_mid_lines) > config.boxes_to_show:
                     rth_mid_lines.pop(0)
 
                 close_end = last_bar_time
