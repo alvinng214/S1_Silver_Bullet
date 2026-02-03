@@ -92,9 +92,14 @@ def _infer_base_minutes(df: pd.DataFrame) -> int:
 
 
 def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Resample OHLC data to a higher timeframe.
+
+    Uses label="left", closed="left" to match TradingView bar labeling:
+    - A 15M bar labeled "21:45" contains ticks from 21:45:00 to 21:59:59
+    """
     return (
         df[["open", "high", "low", "close"]]
-        .resample(rule, label="right", closed="right")
+        .resample(rule, label="left", closed="left")
         .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
         .dropna()
     )
@@ -243,7 +248,7 @@ def _align_lower_tf_series(
     lookahead_on: bool,
 ) -> MarketStructureSeries:
     def _downsample(values: pd.Series) -> pd.Series:
-        resampled = values.resample(base_rule, label="right", closed="right").last().dropna()
+        resampled = values.resample(base_rule, label="left", closed="left").last().dropna()
         return _align_series(resampled, base_index, lookahead_on)
 
     return MarketStructureSeries(
