@@ -175,7 +175,7 @@ class SilverBulletStrategy(bt.Strategy):
     )
 
     def __init__(self) -> None:
-        self.order = None
+        self.order = None  # Current pending order
         self.signal_stats = {
             # Entry trigger counts
             "trigger_bull": 0,
@@ -201,9 +201,10 @@ class SilverBulletStrategy(bt.Strategy):
             # Successful orders
             "orders_placed": 0,
         }
-        # Track detailed trade information
-        self.pending_trade = None
+        # Track active trades with manual stop/target management
+        self.active_trades = []  # List of {direction, entry_price, stop, target, size, entry_time, signal_type, order}
         self.completed_trades = []
+        self.trade_counter = 0
 
     def log(self, message: str) -> None:
         if not self.params.print_trades:
@@ -257,32 +258,83 @@ class SilverBulletStrategy(bt.Strategy):
     def notify_order(self, order: bt.Order) -> None:
         if order.status in {order.Completed, order.Canceled, order.Margin, order.Rejected}:
             self.order = None
-            return
 
     def notify_trade(self, trade: bt.Trade) -> None:
-        if not trade.isclosed:
-            return
-        pnl = trade.pnl
-        pnl_pct = (pnl / (self.broker.getvalue() - pnl)) * 100
-        is_win = pnl > 0
+        # We handle trade completion manually in _check_stops_and_targets
+        pass
 
-        if self.pending_trade:
-            trade_record = {
-                **self.pending_trade,
-                "exit_time": self.data.datetime.datetime(0).isoformat(),
-                "exit_price": trade.price,
-                "pnl": pnl,
-                "pnl_pct": pnl_pct,
-                "result": "WIN" if is_win else "LOSS",
-            }
-            self.completed_trades.append(trade_record)
-            self.log(
-                "CLOSED {result} | Entry: {entry_time} @ {entry_price:.2f} | "
-                "Exit: {exit_time} @ {exit_price:.2f} | P&L: ${pnl:.2f} ({pnl_pct:.2f}%)".format(
-                    **trade_record
+    def _check_stops_and_targets(self) -> None:
+        """Check all active trades for stop/target hits and close them."""
+        if not self.active_trades:
+            return
+
+        current_high = float(self.data.high[0])
+        current_low = float(self.data.low[0])
+        current_close = float(self.data.close[0])
+        current_time = self.data.datetime.datetime(0).isoformat()
+
+        trades_to_close = []
+
+        for i, trade in enumerate(self.active_trades):
+            exit_price = None
+            result = None
+
+            if trade["direction"] == "LONG":
+                # Check stop hit (price went below stop)
+                if current_low <= trade["stop_price"]:
+                    exit_price = trade["stop_price"]
+                    result = "LOSS"
+                # Check target hit (price went above target)
+                elif current_high >= trade["target_price"]:
+                    exit_price = trade["target_price"]
+                    result = "WIN"
+            else:  # SHORT
+                # Check stop hit (price went above stop)
+                if current_high >= trade["stop_price"]:
+                    exit_price = trade["stop_price"]
+                    result = "LOSS"
+                # Check target hit (price went below target)
+                elif current_low <= trade["target_price"]:
+                    exit_price = trade["target_price"]
+                    result = "WIN"
+
+            if exit_price is not None:
+                # Calculate P&L
+                if trade["direction"] == "LONG":
+                    pnl = (exit_price - trade["entry_price"]) * trade["size"]
+                else:
+                    pnl = (trade["entry_price"] - exit_price) * trade["size"]
+
+                pnl_pct = (pnl / (self.broker.getvalue() - pnl)) * 100
+
+                trade_record = {
+                    "trade_num": trade["trade_num"],
+                    "direction": trade["direction"],
+                    "entry_time": trade["entry_time"],
+                    "entry_price": trade["entry_price"],
+                    "stop_price": trade["stop_price"],
+                    "target_price": trade["target_price"],
+                    "signal_type": trade["signal_type"],
+                    "size": trade["size"],
+                    "exit_time": current_time,
+                    "exit_price": exit_price,
+                    "pnl": pnl,
+                    "pnl_pct": pnl_pct,
+                    "result": result,
+                }
+                self.completed_trades.append(trade_record)
+                trades_to_close.append(i)
+
+                self.log(
+                    "CLOSED {result} | Entry: {entry_time} @ {entry_price:.2f} | "
+                    "Exit: {exit_time} @ {exit_price:.2f} | P&L: ${pnl:.2f} ({pnl_pct:.2f}%)".format(
+                        **trade_record
+                    )
                 )
-            )
-            self.pending_trade = None
+
+        # Remove closed trades (in reverse order to maintain indices)
+        for i in reversed(trades_to_close):
+            del self.active_trades[i]
 
     def _track_signal_counts(self) -> None:
         """Track entry trigger counts for debugging."""
@@ -340,10 +392,9 @@ class SilverBulletStrategy(bt.Strategy):
 
     def next(self) -> None:
         self._track_signal_counts()
-        if self.order:
-            return
-        if self.position:
-            return
+
+        # First, check if any active trades hit their stops or targets
+        self._check_stops_and_targets()
 
         # STEP 1: Check if any entry trigger condition is met FIRST
         long_trigger = int(self.data.entry_trigger_bull[0]) == 1
@@ -411,8 +462,10 @@ class SilverBulletStrategy(bt.Strategy):
                 self.signal_stats["target_invalid_long"] += 1
                 return
             signal_type = self._get_entry_signal_type(is_long=True)
-            self.pending_trade = {
-                "trade_num": len(self.completed_trades) + 1,
+            self.trade_counter += 1
+            # Add trade to active trades (manual stop/target tracking)
+            self.active_trades.append({
+                "trade_num": self.trade_counter,
                 "direction": "LONG",
                 "entry_time": self.data.datetime.datetime(0).isoformat(),
                 "entry_price": entry_price,
@@ -420,12 +473,7 @@ class SilverBulletStrategy(bt.Strategy):
                 "target_price": target_price,
                 "signal_type": signal_type,
                 "size": size,
-            }
-            self.order = self.buy_bracket(
-                size=size,
-                stopprice=stop_price,
-                limitprice=target_price,
-            )
+            })
             self.signal_stats["orders_placed"] += 1
             self.log(
                 "LONG entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f} signal={signal}".format(
@@ -454,8 +502,10 @@ class SilverBulletStrategy(bt.Strategy):
                 self.signal_stats["target_invalid_short"] += 1
                 return
             signal_type = self._get_entry_signal_type(is_long=False)
-            self.pending_trade = {
-                "trade_num": len(self.completed_trades) + 1,
+            self.trade_counter += 1
+            # Add trade to active trades (manual stop/target tracking)
+            self.active_trades.append({
+                "trade_num": self.trade_counter,
                 "direction": "SHORT",
                 "entry_time": self.data.datetime.datetime(0).isoformat(),
                 "entry_price": entry_price,
@@ -463,12 +513,7 @@ class SilverBulletStrategy(bt.Strategy):
                 "target_price": target_price,
                 "signal_type": signal_type,
                 "size": size,
-            }
-            self.order = self.sell_bracket(
-                size=size,
-                stopprice=stop_price,
-                limitprice=target_price,
-            )
+            })
             self.signal_stats["orders_placed"] += 1
             self.log(
                 "SHORT entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f} signal={signal}".format(
