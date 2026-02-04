@@ -275,6 +275,13 @@ class PandasDataBias(bt.feeds.PandasData):
         "entry_setup01_bear",
         "entry_ote_bull",
         "entry_ote_bear",
+        "entry_trigger_bull",
+        "entry_trigger_bear",
+        "filter_session_active",
+        "filter_htf_bias_bull",
+        "filter_htf_bias_bear",
+        "filter_structure_bull",
+        "filter_structure_bear",
         "entry_fvg_bull",
         "entry_fvg_bear",
         "stop_loss_bull",
@@ -355,6 +362,13 @@ class PandasDataBias(bt.feeds.PandasData):
         ("entry_setup01_bear", "entry_setup01_bear"),
         ("entry_ote_bull", "entry_ote_bull"),
         ("entry_ote_bear", "entry_ote_bear"),
+        ("entry_trigger_bull", "entry_trigger_bull"),
+        ("entry_trigger_bear", "entry_trigger_bear"),
+        ("filter_session_active", "filter_session_active"),
+        ("filter_htf_bias_bull", "filter_htf_bias_bull"),
+        ("filter_htf_bias_bear", "filter_htf_bias_bear"),
+        ("filter_structure_bull", "filter_structure_bull"),
+        ("filter_structure_bear", "filter_structure_bear"),
         ("entry_fvg_bull", "entry_fvg_bull"),
         ("entry_fvg_bear", "entry_fvg_bear"),
         ("stop_loss_bull", "stop_loss_bull"),
@@ -974,6 +988,13 @@ def add_ict_session_filter(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate entry signals with a two-stage approach:
+    1. First detect raw entry triggers (SB FVG retrace, ICT Setup01, Fibonacci OTE)
+    2. Store filter states separately (Time, Trend, Structure filters)
+
+    The strategy will check triggers first, then apply filters at execution time.
+    """
     sb = _cache.get_silver_bullet_signals(hk_aligned)
     sb_signals = sb["signals"]
     sb_entry_bull = pd.Series(sb_signals["bull_fvg_retrace"].to_numpy(), index=df.index).astype(int)
@@ -1007,38 +1028,66 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
             elif state.pos < 0:
                 ote_bear.iloc[idx] = 1
 
-    mss_fvg_bull = df.get("mss_fvg_bull", pd.Series(0, index=df.index)).astype(bool)
-    mss_fvg_bear = df.get("mss_fvg_bear", pd.Series(0, index=df.index)).astype(bool)
-    disable_mss_fvg_gate = _env_bool("SB_DISABLE_MSS_FVG_GATE", default=True)
-    if disable_mss_fvg_gate:
-        mss_fvg_bull = pd.Series(True, index=df.index)
-        mss_fvg_bear = pd.Series(True, index=df.index)
+    # Raw entry triggers (unfiltered) - checked FIRST in strategy
+    entry_trigger_bull = (
+        sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
+    ).astype(int)
+    entry_trigger_bear = (
+        sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
+    ).astype(int)
 
-    # Use 15M and 1H for HTF bias filter (both must agree for trade direction)
+    # Filter 1: Time Filter - ICT Session must be active
+    session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(int)
+
+    # Filter 2: Trend Filter - 15M and 1H SMZ trends must agree
     smz_trend_15m = df.get("smz_trend_15m", pd.Series(0, index=df.index)).astype(int)
     smz_trend_1h = df.get("smz_trend_1h", pd.Series(0, index=df.index)).astype(int)
-    htf_bull = (smz_trend_15m == 1) & (smz_trend_1h == 1)
-    htf_bear = (smz_trend_15m == -1) & (smz_trend_1h == -1)
+    htf_bias_bull = ((smz_trend_15m == 1) & (smz_trend_1h == 1)).astype(int)
+    htf_bias_bear = ((smz_trend_15m == -1) & (smz_trend_1h == -1)).astype(int)
 
-    entry_fvg_bull = htf_bull & mss_fvg_bull & (
-        sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
-    )
-    entry_fvg_bear = htf_bear & mss_fvg_bear & (
-        sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
-    )
-    session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(bool)
-    entry_fvg_bull = entry_fvg_bull & session_active
-    entry_fvg_bear = entry_fvg_bear & session_active
+    # Filter 3: Structure Filter - MSS + FVG gate (can be disabled via env var)
+    mss_fvg_bull = df.get("mss_fvg_bull", pd.Series(0, index=df.index)).astype(int)
+    mss_fvg_bear = df.get("mss_fvg_bear", pd.Series(0, index=df.index)).astype(int)
+    disable_mss_fvg_gate = _env_bool("SB_DISABLE_MSS_FVG_GATE", default=True)
+    if disable_mss_fvg_gate:
+        # When disabled, structure filter always passes
+        mss_fvg_bull = pd.Series(1, index=df.index, dtype=int)
+        mss_fvg_bear = pd.Series(1, index=df.index, dtype=int)
+
+    # Legacy combined entry signals (for backward compatibility)
+    entry_fvg_bull = (
+        entry_trigger_bull.astype(bool)
+        & session_active.astype(bool)
+        & htf_bias_bull.astype(bool)
+        & mss_fvg_bull.astype(bool)
+    ).astype(int)
+    entry_fvg_bear = (
+        entry_trigger_bear.astype(bool)
+        & session_active.astype(bool)
+        & htf_bias_bear.astype(bool)
+        & mss_fvg_bear.astype(bool)
+    ).astype(int)
 
     df = df.copy()
+    # Individual entry trigger signals
     df["entry_sb_bull"] = sb_entry_bull
     df["entry_sb_bear"] = sb_entry_bear
     df["entry_setup01_bull"] = setup01_bull
     df["entry_setup01_bear"] = setup01_bear
     df["entry_ote_bull"] = ote_bull
     df["entry_ote_bear"] = ote_bear
-    df["entry_fvg_bull"] = entry_fvg_bull.astype(int)
-    df["entry_fvg_bear"] = entry_fvg_bear.astype(int)
+    # Raw combined triggers (unfiltered)
+    df["entry_trigger_bull"] = entry_trigger_bull
+    df["entry_trigger_bear"] = entry_trigger_bear
+    # Filter state columns
+    df["filter_session_active"] = session_active
+    df["filter_htf_bias_bull"] = htf_bias_bull
+    df["filter_htf_bias_bear"] = htf_bias_bear
+    df["filter_structure_bull"] = mss_fvg_bull
+    df["filter_structure_bear"] = mss_fvg_bear
+    # Final filtered entry signals
+    df["entry_fvg_bull"] = entry_fvg_bull
+    df["entry_fvg_bear"] = entry_fvg_bear
     return df
 
 
