@@ -192,6 +192,9 @@ class SilverBulletStrategy(bt.Strategy):
             "target_invalid_short": 0,
             "orders_placed": 0,
         }
+        # Track detailed trade information
+        self.pending_trade = None
+        self.completed_trades = []
 
     def log(self, message: str) -> None:
         if not self.params.print_trades:
@@ -223,10 +226,54 @@ class SilverBulletStrategy(bt.Strategy):
     def _resolve_target_short(self, entry_price: float, risk_per_unit: float) -> float | None:
         return entry_price - risk_per_unit * 2
 
+    def _get_entry_signal_type(self, is_long: bool) -> str:
+        """Determine which specific entry signal triggered the trade."""
+        signals = []
+        if is_long:
+            if int(self.data.entry_sb_bull[0]) == 1:
+                signals.append("SB_FVG_Retrace")
+            if int(self.data.entry_setup01_bull[0]) == 1:
+                signals.append("ICT_Setup01")
+            if int(self.data.entry_ote_bull[0]) == 1:
+                signals.append("Fib_OTE")
+        else:
+            if int(self.data.entry_sb_bear[0]) == 1:
+                signals.append("SB_FVG_Retrace")
+            if int(self.data.entry_setup01_bear[0]) == 1:
+                signals.append("ICT_Setup01")
+            if int(self.data.entry_ote_bear[0]) == 1:
+                signals.append("Fib_OTE")
+        return " + ".join(signals) if signals else "Unknown"
+
     def notify_order(self, order: bt.Order) -> None:
         if order.status in {order.Completed, order.Canceled, order.Margin, order.Rejected}:
             self.order = None
             return
+
+    def notify_trade(self, trade: bt.Trade) -> None:
+        if not trade.isclosed:
+            return
+        pnl = trade.pnl
+        pnl_pct = (pnl / (self.broker.getvalue() - pnl)) * 100
+        is_win = pnl > 0
+
+        if self.pending_trade:
+            trade_record = {
+                **self.pending_trade,
+                "exit_time": self.data.datetime.datetime(0).isoformat(),
+                "exit_price": trade.price,
+                "pnl": pnl,
+                "pnl_pct": pnl_pct,
+                "result": "WIN" if is_win else "LOSS",
+            }
+            self.completed_trades.append(trade_record)
+            self.log(
+                "CLOSED {result} | Entry: {entry_time} @ {entry_price:.2f} | "
+                "Exit: {exit_time} @ {exit_price:.2f} | P&L: ${pnl:.2f} ({pnl_pct:.2f}%)".format(
+                    **trade_record
+                )
+            )
+            self.pending_trade = None
 
     def _track_signal_counts(self) -> None:
         if not self.params.debug_signals:
@@ -283,6 +330,17 @@ class SilverBulletStrategy(bt.Strategy):
             if target_price is None or target_price <= entry_price:
                 self.signal_stats["target_invalid_long"] += 1
                 return
+            signal_type = self._get_entry_signal_type(is_long=True)
+            self.pending_trade = {
+                "trade_num": len(self.completed_trades) + 1,
+                "direction": "LONG",
+                "entry_time": self.data.datetime.datetime(0).isoformat(),
+                "entry_price": entry_price,
+                "stop_price": stop_price,
+                "target_price": target_price,
+                "signal_type": signal_type,
+                "size": size,
+            }
             self.order = self.buy_bracket(
                 size=size,
                 stopprice=stop_price,
@@ -290,11 +348,12 @@ class SilverBulletStrategy(bt.Strategy):
             )
             self.signal_stats["orders_placed"] += 1
             self.log(
-                "LONG entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f}".format(
+                "LONG entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f} signal={signal}".format(
                     entry=entry_price,
                     stop=stop_price,
                     target=target_price,
                     size=size,
+                    signal=signal_type,
                 )
             )
 
@@ -312,6 +371,17 @@ class SilverBulletStrategy(bt.Strategy):
             if target_price is None or target_price >= entry_price:
                 self.signal_stats["target_invalid_short"] += 1
                 return
+            signal_type = self._get_entry_signal_type(is_long=False)
+            self.pending_trade = {
+                "trade_num": len(self.completed_trades) + 1,
+                "direction": "SHORT",
+                "entry_time": self.data.datetime.datetime(0).isoformat(),
+                "entry_price": entry_price,
+                "stop_price": stop_price,
+                "target_price": target_price,
+                "signal_type": signal_type,
+                "size": size,
+            }
             self.order = self.sell_bracket(
                 size=size,
                 stopprice=stop_price,
@@ -319,15 +389,19 @@ class SilverBulletStrategy(bt.Strategy):
             )
             self.signal_stats["orders_placed"] += 1
             self.log(
-                "SHORT entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f}".format(
+                "SHORT entry={entry:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f} signal={signal}".format(
                     entry=entry_price,
                     stop=stop_price,
                     target=target_price,
                     size=size,
+                    signal=signal_type,
                 )
             )
 
     def stop(self) -> None:
+        # Always print the detailed trade report
+        self._print_detailed_report()
+
         if not self.params.debug_signals:
             return
         self.log(
@@ -355,3 +429,95 @@ class SilverBulletStrategy(bt.Strategy):
                 target_short=self.signal_stats["target_invalid_short"],
             )
         )
+
+    def _print_detailed_report(self) -> None:
+        """Print a comprehensive trade-by-trade report."""
+        if not self.completed_trades:
+            print("\n" + "=" * 100)
+            print("NO TRADES COMPLETED")
+            print("=" * 100)
+            return
+
+        print("\n" + "=" * 100)
+        print("DETAILED TRADE REPORT - Silver Bullet XAUUSD Backtest")
+        print("=" * 100)
+
+        # Trade-by-trade details
+        print("\n{:^100}".format("TRADE-BY-TRADE DETAILS"))
+        print("-" * 100)
+        print(
+            "{:<4} {:<6} {:<20} {:<10} {:<10} {:<10} {:<12} {:<6} {:<25}".format(
+                "#", "Dir", "Entry Time", "Entry", "Stop", "Target", "P&L", "Result", "Signal"
+            )
+        )
+        print("-" * 100)
+
+        wins = 0
+        losses = 0
+        total_pnl = 0
+        signal_stats = {}
+
+        for trade in self.completed_trades:
+            print(
+                "{:<4} {:<6} {:<20} {:<10.2f} {:<10.2f} {:<10.2f} ${:<11.2f} {:<6} {:<25}".format(
+                    trade["trade_num"],
+                    trade["direction"],
+                    trade["entry_time"][:19],
+                    trade["entry_price"],
+                    trade["stop_price"],
+                    trade["target_price"],
+                    trade["pnl"],
+                    trade["result"],
+                    trade["signal_type"][:25],
+                )
+            )
+
+            if trade["result"] == "WIN":
+                wins += 1
+            else:
+                losses += 1
+            total_pnl += trade["pnl"]
+
+            # Track stats by signal type
+            sig = trade["signal_type"]
+            if sig not in signal_stats:
+                signal_stats[sig] = {"wins": 0, "losses": 0, "pnl": 0}
+            if trade["result"] == "WIN":
+                signal_stats[sig]["wins"] += 1
+            else:
+                signal_stats[sig]["losses"] += 1
+            signal_stats[sig]["pnl"] += trade["pnl"]
+
+        # Summary statistics
+        total = wins + losses
+        win_rate = (wins / total * 100) if total > 0 else 0
+
+        print("-" * 100)
+        print("\n{:^100}".format("SUMMARY STATISTICS"))
+        print("-" * 100)
+        print(f"Total Trades:     {total}")
+        print(f"Wins:             {wins}")
+        print(f"Losses:           {losses}")
+        print(f"Win Rate:         {win_rate:.2f}%")
+        print(f"Total P&L:        ${total_pnl:.2f}")
+        print(f"Average P&L:      ${total_pnl / total:.2f}" if total > 0 else "N/A")
+
+        # Signal type breakdown
+        print("\n{:^100}".format("PERFORMANCE BY SIGNAL TYPE"))
+        print("-" * 100)
+        print(
+            "{:<30} {:<10} {:<10} {:<12} {:<15}".format(
+                "Signal Type", "Wins", "Losses", "Win Rate", "Total P&L"
+            )
+        )
+        print("-" * 100)
+        for sig, stats in sorted(signal_stats.items()):
+            sig_total = stats["wins"] + stats["losses"]
+            sig_win_rate = (stats["wins"] / sig_total * 100) if sig_total > 0 else 0
+            print(
+                "{:<30} {:<10} {:<10} {:<12.2f}% ${:<14.2f}".format(
+                    sig[:30], stats["wins"], stats["losses"], sig_win_rate, stats["pnl"]
+                )
+            )
+
+        print("=" * 100)
