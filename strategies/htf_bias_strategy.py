@@ -176,20 +176,28 @@ class SilverBulletStrategy(bt.Strategy):
     def __init__(self) -> None:
         self.order = None
         self.signal_stats = {
-            "mss_fvg_bull": 0,
-            "mss_fvg_bear": 0,
-            "entry_bull": 0,
-            "entry_bear": 0,
+            # Entry trigger counts
+            "trigger_bull": 0,
+            "trigger_bear": 0,
             "entry_sb_bull": 0,
             "entry_sb_bear": 0,
             "entry_setup01_bull": 0,
             "entry_setup01_bear": 0,
             "entry_ote_bull": 0,
             "entry_ote_bear": 0,
+            # Filter rejection counts
+            "filter_time_rejected_bull": 0,
+            "filter_time_rejected_bear": 0,
+            "filter_trend_rejected_bull": 0,
+            "filter_trend_rejected_bear": 0,
+            "filter_structure_rejected_bull": 0,
+            "filter_structure_rejected_bear": 0,
+            # Risk management rejections
             "stop_invalid_long": 0,
             "stop_invalid_short": 0,
             "target_invalid_long": 0,
             "target_invalid_short": 0,
+            # Successful orders
             "orders_placed": 0,
         }
         # Track detailed trade information
@@ -276,16 +284,13 @@ class SilverBulletStrategy(bt.Strategy):
             self.pending_trade = None
 
     def _track_signal_counts(self) -> None:
+        """Track entry trigger counts for debugging."""
         if not self.params.debug_signals:
             return
-        if int(self.data.mss_fvg_bull[0]) == 1:
-            self.signal_stats["mss_fvg_bull"] += 1
-        if int(self.data.mss_fvg_bear[0]) == 1:
-            self.signal_stats["mss_fvg_bear"] += 1
-        if int(self.data.entry_fvg_bull[0]) == 1:
-            self.signal_stats["entry_bull"] += 1
-        if int(self.data.entry_fvg_bear[0]) == 1:
-            self.signal_stats["entry_bear"] += 1
+        if int(self.data.entry_trigger_bull[0]) == 1:
+            self.signal_stats["trigger_bull"] += 1
+        if int(self.data.entry_trigger_bear[0]) == 1:
+            self.signal_stats["trigger_bear"] += 1
         if int(self.data.entry_sb_bull[0]) == 1:
             self.signal_stats["entry_sb_bull"] += 1
         if int(self.data.entry_sb_bear[0]) == 1:
@@ -299,6 +304,39 @@ class SilverBulletStrategy(bt.Strategy):
         if int(self.data.entry_ote_bear[0]) == 1:
             self.signal_stats["entry_ote_bear"] += 1
 
+    def _check_filters(self, is_long: bool) -> tuple[bool, str]:
+        """
+        Check filters in sequence: Time -> Trend -> Structure.
+        Returns (passed, rejection_reason).
+
+        Filter sequence:
+        1. Time Filter: ICT session must be active
+        2. Trend Filter: 15M and 1H SMZ trends must agree with trade direction
+        3. Structure Filter: MSS + FVG gate must be satisfied
+        """
+        # Filter 1: Time Filter - ICT Session must be active
+        session_active = int(self.data.filter_session_active[0]) == 1
+        if not session_active:
+            return False, "Time Filter (ICT session not active)"
+
+        # Filter 2: Trend Filter - HTF bias must align with trade direction
+        if is_long:
+            htf_aligned = int(self.data.filter_htf_bias_bull[0]) == 1
+        else:
+            htf_aligned = int(self.data.filter_htf_bias_bear[0]) == 1
+        if not htf_aligned:
+            return False, "Trend Filter (15M/1H bias not aligned)"
+
+        # Filter 3: Structure Filter - MSS + FVG gate
+        if is_long:
+            structure_ok = int(self.data.filter_structure_bull[0]) == 1
+        else:
+            structure_ok = int(self.data.filter_structure_bear[0]) == 1
+        if not structure_ok:
+            return False, "Structure Filter (MSS+FVG not confirmed)"
+
+        return True, ""
+
     def next(self) -> None:
         self._track_signal_counts()
         if self.order:
@@ -306,8 +344,45 @@ class SilverBulletStrategy(bt.Strategy):
         if self.position:
             return
 
-        long_signal = int(self.data.entry_fvg_bull[0]) == 1
-        short_signal = int(self.data.entry_fvg_bear[0]) == 1
+        # STEP 1: Check if any entry trigger condition is met FIRST
+        long_trigger = int(self.data.entry_trigger_bull[0]) == 1
+        short_trigger = int(self.data.entry_trigger_bear[0]) == 1
+
+        if not long_trigger and not short_trigger:
+            return
+
+        # STEP 2: Check filters only when triggers are met
+        # Process long trigger
+        if long_trigger:
+            filters_passed, rejection_reason = self._check_filters(is_long=True)
+            if not filters_passed:
+                if self.params.debug_signals:
+                    self.log(f"LONG trigger rejected: {rejection_reason}")
+                if "Time" in rejection_reason:
+                    self.signal_stats["filter_time_rejected_bull"] += 1
+                elif "Trend" in rejection_reason:
+                    self.signal_stats["filter_trend_rejected_bull"] += 1
+                elif "Structure" in rejection_reason:
+                    self.signal_stats["filter_structure_rejected_bull"] += 1
+                long_trigger = False
+
+        # Process short trigger
+        if short_trigger:
+            filters_passed, rejection_reason = self._check_filters(is_long=False)
+            if not filters_passed:
+                if self.params.debug_signals:
+                    self.log(f"SHORT trigger rejected: {rejection_reason}")
+                if "Time" in rejection_reason:
+                    self.signal_stats["filter_time_rejected_bear"] += 1
+                elif "Trend" in rejection_reason:
+                    self.signal_stats["filter_trend_rejected_bear"] += 1
+                elif "Structure" in rejection_reason:
+                    self.signal_stats["filter_structure_rejected_bear"] += 1
+                short_trigger = False
+
+        # After filtering, check if any signal remains
+        long_signal = long_trigger
+        short_signal = short_trigger
 
         if not long_signal and not short_signal:
             return
@@ -404,31 +479,41 @@ class SilverBulletStrategy(bt.Strategy):
 
         if not self.params.debug_signals:
             return
-        self.log(
-            "Signal summary | mss_fvg_bull={mss_fvg_bull} mss_fvg_bear={mss_fvg_bear} "
-            "entry_bull={entry_bull} entry_bear={entry_bear} "
-            "entry_sb_bull={entry_sb_bull} entry_sb_bear={entry_sb_bear} "
-            "entry_setup01_bull={entry_setup01_bull} entry_setup01_bear={entry_setup01_bear} "
-            "entry_ote_bull={entry_ote_bull} entry_ote_bear={entry_ote_bear} "
-            "orders={orders} stop_invalid_long={stop_long} stop_invalid_short={stop_short} "
-            "target_invalid_long={target_long} target_invalid_short={target_short}".format(
-                mss_fvg_bull=self.signal_stats["mss_fvg_bull"],
-                mss_fvg_bear=self.signal_stats["mss_fvg_bear"],
-                entry_bull=self.signal_stats["entry_bull"],
-                entry_bear=self.signal_stats["entry_bear"],
-                entry_sb_bull=self.signal_stats["entry_sb_bull"],
-                entry_sb_bear=self.signal_stats["entry_sb_bear"],
-                entry_setup01_bull=self.signal_stats["entry_setup01_bull"],
-                entry_setup01_bear=self.signal_stats["entry_setup01_bear"],
-                entry_ote_bull=self.signal_stats["entry_ote_bull"],
-                entry_ote_bear=self.signal_stats["entry_ote_bear"],
-                orders=self.signal_stats["orders_placed"],
-                stop_long=self.signal_stats["stop_invalid_long"],
-                stop_short=self.signal_stats["stop_invalid_short"],
-                target_long=self.signal_stats["target_invalid_long"],
-                target_short=self.signal_stats["target_invalid_short"],
-            )
-        )
+
+        # Print filter statistics
+        print("\n" + "=" * 100)
+        print("{:^100}".format("FILTER STATISTICS"))
+        print("=" * 100)
+
+        print("\n--- Entry Triggers Detected ---")
+        print(f"  LONG triggers:  {self.signal_stats['trigger_bull']}")
+        print(f"  SHORT triggers: {self.signal_stats['trigger_bear']}")
+
+        print("\n--- Trigger Breakdown ---")
+        print(f"  SB FVG Retrace:  LONG={self.signal_stats['entry_sb_bull']} SHORT={self.signal_stats['entry_sb_bear']}")
+        print(f"  ICT Setup 01:    LONG={self.signal_stats['entry_setup01_bull']} SHORT={self.signal_stats['entry_setup01_bear']}")
+        print(f"  Fibonacci OTE:   LONG={self.signal_stats['entry_ote_bull']} SHORT={self.signal_stats['entry_ote_bear']}")
+
+        print("\n--- Filter Rejections ---")
+        print(f"  Time Filter (ICT Session):")
+        print(f"    LONG rejected:  {self.signal_stats['filter_time_rejected_bull']}")
+        print(f"    SHORT rejected: {self.signal_stats['filter_time_rejected_bear']}")
+        print(f"  Trend Filter (15M/1H Bias):")
+        print(f"    LONG rejected:  {self.signal_stats['filter_trend_rejected_bull']}")
+        print(f"    SHORT rejected: {self.signal_stats['filter_trend_rejected_bear']}")
+        print(f"  Structure Filter (MSS+FVG):")
+        print(f"    LONG rejected:  {self.signal_stats['filter_structure_rejected_bull']}")
+        print(f"    SHORT rejected: {self.signal_stats['filter_structure_rejected_bear']}")
+
+        print("\n--- Risk Management Rejections ---")
+        print(f"  Invalid Stop (LONG):   {self.signal_stats['stop_invalid_long']}")
+        print(f"  Invalid Stop (SHORT):  {self.signal_stats['stop_invalid_short']}")
+        print(f"  Invalid Target (LONG): {self.signal_stats['target_invalid_long']}")
+        print(f"  Invalid Target (SHORT):{self.signal_stats['target_invalid_short']}")
+
+        print("\n--- Orders Placed ---")
+        print(f"  Total orders: {self.signal_stats['orders_placed']}")
+        print("=" * 100)
 
     def _print_detailed_report(self) -> None:
         """Print a comprehensive trade-by-trade report."""
