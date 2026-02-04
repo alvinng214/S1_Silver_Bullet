@@ -169,6 +169,7 @@ class SilverBulletStrategy(bt.Strategy):
     params = (
         ("pivot_strength", 15),
         ("risk_per_trade", 0.02),
+        ("leverage", 100),  # Leverage ratio (e.g., 100 = 1:100 leverage)
         ("print_trades", True),
         ("debug_signals", False),
     )
@@ -390,6 +391,8 @@ class SilverBulletStrategy(bt.Strategy):
         entry_price = float(self.data.close[0])
         risk_cash = self.broker.getvalue() * self.params.risk_per_trade
         max_cash = self.broker.getcash()
+        # With leverage, buying power = cash * leverage
+        buying_power = max_cash * self.params.leverage
 
         if long_signal:
             stop_price = self._resolve_stop_long()
@@ -397,8 +400,10 @@ class SilverBulletStrategy(bt.Strategy):
                 self.signal_stats["stop_invalid_long"] += 1
                 return
             risk_per_unit = entry_price - stop_price
+            # Calculate size to risk exactly 2% of portfolio
             size = risk_cash / risk_per_unit
-            size = min(size, max_cash / entry_price)
+            # Cap by leveraged buying power (not raw cash)
+            size = min(size, buying_power / entry_price)
             if size <= 0:
                 return
             target_price = self._resolve_target_long(entry_price, risk_per_unit)
@@ -438,8 +443,10 @@ class SilverBulletStrategy(bt.Strategy):
                 self.signal_stats["stop_invalid_short"] += 1
                 return
             risk_per_unit = stop_price - entry_price
+            # Calculate size to risk exactly 2% of portfolio
             size = risk_cash / risk_per_unit
-            size = min(size, max_cash / entry_price)
+            # Cap by leveraged buying power (not raw cash)
+            size = min(size, buying_power / entry_price)
             if size <= 0:
                 return
             target_price = self._resolve_target_short(entry_price, risk_per_unit)
