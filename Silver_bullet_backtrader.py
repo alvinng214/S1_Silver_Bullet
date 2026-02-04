@@ -123,6 +123,12 @@ ICT_BPR_PATH = os.path.join(
 ict_bpr_module = SourceFileLoader("ict_bpr_fvg", ICT_BPR_PATH).load_module()
 calculate_bpr_indicator = ict_bpr_module.calculate_bpr_indicator
 
+ICT_SESSIONS_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "ICT Sessions_One Setup for Life [MK].py",
+)
+ict_sessions_module = SourceFileLoader("ict_sessions_mk", ICT_SESSIONS_PATH).load_module()
+
 MONDAY_RANGE_PATH = os.path.join(
     os.path.dirname(__file__),
     "Monday_Range__Lines_.py",
@@ -902,6 +908,33 @@ def add_mss_fvg_signals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_ict_session_filter(df: pd.DataFrame) -> pd.DataFrame:
+    config = ict_sessions_module.IndicatorConfig()
+    index = pd.to_datetime(df.index)
+    if index.tz is None:
+        index = index.tz_localize("UTC")
+    ny_index = index.tz_convert(config.timezone)
+
+    asia_start, asia_end = ict_sessions_module._parse_session(config.asia_session)
+    london_start, london_end = ict_sessions_module._parse_session(config.europe_session)
+    ny_am_start, ny_am_end = ict_sessions_module._parse_session(config.usa_session)
+    ny_pm_start, ny_pm_end = ict_sessions_module._parse_session(config.usa2_session)
+
+    session_active = [
+        int(
+            ict_sessions_module._in_session(ts, asia_start, asia_end)
+            or ict_sessions_module._in_session(ts, london_start, london_end)
+            or ict_sessions_module._in_session(ts, ny_am_start, ny_am_end)
+            or ict_sessions_module._in_session(ts, ny_pm_start, ny_pm_end)
+        )
+        for ts in ny_index
+    ]
+
+    df = df.copy()
+    df["ict_session_active"] = session_active
+    return df
+
+
 def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
     hk_aligned = _align_index_to_hk_as_ny(df)
     sb = detect_silver_bullet_signals(hk_aligned)
@@ -956,6 +989,9 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
     entry_fvg_bear = htf_bear & mss_fvg_bear & (
         sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
     )
+    session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(bool)
+    entry_fvg_bull = entry_fvg_bull & session_active
+    entry_fvg_bear = entry_fvg_bear & session_active
 
     df = df.copy()
     df["entry_sb_bull"] = sb_entry_bull
@@ -1139,6 +1175,7 @@ def run_backtest(
     data_df = add_liquidity_sweeps(data_df)
     data_df = add_mss_choch_signals(data_df)
     data_df = add_mss_fvg_signals(data_df)
+    data_df = add_ict_session_filter(data_df)
     data_df = add_entry_signals(data_df)
     data_df = add_bigbeluga_pivots(data_df)
     data_df = add_stop_loss_levels(data_df)
