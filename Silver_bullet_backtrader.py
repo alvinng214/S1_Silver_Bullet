@@ -161,6 +161,53 @@ bigbeluga_module = SourceFileLoader("bigbeluga_smc", BIGBELUGA_SMC_PATH).load_mo
 calculate_bigbeluga_smc = bigbeluga_module.calculate_bigbeluga_smc
 
 
+# =============================================================================
+# INDICATOR CACHE - Stores expensive calculations to avoid redundant computation
+# =============================================================================
+class IndicatorCache:
+    """Cache for expensive indicator calculations to avoid redundant computation."""
+
+    def __init__(self):
+        self.clear()
+
+    def clear(self):
+        self._htf_sweeps = None
+        self._silver_bullet_signals = None
+        self._smc_tradingfinder = None
+        self._smart_money_zones = None
+        self._hk_aligned_df = None
+
+    def get_htf_sweeps(self, df: pd.DataFrame) -> dict:
+        if self._htf_sweeps is None:
+            self._htf_sweeps = calculate_htf_sweeps(
+                df,
+                timeframes=[
+                    ("4H", 200, True),
+                    ("1D", 200, True),
+                ],
+            )
+        return self._htf_sweeps
+
+    def get_silver_bullet_signals(self, hk_aligned: pd.DataFrame) -> dict:
+        if self._silver_bullet_signals is None:
+            self._silver_bullet_signals = detect_silver_bullet_signals(hk_aligned)
+        return self._silver_bullet_signals
+
+    def get_smc_tradingfinder(self, df: pd.DataFrame) -> dict:
+        if self._smc_tradingfinder is None:
+            self._smc_tradingfinder = calculate_smc_tradingfinder(df)
+        return self._smc_tradingfinder
+
+    def get_smart_money_zones(self, df: pd.DataFrame, show_ob: bool = True) -> dict:
+        if self._smart_money_zones is None:
+            self._smart_money_zones = calculate_smart_money_zones(df, show_ob=show_ob)
+        return self._smart_money_zones
+
+
+# Global cache instance
+_cache = IndicatorCache()
+
+
 class PandasDataBias(bt.feeds.PandasData):
     lines = (
         "smz_trend_15m",
@@ -356,7 +403,7 @@ def limit_bars(df: pd.DataFrame, max_bars: int | None) -> pd.DataFrame:
 
 
 def add_smart_money_trends(df: pd.DataFrame) -> pd.DataFrame:
-    results = calculate_smart_money_zones(df)
+    results = _cache.get_smart_money_zones(df)
     trend_15m = results["mtf_trends"]["15m"].astype(int).replace({0: -1})
     trend_1h = results["mtf_trends"]["1h"].astype(int).replace({0: -1})
     trend_4h = results["mtf_trends"]["4h"].astype(int).replace({0: -1})
@@ -501,7 +548,7 @@ def add_htf_poi(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_external_liquidity_targets(df: pd.DataFrame) -> pd.DataFrame:
-    smc = calculate_smc_tradingfinder(df)
+    smc = _cache.get_smc_tradingfinder(df)
     liquidity_levels = smc["liquidity"]
     smc_liquidity_high = liquidity_levels.static_high.combine_first(liquidity_levels.dynamic_high)
     smc_liquidity_low = liquidity_levels.static_low.combine_first(liquidity_levels.dynamic_low)
@@ -616,10 +663,8 @@ def _align_index_to_hk_as_ny(df: pd.DataFrame) -> pd.DataFrame:
     return aligned
 
 
-def add_killzone_windows(df: pd.DataFrame) -> pd.DataFrame:
-    hk_aligned = _align_index_to_hk_as_ny(df)
-
-    sb_signals = detect_silver_bullet_signals(hk_aligned)
+def add_killzone_windows(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFrame:
+    sb_signals = _cache.get_silver_bullet_signals(hk_aligned)
     sb_sig_ln = pd.Series(0, index=df.index, dtype=int)
     sb_sig_am = pd.Series(0, index=df.index, dtype=int)
     sb_sig_pm = pd.Series(0, index=df.index, dtype=int)
@@ -720,13 +765,7 @@ def _smz_fvg_series(zones: list, index: pd.Index, bullish: bool) -> pd.Series:
 
 
 def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
-    sweeps = calculate_htf_sweeps(
-        df,
-        timeframes=[
-            ("4H", 200, True),
-            ("1D", 200, True),
-        ],
-    )
+    sweeps = _cache.get_htf_sweeps(df)
 
     htf_4h_bull, htf_4h_bear = _build_sweep_series(sweeps.get("4H", []), df.index)
     htf_1d_bull, htf_1d_bear = _build_sweep_series(sweeps.get("1D", []), df.index)
@@ -789,7 +828,7 @@ def add_mss_choch_signals(df: pd.DataFrame) -> pd.DataFrame:
     market_structure = calculate_market_structure_mtf(df)
     ms_tf1 = market_structure.tf1
 
-    smc = calculate_smc_tradingfinder(df)
+    smc = _cache.get_smc_tradingfinder(df)
     structure = smc["structure"]
 
     try:
@@ -859,14 +898,13 @@ def add_mss_choch_signals(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_mss_fvg_signals(df: pd.DataFrame) -> pd.DataFrame:
-    hk_aligned = _align_index_to_hk_as_ny(df)
-    sb = detect_silver_bullet_signals(hk_aligned)
+def add_mss_fvg_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFrame:
+    sb = _cache.get_silver_bullet_signals(hk_aligned)
     sb_signals = sb["signals"]
     sb_fvg_bull = pd.Series(sb_signals["bull_fvg_formed"].to_numpy(), index=df.index).astype(int)
     sb_fvg_bear = pd.Series(sb_signals["bear_fvg_formed"].to_numpy(), index=df.index).astype(int)
 
-    smz = calculate_smart_money_zones(df, show_ob=False)
+    smz = _cache.get_smart_money_zones(df, show_ob=False)
     smz_fvg_bull = _smz_fvg_series(smz["bull_fvg"], df.index, True)
     smz_fvg_bear = _smz_fvg_series(smz["bear_fvg"], df.index, False)
 
@@ -935,9 +973,8 @@ def add_ict_session_filter(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
-    hk_aligned = _align_index_to_hk_as_ny(df)
-    sb = detect_silver_bullet_signals(hk_aligned)
+def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFrame:
+    sb = _cache.get_silver_bullet_signals(hk_aligned)
     sb_signals = sb["signals"]
     sb_entry_bull = pd.Series(sb_signals["bull_fvg_retrace"].to_numpy(), index=df.index).astype(int)
     sb_entry_bear = pd.Series(sb_signals["bear_fvg_retrace"].to_numpy(), index=df.index).astype(int)
@@ -1006,13 +1043,7 @@ def add_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
-    sweeps = calculate_htf_sweeps(
-        df,
-        timeframes=[
-            ("4H", 200, True),
-            ("1D", 200, True),
-        ],
-    )
+    sweeps = _cache.get_htf_sweeps(df)
     htf_bull_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, True)
     htf_bear_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, False)
     htf1d_bull_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, True)
@@ -1071,13 +1102,7 @@ def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_target_levels(df: pd.DataFrame) -> pd.DataFrame:
-    sweeps = calculate_htf_sweeps(
-        df,
-        timeframes=[
-            ("4H", 200, True),
-            ("1D", 200, True),
-        ],
-    )
+    sweeps = _cache.get_htf_sweeps(df)
     htf_bull_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, True)
     htf_bear_prices = _build_sweep_price_series(sweeps.get("4H", []), df.index, False)
     htf1d_bull_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, True)
@@ -1152,32 +1177,60 @@ def run_backtest(
     csv_file: str,
     max_bars: int | None = None,
     export_csv: str | None = None,
+    fast_mode: bool = False,
 ) -> None:
     if not os.path.exists(csv_file):
         raise FileNotFoundError(f"CSV file not found: {csv_file}")
 
     warnings.filterwarnings("ignore", category=FutureWarning)
 
+    # Clear the indicator cache at the start of each backtest
+    _cache.clear()
+
     max_rows = _env_int("SB_MAX_ROWS")
     enable_custom_50 = not _env_bool("SB_DISABLE_CUSTOM_50", default=False)
     enable_crt = not _env_bool("SB_DISABLE_CRT", default=False)
     debug_signals = _env_bool("SB_DEBUG_SIGNALS", default=False)
 
+    # Fast mode skips non-essential indicators for quicker backtesting
+    if fast_mode or _env_bool("SB_FAST_MODE", default=False):
+        enable_custom_50 = False
+        enable_crt = False
+
     data_df = add_smart_money_trends(load_data(csv_file, max_rows=max_rows))
-    data_df = add_htf_poi(data_df)
+
+    # Create HK-aligned DataFrame once for all functions that need it
+    hk_aligned = _align_index_to_hk_as_ny(data_df)
+
+    # Skip HTF POI in fast mode (not used for trade entries)
+    if not fast_mode:
+        data_df = add_htf_poi(data_df)
+    else:
+        # Add placeholder columns for HTF POI
+        for col in ["poi_high_bull", "poi_high_bear", "poi_mid_bull", "poi_mid_bear",
+                    "htf_fvg_1h_bull", "htf_fvg_1h_bear", "htf_fvg_4h_bull", "htf_fvg_4h_bear"]:
+            data_df[col] = 0
+
     data_df = add_external_liquidity_targets(data_df)
     data_df = add_session_levels(
         data_df,
         enable_custom_50=enable_custom_50,
         enable_crt=enable_crt,
     )
-    data_df = add_killzone_windows(data_df)
+    data_df = add_killzone_windows(data_df, hk_aligned)
     data_df = add_liquidity_sweeps(data_df)
     data_df = add_mss_choch_signals(data_df)
-    data_df = add_mss_fvg_signals(data_df)
+    data_df = add_mss_fvg_signals(data_df, hk_aligned)
     data_df = add_ict_session_filter(data_df)
-    data_df = add_entry_signals(data_df)
-    data_df = add_bigbeluga_pivots(data_df)
+    data_df = add_entry_signals(data_df, hk_aligned)
+
+    # Skip pivots in fast mode (not used for trade entries)
+    if not fast_mode:
+        data_df = add_bigbeluga_pivots(data_df)
+    else:
+        data_df["bb_pivot_high"] = 0.0
+        data_df["bb_pivot_low"] = 0.0
+
     data_df = add_stop_loss_levels(data_df)
     data_df = add_target_levels(data_df)
     if export_csv:
@@ -1243,10 +1296,15 @@ def main() -> None:
         default="",
         help="Optional path to write the enriched indicator dataframe.",
     )
+    parser.add_argument(
+        "--fast-mode",
+        action="store_true",
+        help="Enable fast mode: skip non-essential indicators for quicker backtesting.",
+    )
     args = parser.parse_args()
     max_bars = args.max_bars if args.max_bars > 0 else None
     export_csv = args.export_csv if args.export_csv.strip() else None
-    run_backtest(args.csv_file, max_bars=max_bars, export_csv=export_csv)
+    run_backtest(args.csv_file, max_bars=max_bars, export_csv=export_csv, fast_mode=args.fast_mode)
 
 
 if __name__ == "__main__":
