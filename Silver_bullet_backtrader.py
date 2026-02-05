@@ -1297,6 +1297,7 @@ def run_backtest(
         print_trades=True,
         pivot_strength=15,
         risk_per_trade=0.02,
+        leverage=100,  # 1:100 leverage for proper 2% risk sizing
         debug_signals=debug_signals,
     )
     cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trade_analyzer")
