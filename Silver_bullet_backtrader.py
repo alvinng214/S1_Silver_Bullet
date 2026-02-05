@@ -1078,6 +1078,14 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     htf_poi_bull = ((htf_fvg_1h_bull == 1) | (htf_fvg_4h_bull == 1)).astype(int)
     htf_poi_bear = ((htf_fvg_1h_bear == 1) | (htf_fvg_4h_bear == 1)).astype(int)
 
+    # Filter 4: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
+    htf_fvg_1h_bull = df.get("htf_fvg_1h_bull", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_4h_bull = df.get("htf_fvg_4h_bull", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_1h_bear = df.get("htf_fvg_1h_bear", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_4h_bear = df.get("htf_fvg_4h_bear", pd.Series(0, index=df.index)).astype(int)
+    htf_poi_bull = ((htf_fvg_1h_bull == 1) | (htf_fvg_4h_bull == 1)).astype(int)
+    htf_poi_bear = ((htf_fvg_1h_bear == 1) | (htf_fvg_4h_bear == 1)).astype(int)
+
     # Legacy combined entry signals (for backward compatibility)
     entry_fvg_bull = (
         entry_trigger_bull.astype(bool)

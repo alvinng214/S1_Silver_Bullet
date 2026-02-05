@@ -420,6 +420,40 @@ class SilverBulletStrategy(bt.Strategy):
             )
         )
 
+    def _filter_states(self, is_long: bool) -> dict[str, bool]:
+        """Return current filter states without enforcing them."""
+        session_active = int(self.data.filter_session_active[0]) == 1
+        if is_long:
+            htf_aligned = int(self.data.filter_htf_bias_bull[0]) == 1
+            structure_ok = int(self.data.filter_structure_bull[0]) == 1
+            htf_poi_ok = int(self.data.filter_htf_poi_bull[0]) == 1
+        else:
+            htf_aligned = int(self.data.filter_htf_bias_bear[0]) == 1
+            structure_ok = int(self.data.filter_structure_bear[0]) == 1
+            htf_poi_ok = int(self.data.filter_htf_poi_bear[0]) == 1
+        return {
+            "time": session_active,
+            "trend": htf_aligned,
+            "structure": structure_ok,
+            "htf_poi": htf_poi_ok,
+        }
+
+    def _log_filter_sequence(self, is_long: bool) -> None:
+        direction = "LONG" if is_long else "SHORT"
+        states = self._filter_states(is_long)
+        sequence = "Time -> Trend -> Structure -> HTF POI"
+        self.log(
+            "{direction} filter sequence: {sequence} | "
+            "Time={time} Trend={trend} Structure={structure} HTF_POI={htf_poi}".format(
+                direction=direction,
+                sequence=sequence,
+                time="PASS" if states["time"] else "FAIL",
+                trend="PASS" if states["trend"] else "FAIL",
+                structure="PASS" if states["structure"] else "FAIL",
+                htf_poi="PASS" if states["htf_poi"] else "FAIL",
+            )
+        )
+
     def next(self) -> None:
         self._track_signal_counts()
 
