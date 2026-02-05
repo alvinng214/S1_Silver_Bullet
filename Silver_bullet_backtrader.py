@@ -280,8 +280,6 @@ class PandasDataBias(bt.feeds.PandasData):
         "filter_session_active",
         "filter_htf_bias_bull",
         "filter_htf_bias_bear",
-        "filter_structure_bull",
-        "filter_structure_bear",
         "filter_htf_poi_bull",
         "filter_htf_poi_bear",
         "entry_fvg_bull",
@@ -369,8 +367,6 @@ class PandasDataBias(bt.feeds.PandasData):
         ("filter_session_active", "filter_session_active"),
         ("filter_htf_bias_bull", "filter_htf_bias_bull"),
         ("filter_htf_bias_bear", "filter_htf_bias_bear"),
-        ("filter_structure_bull", "filter_structure_bull"),
-        ("filter_structure_bear", "filter_structure_bear"),
         ("filter_htf_poi_bull", "filter_htf_poi_bull"),
         ("filter_htf_poi_bear", "filter_htf_poi_bear"),
         ("entry_fvg_bull", "entry_fvg_bull"),
@@ -997,7 +993,7 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     """
     Generate entry signals with a two-stage approach:
     1. First detect raw entry triggers (SB FVG retrace, ICT Setup01, Fibonacci OTE)
-    2. Store filter states separately (Time, Trend, Structure filters)
+    2. Store filter states separately (Time, Trend, HTF POI filters)
 
     The strategy will check triggers first, then apply filters at execution time.
     """
@@ -1045,20 +1041,42 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     # Filter 1: Time Filter - ICT Session must be active
     session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(int)
 
-    # Filter 2: Trend Filter - 15M and 1H SMZ trends must agree
+    # Filter 2: Trend Filter - SMZ OR Market Structure (15M/1H) must agree
     smz_trend_15m = df.get("smz_trend_15m", pd.Series(0, index=df.index)).astype(int)
     smz_trend_1h = df.get("smz_trend_1h", pd.Series(0, index=df.index)).astype(int)
-    htf_bias_bull = ((smz_trend_15m == 1) & (smz_trend_1h == 1)).astype(int)
-    htf_bias_bear = ((smz_trend_15m == -1) & (smz_trend_1h == -1)).astype(int)
 
-    # Filter 3: Structure Filter - MSS + FVG gate (can be disabled via env var)
-    mss_fvg_bull = df.get("mss_fvg_bull", pd.Series(0, index=df.index)).astype(int)
-    mss_fvg_bear = df.get("mss_fvg_bear", pd.Series(0, index=df.index)).astype(int)
-    disable_mss_fvg_gate = _env_bool("SB_DISABLE_MSS_FVG_GATE", default=True)
-    if disable_mss_fvg_gate:
-        # When disabled, structure filter always passes
-        mss_fvg_bull = pd.Series(1, index=df.index, dtype=int)
-        mss_fvg_bear = pd.Series(1, index=df.index, dtype=int)
+    market_structure = calculate_market_structure_mtf(df)
+    ms_tf15 = market_structure.tf1
+    ms_tf1h = market_structure.tf3
+
+    bull_colors = {"green", (46, 104, 48)}
+    bear_colors = {"red", (128, 41, 41)}
+
+    ms_bull_15m = ms_tf15.color.apply(lambda value: value in bull_colors).fillna(False)
+    ms_bear_15m = ms_tf15.color.apply(lambda value: value in bear_colors).fillna(False)
+    ms_bull_1h = ms_tf1h.color.apply(lambda value: value in bull_colors).fillna(False)
+    ms_bear_1h = ms_tf1h.color.apply(lambda value: value in bear_colors).fillna(False)
+
+    htf_bias_bull = (
+        (smz_trend_15m == 1) | ms_bull_15m.astype(bool)
+    ) & (
+        (smz_trend_1h == 1) | ms_bull_1h.astype(bool)
+    )
+    htf_bias_bear = (
+        (smz_trend_15m == -1) | ms_bear_15m.astype(bool)
+    ) & (
+        (smz_trend_1h == -1) | ms_bear_1h.astype(bool)
+    )
+    htf_bias_bull = htf_bias_bull.astype(int)
+    htf_bias_bear = htf_bias_bear.astype(int)
+
+    # Filter 3: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
+    htf_fvg_1h_bull = df.get("htf_fvg_1h_bull", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_4h_bull = df.get("htf_fvg_4h_bull", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_1h_bear = df.get("htf_fvg_1h_bear", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_4h_bear = df.get("htf_fvg_4h_bear", pd.Series(0, index=df.index)).astype(int)
+    htf_poi_bull = ((htf_fvg_1h_bull == 1) | (htf_fvg_4h_bull == 1)).astype(int)
+    htf_poi_bear = ((htf_fvg_1h_bear == 1) | (htf_fvg_4h_bear == 1)).astype(int)
 
     # Filter 4: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
     htf_fvg_1h_bull = df.get("htf_fvg_1h_bull", pd.Series(0, index=df.index)).astype(int)
@@ -1073,14 +1091,12 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
         entry_trigger_bull.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bull.astype(bool)
-        & mss_fvg_bull.astype(bool)
         & htf_poi_bull.astype(bool)
     ).astype(int)
     entry_fvg_bear = (
         entry_trigger_bear.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bear.astype(bool)
-        & mss_fvg_bear.astype(bool)
         & htf_poi_bear.astype(bool)
     ).astype(int)
 
@@ -1099,8 +1115,6 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     df["filter_session_active"] = session_active
     df["filter_htf_bias_bull"] = htf_bias_bull
     df["filter_htf_bias_bear"] = htf_bias_bear
-    df["filter_structure_bull"] = mss_fvg_bull
-    df["filter_structure_bear"] = mss_fvg_bear
     df["filter_htf_poi_bull"] = htf_poi_bull
     df["filter_htf_poi_bear"] = htf_poi_bear
     # Final filtered entry signals
