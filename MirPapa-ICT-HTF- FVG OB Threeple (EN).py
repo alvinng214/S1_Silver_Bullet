@@ -344,12 +344,20 @@ def _is_chart_tf_comparison_htf(chart_tf: str, target_tf: str) -> bool:
     return target_minutes >= chart_minutes
 
 
-def _is_fob_condition(name: str, is_bullish: bool, high2: float, low: float, low2: float, high: float) -> bool:
-    if name != "fob":
+def _is_fob_condition(is_bullish: bool, price_prev: float, price_now: float) -> bool:
+    if np.isnan(price_prev) or np.isnan(price_now):
         return False
     if is_bullish:
-        return not np.isnan(high2) and not np.isnan(low) and high2 < low
-    return not np.isnan(low2) and not np.isnan(high) and low2 > high
+        return price_now > price_prev
+    return price_prev > price_now
+
+
+def _is_sob_condition(is_bullish: bool, open2: float, close1: float, open1: float, close0: float) -> bool:
+    if np.isnan(open2) or np.isnan(close1) or np.isnan(open1) or np.isnan(close0):
+        return False
+    if is_bullish:
+        return open2 > close1 and open1 < close0
+    return open2 < close1 and open1 > close0
 
 
 def _process_box_datas(
@@ -435,12 +443,22 @@ def _create_box_data(
     timeframe: str,
     htf_bar_index: int,
     start_index: int,
+    *,
+    open1: float | None = None,
+    close1: float | None = None,
 ) -> Tuple[bool, Optional[BoxData]]:
-    if np.isnan(low2) or np.isnan(high2):
-        return False, None
-    top = max(low2, high2)
-    bottom = min(low2, high2)
-    breach_mode = "directionalHighLow" if name in {"fob", "rb", "custom"} else "both"
+    if name == "sob":
+        if open1 is None or close1 is None or np.isnan(open1) or np.isnan(close1):
+            return False, None
+        top = max(open1, close1)
+        bottom = min(open1, close1)
+        breach_mode = "sobClose"
+    else:
+        if np.isnan(low2) or np.isnan(high2):
+            return False, None
+        top = max(low2, high2)
+        bottom = min(low2, high2)
+        breach_mode = "directionalHighLow" if name in {"fob", "rb", "custom"} else "both"
     mid = (top + bottom) * 0.5
     return True, BoxData(
         name=name,
@@ -509,10 +527,16 @@ def calculate_fvg_ob_threeple(
 
     last_high_tf_fob_bar: Optional[int] = None
     last_high_tf_fob_bull: bool = False
+    last_high_tf_sob_bar: Optional[int] = None
+    last_high_tf_sob_bull: bool = False
     last_mid_tf_fob_bar: Optional[int] = None
     last_mid_tf_fob_bull: bool = False
+    last_mid_tf_sob_bar: Optional[int] = None
+    last_mid_tf_sob_bull: bool = False
     last_current_tf_fob_bar: Optional[int] = None
     last_current_tf_fob_bull: bool = False
+    last_current_tf_sob_bar: Optional[int] = None
+    last_current_tf_sob_bull: bool = False
 
     high_tf_aligned = (
         _build_htf_cache_series(df, high_tf)
@@ -605,12 +629,8 @@ def calculate_fvg_ob_threeple(
                     or last_high_tf_fob_bull
                     or (htf_cache.bar_index - last_high_tf_fob_bar) >= high_tf_settings.cooldown
                 )
-                is_bull = can_bull and _is_fob_condition(
-                    "fob", True, htf_cache.high2, htf_cache.low, htf_cache.low2, htf_cache.high
-                )
-                is_bear = can_bear and _is_fob_condition(
-                    "fob", False, htf_cache.high2, htf_cache.low, htf_cache.low2, htf_cache.high
-                )
+                is_bull = can_bull and _is_fob_condition(True, htf_cache.high2, htf_cache.low)
+                is_bear = can_bear and _is_fob_condition(False, htf_cache.low2, htf_cache.high)
                 if is_bull:
                     result, data = _create_box_data(
                         "fob",
@@ -639,6 +659,62 @@ def calculate_fvg_ob_threeple(
                         high_tf_boxes_bear.append(data)
                         last_high_tf_fob_bar = htf_cache.bar_index
                         last_high_tf_fob_bull = False
+                can_sob_bull = (
+                    last_high_tf_sob_bar is None
+                    or not last_high_tf_sob_bull
+                    or (htf_cache.bar_index - last_high_tf_sob_bar) >= high_tf_settings.cooldown
+                )
+                can_sob_bear = (
+                    last_high_tf_sob_bar is None
+                    or last_high_tf_sob_bull
+                    or (htf_cache.bar_index - last_high_tf_sob_bar) >= high_tf_settings.cooldown
+                )
+                is_sob_bull = can_sob_bull and _is_sob_condition(
+                    True,
+                    htf_cache.open2,
+                    htf_cache.close1,
+                    htf_cache.open1,
+                    htf_cache.close,
+                )
+                is_sob_bear = can_sob_bear and _is_sob_condition(
+                    False,
+                    htf_cache.open2,
+                    htf_cache.close1,
+                    htf_cache.open1,
+                    htf_cache.close,
+                )
+                if is_sob_bull:
+                    result, data = _create_box_data(
+                        "sob",
+                        True,
+                        htf_cache.low2,
+                        htf_cache.high2,
+                        high_tf,
+                        htf_cache.bar_index,
+                        bar_index - 1,
+                        open1=htf_cache.open1,
+                        close1=htf_cache.close1,
+                    )
+                    if result and data:
+                        high_tf_boxes_bull.append(data)
+                        last_high_tf_sob_bar = htf_cache.bar_index
+                        last_high_tf_sob_bull = True
+                if is_sob_bear:
+                    result, data = _create_box_data(
+                        "sob",
+                        False,
+                        htf_cache.low2,
+                        htf_cache.high2,
+                        high_tf,
+                        htf_cache.bar_index,
+                        bar_index - 1,
+                        open1=htf_cache.open1,
+                        close1=htf_cache.close1,
+                    )
+                    if result and data:
+                        high_tf_boxes_bear.append(data)
+                        last_high_tf_sob_bar = htf_cache.bar_index
+                        last_high_tf_sob_bull = False
 
         if mid_tf_settings.use_box and _is_chart_tf_comparison_htf(chart_timeframe, mid_tf):
             mid_cache = _htf_cache_from_aligned(mid_tf_aligned, bar_index, mid_tf)
@@ -653,12 +729,8 @@ def calculate_fvg_ob_threeple(
                     or last_mid_tf_fob_bull
                     or (mid_cache.bar_index - last_mid_tf_fob_bar) >= mid_tf_settings.cooldown
                 )
-                is_bull = can_bull and _is_fob_condition(
-                    "fob", True, mid_cache.high2, mid_cache.low, mid_cache.low2, mid_cache.high
-                )
-                is_bear = can_bear and _is_fob_condition(
-                    "fob", False, mid_cache.high2, mid_cache.low, mid_cache.low2, mid_cache.high
-                )
+                is_bull = can_bull and _is_fob_condition(True, mid_cache.high2, mid_cache.low)
+                is_bear = can_bear and _is_fob_condition(False, mid_cache.low2, mid_cache.high)
                 if is_bull:
                     result, data = _create_box_data(
                         "fob",
@@ -687,6 +759,62 @@ def calculate_fvg_ob_threeple(
                         mid_tf_boxes_bear.append(data)
                         last_mid_tf_fob_bar = mid_cache.bar_index
                         last_mid_tf_fob_bull = False
+                can_sob_bull = (
+                    last_mid_tf_sob_bar is None
+                    or not last_mid_tf_sob_bull
+                    or (mid_cache.bar_index - last_mid_tf_sob_bar) >= mid_tf_settings.cooldown
+                )
+                can_sob_bear = (
+                    last_mid_tf_sob_bar is None
+                    or last_mid_tf_sob_bull
+                    or (mid_cache.bar_index - last_mid_tf_sob_bar) >= mid_tf_settings.cooldown
+                )
+                is_sob_bull = can_sob_bull and _is_sob_condition(
+                    True,
+                    mid_cache.open2,
+                    mid_cache.close1,
+                    mid_cache.open1,
+                    mid_cache.close,
+                )
+                is_sob_bear = can_sob_bear and _is_sob_condition(
+                    False,
+                    mid_cache.open2,
+                    mid_cache.close1,
+                    mid_cache.open1,
+                    mid_cache.close,
+                )
+                if is_sob_bull:
+                    result, data = _create_box_data(
+                        "sob",
+                        True,
+                        mid_cache.low2,
+                        mid_cache.high2,
+                        mid_tf,
+                        mid_cache.bar_index,
+                        bar_index - 1,
+                        open1=mid_cache.open1,
+                        close1=mid_cache.close1,
+                    )
+                    if result and data:
+                        mid_tf_boxes_bull.append(data)
+                        last_mid_tf_sob_bar = mid_cache.bar_index
+                        last_mid_tf_sob_bull = True
+                if is_sob_bear:
+                    result, data = _create_box_data(
+                        "sob",
+                        False,
+                        mid_cache.low2,
+                        mid_cache.high2,
+                        mid_tf,
+                        mid_cache.bar_index,
+                        bar_index - 1,
+                        open1=mid_cache.open1,
+                        close1=mid_cache.close1,
+                    )
+                    if result and data:
+                        mid_tf_boxes_bear.append(data)
+                        last_mid_tf_sob_bar = mid_cache.bar_index
+                        last_mid_tf_sob_bull = False
 
         if current_tf_settings.use_box:
             if bar_index > offset_fob:
@@ -704,8 +832,8 @@ def calculate_fvg_ob_threeple(
                 low2 = df["low"].iloc[bar_index - 2]
                 current_low = df["low"].iloc[bar_index]
                 current_high = df["high"].iloc[bar_index]
-                is_bull = can_bull and _is_fob_condition("fob", True, high2, current_low, low2, current_high)
-                is_bear = can_bear and _is_fob_condition("fob", False, high2, current_low, low2, current_high)
+                is_bull = can_bull and _is_fob_condition(True, high2, current_low)
+                is_bear = can_bear and _is_fob_condition(False, low2, current_high)
                 if is_bull:
                     result, data = _create_box_data(
                         "fob",
@@ -734,6 +862,54 @@ def calculate_fvg_ob_threeple(
                         current_tf_boxes_bear.append(data)
                         last_current_tf_fob_bar = bar_index
                         last_current_tf_fob_bull = False
+                can_sob_bull = (
+                    last_current_tf_sob_bar is None
+                    or not last_current_tf_sob_bull
+                    or (bar_index - last_current_tf_sob_bar) >= current_tf_settings.cooldown
+                )
+                can_sob_bear = (
+                    last_current_tf_sob_bar is None
+                    or last_current_tf_sob_bull
+                    or (bar_index - last_current_tf_sob_bar) >= current_tf_settings.cooldown
+                )
+                open2 = df["open"].iloc[bar_index - 2]
+                close1 = df["close"].iloc[bar_index - 1]
+                open1 = df["open"].iloc[bar_index - 1]
+                close0 = df["close"].iloc[bar_index]
+                is_sob_bull = can_sob_bull and _is_sob_condition(True, open2, close1, open1, close0)
+                is_sob_bear = can_sob_bear and _is_sob_condition(False, open2, close1, open1, close0)
+                if is_sob_bull:
+                    result, data = _create_box_data(
+                        "sob",
+                        True,
+                        low2,
+                        high2,
+                        chart_timeframe,
+                        bar_index,
+                        bar_index - 1,
+                        open1=open1,
+                        close1=close1,
+                    )
+                    if result and data:
+                        current_tf_boxes_bull.append(data)
+                        last_current_tf_sob_bar = bar_index
+                        last_current_tf_sob_bull = True
+                if is_sob_bear:
+                    result, data = _create_box_data(
+                        "sob",
+                        False,
+                        low2,
+                        high2,
+                        chart_timeframe,
+                        bar_index,
+                        bar_index - 1,
+                        open1=open1,
+                        close1=close1,
+                    )
+                    if result and data:
+                        current_tf_boxes_bear.append(data)
+                        last_current_tf_sob_bar = bar_index
+                        last_current_tf_sob_bull = False
 
     high_tf_boxes = high_tf_boxes_bull + high_tf_boxes_bear
     mid_tf_boxes = mid_tf_boxes_bull + mid_tf_boxes_bear
