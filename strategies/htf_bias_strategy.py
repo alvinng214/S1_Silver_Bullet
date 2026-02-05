@@ -359,13 +359,14 @@ class SilverBulletStrategy(bt.Strategy):
 
     def _check_filters(self, is_long: bool) -> tuple[bool, str]:
         """
-        Check filters in sequence: Time -> Trend -> Structure.
+        Check filters in sequence: Time -> Trend -> Structure -> HTF POI.
         Returns (passed, rejection_reason).
 
         Filter sequence:
         1. Time Filter: ICT session must be active
         2. Trend Filter: 15M and 1H SMZ trends must agree with trade direction
         3. Structure Filter: MSS + FVG gate must be satisfied
+        4. HTF POI Filter: trade must align with 1H/4H ICT HTF FVGs
         """
         # Filter 1: Time Filter - ICT Session must be active
         session_active = int(self.data.filter_session_active[0]) == 1
@@ -388,7 +389,49 @@ class SilverBulletStrategy(bt.Strategy):
         if not structure_ok:
             return False, "Structure Filter (MSS+FVG not confirmed)"
 
+        # Filter 4: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
+        if is_long:
+            htf_poi_ok = int(self.data.filter_htf_poi_bull[0]) == 1
+        else:
+            htf_poi_ok = int(self.data.filter_htf_poi_bear[0]) == 1
+        if not htf_poi_ok:
+            return False, "HTF POI Filter (1H/4H FVG not aligned)"
+
         return True, ""
+
+    def _filter_states(self, is_long: bool) -> dict[str, bool]:
+        """Return current filter states without enforcing them."""
+        session_active = int(self.data.filter_session_active[0]) == 1
+        if is_long:
+            htf_aligned = int(self.data.filter_htf_bias_bull[0]) == 1
+            structure_ok = int(self.data.filter_structure_bull[0]) == 1
+            htf_poi_ok = int(self.data.filter_htf_poi_bull[0]) == 1
+        else:
+            htf_aligned = int(self.data.filter_htf_bias_bear[0]) == 1
+            structure_ok = int(self.data.filter_structure_bear[0]) == 1
+            htf_poi_ok = int(self.data.filter_htf_poi_bear[0]) == 1
+        return {
+            "time": session_active,
+            "trend": htf_aligned,
+            "structure": structure_ok,
+            "htf_poi": htf_poi_ok,
+        }
+
+    def _log_filter_sequence(self, is_long: bool) -> None:
+        direction = "LONG" if is_long else "SHORT"
+        states = self._filter_states(is_long)
+        sequence = "Time -> Trend -> Structure -> HTF POI"
+        self.log(
+            "{direction} filter sequence: {sequence} | "
+            "Time={time} Trend={trend} Structure={structure} HTF_POI={htf_poi}".format(
+                direction=direction,
+                sequence=sequence,
+                time="PASS" if states["time"] else "FAIL",
+                trend="PASS" if states["trend"] else "FAIL",
+                structure="PASS" if states["structure"] else "FAIL",
+                htf_poi="PASS" if states["htf_poi"] else "FAIL",
+            )
+        )
 
     def next(self) -> None:
         self._track_signal_counts()
@@ -406,6 +449,7 @@ class SilverBulletStrategy(bt.Strategy):
         # STEP 2: Check filters only when triggers are met
         # Process long trigger
         if long_trigger:
+            self._log_filter_sequence(is_long=True)
             filters_passed, rejection_reason = self._check_filters(is_long=True)
             if not filters_passed:
                 if self.params.debug_signals:
@@ -420,6 +464,7 @@ class SilverBulletStrategy(bt.Strategy):
 
         # Process short trigger
         if short_trigger:
+            self._log_filter_sequence(is_long=False)
             filters_passed, rejection_reason = self._check_filters(is_long=False)
             if not filters_passed:
                 if self.params.debug_signals:
