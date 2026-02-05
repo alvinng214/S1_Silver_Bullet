@@ -492,22 +492,26 @@ def _find_imbalances(candles: List[Candle], settings: Settings) -> List[Imbalanc
             candle3 = candles[i + 1]
 
             if candle1.l > candle2.h and min(candle1.o, candle1.c) > max(candle2.o, candle2.c):
+                # Pine: box.new(candle2.body.left, candle2.h, candle1.body.right, candle1.l)
+                # Parameters: left, top, right, bottom
                 imbalances.append(
                     Imbalance(
                         kind="fvg",
-                        top=candle1.l,
-                        bottom=candle2.h,
+                        top=candle2.h,
+                        bottom=candle1.l,
                         left_idx=candle2.body_left if candle2.body_left is not None else float(candle2.o_idx),
                         right_idx=candle1.body_right if candle1.body_right is not None else float(candle1.c_idx),
                         color=settings.fvg_color,
                     )
                 )
             if candle1.h < candle2.l and max(candle1.o, candle1.c) < min(candle2.o, candle2.c):
+                # Pine: box.new(candle1.body.right, candle1.h, candle2.body.left, candle2.l)
+                # Parameters: left, top, right, bottom
                 imbalances.append(
                     Imbalance(
                         kind="fvg",
-                        top=candle2.l,
-                        bottom=candle1.h,
+                        top=candle1.h,
+                        bottom=candle2.l,
                         left_idx=candle1.body_right if candle1.body_right is not None else float(candle1.o_idx),
                         right_idx=candle2.body_left if candle2.body_left is not None else float(candle2.c_idx),
                         color=settings.fvg_color,
