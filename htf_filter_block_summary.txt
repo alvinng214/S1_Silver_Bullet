@@ -1,0 +1,10 @@
+Filter block summary for entry triggers
+Source: backtest_report_pepperstone_xauusd_5_fast_mode_trend_update.txt
+
+Total trigger evaluations: 309
+
+Counts by filter state (HTF_POI, Trend, Time):
+  HTF_POI=FAIL Trend=FAIL Time=FAIL: 69
+  HTF_POI=FAIL Trend=FAIL Time=PASS: 72
+  HTF_POI=FAIL Trend=PASS Time=FAIL: 86
+  HTF_POI=FAIL Trend=PASS Time=PASS: 82

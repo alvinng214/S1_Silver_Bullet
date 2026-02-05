@@ -993,7 +993,7 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     """
     Generate entry signals with a two-stage approach:
     1. First detect raw entry triggers (SB FVG retrace, ICT Setup01, Fibonacci OTE)
-    2. Store filter states separately (Time, Trend, HTF POI filters)
+    2. Store filter states separately (HTF POI, Trend, Time filters)
 
     The strategy will check triggers first, then apply filters at execution time.
     """
@@ -1038,8 +1038,9 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
         sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
     ).astype(int)
 
-    # Filter 1: Time Filter - ICT Session must be active
-    session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(int)
+    # Filter 1: HTF POI Filter - disabled (pass-through).
+    htf_poi_bull = pd.Series(1, index=df.index, dtype=int)
+    htf_poi_bear = pd.Series(1, index=df.index, dtype=int)
 
     # Filter 2: Trend Filter - SMZ OR Market Structure (15M/1H) must agree
     smz_trend_15m = df.get("smz_trend_15m", pd.Series(0, index=df.index)).astype(int)
@@ -1070,34 +1071,19 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     htf_bias_bull = htf_bias_bull.astype(int)
     htf_bias_bear = htf_bias_bear.astype(int)
 
-    # Filter 3: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
-    htf_fvg_1h_bull = df.get("htf_fvg_1h_bull", pd.Series(0, index=df.index)).astype(int)
-    htf_fvg_4h_bull = df.get("htf_fvg_4h_bull", pd.Series(0, index=df.index)).astype(int)
-    htf_fvg_1h_bear = df.get("htf_fvg_1h_bear", pd.Series(0, index=df.index)).astype(int)
-    htf_fvg_4h_bear = df.get("htf_fvg_4h_bear", pd.Series(0, index=df.index)).astype(int)
-    htf_poi_bull = ((htf_fvg_1h_bull == 1) | (htf_fvg_4h_bull == 1)).astype(int)
-    htf_poi_bear = ((htf_fvg_1h_bear == 1) | (htf_fvg_4h_bear == 1)).astype(int)
-
-    # Filter 4: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
-    htf_fvg_1h_bull = df.get("htf_fvg_1h_bull", pd.Series(0, index=df.index)).astype(int)
-    htf_fvg_4h_bull = df.get("htf_fvg_4h_bull", pd.Series(0, index=df.index)).astype(int)
-    htf_fvg_1h_bear = df.get("htf_fvg_1h_bear", pd.Series(0, index=df.index)).astype(int)
-    htf_fvg_4h_bear = df.get("htf_fvg_4h_bear", pd.Series(0, index=df.index)).astype(int)
-    htf_poi_bull = ((htf_fvg_1h_bull == 1) | (htf_fvg_4h_bull == 1)).astype(int)
-    htf_poi_bear = ((htf_fvg_1h_bear == 1) | (htf_fvg_4h_bear == 1)).astype(int)
+    # Filter 3: Time Filter - ICT Session must be active
+    session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(int)
 
     # Legacy combined entry signals (for backward compatibility)
     entry_fvg_bull = (
         entry_trigger_bull.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bull.astype(bool)
-        & htf_poi_bull.astype(bool)
     ).astype(int)
     entry_fvg_bear = (
         entry_trigger_bear.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bear.astype(bool)
-        & htf_poi_bear.astype(bool)
     ).astype(int)
 
     df = df.copy()
