@@ -282,6 +282,8 @@ class PandasDataBias(bt.feeds.PandasData):
         "filter_htf_bias_bear",
         "filter_structure_bull",
         "filter_structure_bear",
+        "filter_htf_poi_bull",
+        "filter_htf_poi_bear",
         "entry_fvg_bull",
         "entry_fvg_bear",
         "stop_loss_bull",
@@ -369,6 +371,8 @@ class PandasDataBias(bt.feeds.PandasData):
         ("filter_htf_bias_bear", "filter_htf_bias_bear"),
         ("filter_structure_bull", "filter_structure_bull"),
         ("filter_structure_bear", "filter_structure_bear"),
+        ("filter_htf_poi_bull", "filter_htf_poi_bull"),
+        ("filter_htf_poi_bear", "filter_htf_poi_bear"),
         ("entry_fvg_bull", "entry_fvg_bull"),
         ("entry_fvg_bear", "entry_fvg_bear"),
         ("stop_loss_bull", "stop_loss_bull"),
@@ -480,6 +484,8 @@ def add_htf_poi(df: pd.DataFrame) -> pd.DataFrame:
     def apply_boxes(series: pd.Series, boxes, is_bull: bool) -> None:
         for box in boxes:
             if not box.is_active or box.is_bullish != is_bull:
+                continue
+            if box.name != "sob":
                 continue
             start = max(0, box.start_index)
             end = min(length - 1, box.end_index)
@@ -1054,18 +1060,28 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
         mss_fvg_bull = pd.Series(1, index=df.index, dtype=int)
         mss_fvg_bear = pd.Series(1, index=df.index, dtype=int)
 
+    # Filter 4: HTF POI Filter - require 1H/4H ICT HTF FVG alignment
+    htf_fvg_1h_bull = df.get("htf_fvg_1h_bull", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_4h_bull = df.get("htf_fvg_4h_bull", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_1h_bear = df.get("htf_fvg_1h_bear", pd.Series(0, index=df.index)).astype(int)
+    htf_fvg_4h_bear = df.get("htf_fvg_4h_bear", pd.Series(0, index=df.index)).astype(int)
+    htf_poi_bull = ((htf_fvg_1h_bull == 1) | (htf_fvg_4h_bull == 1)).astype(int)
+    htf_poi_bear = ((htf_fvg_1h_bear == 1) | (htf_fvg_4h_bear == 1)).astype(int)
+
     # Legacy combined entry signals (for backward compatibility)
     entry_fvg_bull = (
         entry_trigger_bull.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bull.astype(bool)
         & mss_fvg_bull.astype(bool)
+        & htf_poi_bull.astype(bool)
     ).astype(int)
     entry_fvg_bear = (
         entry_trigger_bear.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bear.astype(bool)
         & mss_fvg_bear.astype(bool)
+        & htf_poi_bear.astype(bool)
     ).astype(int)
 
     df = df.copy()
@@ -1085,6 +1101,8 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     df["filter_htf_bias_bear"] = htf_bias_bear
     df["filter_structure_bull"] = mss_fvg_bull
     df["filter_structure_bear"] = mss_fvg_bear
+    df["filter_htf_poi_bull"] = htf_poi_bull
+    df["filter_htf_poi_bear"] = htf_poi_bear
     # Final filtered entry signals
     df["entry_fvg_bull"] = entry_fvg_bull
     df["entry_fvg_bear"] = entry_fvg_bear
