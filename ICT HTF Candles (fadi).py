@@ -49,6 +49,7 @@ class Imbalance:
     bottom: float
     left_idx: float
     right_idx: float
+    color: Optional[str] = None
 
 
 @dataclass
@@ -57,6 +58,9 @@ class TraceLevel:
     price: float
     start_x: float
     end_x: float
+    color: Optional[str] = None
+    style: Optional[str] = None
+    size: Optional[int] = None
     label: Optional["LabelInfo"] = None
 
 
@@ -73,6 +77,18 @@ class Settings:
     use_custom_daily: bool = False
     custom_daily: str = "Midnight"  # "Midnight", "8:30", "9:30"
     trace_show: bool = False
+    trace_o_color: str = "gray"
+    trace_o_style: str = "····"
+    trace_o_size: int = 1
+    trace_c_color: str = "gray"
+    trace_c_style: str = "····"
+    trace_c_size: int = 1
+    trace_h_color: str = "gray"
+    trace_h_style: str = "····"
+    trace_h_size: int = 1
+    trace_l_color: str = "gray"
+    trace_l_style: str = "····"
+    trace_l_size: int = 1
     trace_anchor: str = "First Timeframe"  # "First Timeframe" or "Last Timeframe"
     offset: int = 10
     buffer: int = 1
@@ -83,8 +99,26 @@ class Settings:
     label_position: str = "Both"  # "Both", "Top", "Bottom"
     label_alignment: str = "Align"  # "Align", "Follow Candles"
     htf_label_show: bool = True
+    htf_label_color: str = "black"
+    htf_label_size: str = "large"
     htf_timer_show: bool = True
+    htf_timer_color: str = "black"
+    htf_timer_size: str = "normal"
     label_show: bool = False
+    label_color: str = "black"
+    label_size: str = "small"
+    bull_body: str = "green"
+    bull_border: str = "black"
+    bull_wick: str = "black"
+    bear_body: str = "red"
+    bear_border: str = "black"
+    bear_wick: str = "black"
+    fvg_show: bool = True
+    fvg_color: str = "gray"
+    vi_show: bool = True
+    vi_color: str = "red"
+    dow_color: str = "black"
+    dow_size: str = "small"
 
 
 @dataclass
@@ -111,6 +145,10 @@ class LabelInfo:
     x: float
     y: float
     text: str
+    color: Optional[str] = None
+    text_color: Optional[str] = None
+    size: Optional[str] = None
+    style: Optional[str] = None
 
 
 def _parse_tf_seconds(tf: str) -> int:
@@ -213,9 +251,24 @@ def _update_candle(candle: Candle, row: pd.Series, idx: int) -> None:
     candle.c_idx = idx
 
 
-def _remaining_time_text(ts: pd.Timestamp, tf: str, custom_daily: Optional[str]) -> str:
+def _remaining_time_text(
+    ts: pd.Timestamp,
+    tf: str,
+    custom_daily: Optional[str],
+    realtime: bool,
+    now_ts: Optional[pd.Timestamp],
+) -> str:
+    if not realtime:
+        return "n/a"
+    if now_ts is None:
+        now_ts = pd.Timestamp.now(tz=NY_TZ)
+    else:
+        if now_ts.tzinfo is None:
+            now_ts = now_ts.tz_localize("UTC").tz_convert(NY_TZ)
+        else:
+            now_ts = now_ts.tz_convert(NY_TZ)
     if tf in {"1D", "1W", "1M"}:
-        bucket = _floor_time(ts, tf, custom_daily)
+        bucket = _floor_time(now_ts, tf, custom_daily)
         if tf == "1W":
             next_bucket = (bucket.to_period("W") + 1).start_time
         elif tf == "1M":
@@ -224,9 +277,9 @@ def _remaining_time_text(ts: pd.Timestamp, tf: str, custom_daily: Optional[str])
             next_bucket = bucket + pd.Timedelta(days=1)
     else:
         seconds = _parse_tf_seconds(tf)
-        bucket = _floor_time(ts, tf, custom_daily)
+        bucket = _floor_time(now_ts, tf, custom_daily)
         next_bucket = bucket + pd.Timedelta(seconds=seconds)
-    remaining = max(0, int((next_bucket - ts).total_seconds()))
+    remaining = max(0, int((next_bucket - now_ts).total_seconds()))
     days = remaining // 86400
     hours = (remaining - days * 86400) // 3600
     minutes = (remaining - days * 86400 - hours * 3600) // 60
@@ -270,6 +323,8 @@ def _reorder_positions(
     buffer: int,
     bar_index: int,
     daily_name: bool,
+    dow_color: str,
+    dow_size: str,
 ) -> None:
     size = len(candles)
     if size == 0:
@@ -286,7 +341,14 @@ def _reorder_positions(
         candle.dow_x = float(wick_x)
         candle.dow_y = candle.h
         if daily_name:
-            candle.dow_label = LabelInfo(x=float(wick_x), y=candle.h, text=candle.dow)
+            candle.dow_label = LabelInfo(
+                x=float(wick_x),
+                y=candle.h,
+                text=candle.dow,
+                text_color=dow_color,
+                size=dow_size,
+                style="label_down",
+            )
         else:
             candle.dow_label = None
 
@@ -296,52 +358,109 @@ def _build_trace_levels(
     last_bar_index: int,
     max_bars_back: int,
     label_show: bool,
+    settings: Settings,
 ) -> List[TraceLevel]:
     body_left = candle.body_left if candle.body_left is not None else float(candle.o_idx)
     body_right = candle.body_right if candle.body_right is not None else float(candle.c_idx)
     wick_x = candle.wick_x if candle.wick_x is not None else float(candle.h_idx)
     traces: List[TraceLevel] = []
     if last_bar_index - candle.o_idx < max_bars_back:
-        label = LabelInfo(x=body_right, y=candle.o, text=str(candle.o)) if label_show else None
+        label = (
+            LabelInfo(
+                x=body_right,
+                y=candle.o,
+                text=str(candle.o),
+                text_color=settings.label_color,
+                size=settings.label_size,
+                style="label_left",
+            )
+            if label_show
+            else None
+        )
         traces.append(
             TraceLevel(
                 kind="open",
                 price=candle.o,
                 start_x=float(candle.o_idx),
                 end_x=body_left,
+                color=settings.trace_o_color,
+                style=settings.trace_o_style,
+                size=settings.trace_o_size,
                 label=label,
             )
         )
     if last_bar_index - candle.c_idx < max_bars_back:
-        label = LabelInfo(x=body_right, y=candle.c, text=str(candle.c)) if label_show else None
+        label = (
+            LabelInfo(
+                x=body_right,
+                y=candle.c,
+                text=str(candle.c),
+                text_color=settings.label_color,
+                size=settings.label_size,
+                style="label_left",
+            )
+            if label_show
+            else None
+        )
         traces.append(
             TraceLevel(
                 kind="close",
                 price=candle.c,
                 start_x=float(candle.c_idx),
                 end_x=body_left,
+                color=settings.trace_c_color,
+                style=settings.trace_c_style,
+                size=settings.trace_c_size,
                 label=label,
             )
         )
     if last_bar_index - candle.h_idx < max_bars_back:
-        label = LabelInfo(x=body_right, y=candle.h, text=str(candle.h)) if label_show else None
+        label = (
+            LabelInfo(
+                x=body_right,
+                y=candle.h,
+                text=str(candle.h),
+                text_color=settings.label_color,
+                size=settings.label_size,
+                style="label_left",
+            )
+            if label_show
+            else None
+        )
         traces.append(
             TraceLevel(
                 kind="high",
                 price=candle.h,
                 start_x=float(candle.h_idx),
                 end_x=wick_x,
+                color=settings.trace_h_color,
+                style=settings.trace_h_style,
+                size=settings.trace_h_size,
                 label=label,
             )
         )
     if last_bar_index - candle.l_idx < max_bars_back:
-        label = LabelInfo(x=body_right, y=candle.l, text=str(candle.l)) if label_show else None
+        label = (
+            LabelInfo(
+                x=body_right,
+                y=candle.l,
+                text=str(candle.l),
+                text_color=settings.label_color,
+                size=settings.label_size,
+                style="label_left",
+            )
+            if label_show
+            else None
+        )
         traces.append(
             TraceLevel(
                 kind="low",
                 price=candle.l,
                 start_x=float(candle.l_idx),
                 end_x=wick_x,
+                color=settings.trace_l_color,
+                style=settings.trace_l_style,
+                size=settings.trace_l_size,
                 label=label,
             )
         )
@@ -364,9 +483,9 @@ def _candle_set_low(candles: List[Candle], seed: float) -> float:
     return low
 
 
-def _find_imbalances(candles: List[Candle]) -> List[Imbalance]:
+def _find_imbalances(candles: List[Candle], settings: Settings) -> List[Imbalance]:
     imbalances: List[Imbalance] = []
-    if len(candles) > 3:
+    if len(candles) > 3 and settings.fvg_show:
         for i in range(0, len(candles) - 2):
             candle1 = candles[i]
             candle2 = candles[i + 2]
@@ -380,6 +499,7 @@ def _find_imbalances(candles: List[Candle]) -> List[Imbalance]:
                         bottom=candle2.h,
                         left_idx=candle2.body_left if candle2.body_left is not None else float(candle2.o_idx),
                         right_idx=candle1.body_right if candle1.body_right is not None else float(candle1.c_idx),
+                        color=settings.fvg_color,
                     )
                 )
             if candle1.h < candle2.l and max(candle1.o, candle1.c) < min(candle2.o, candle2.c):
@@ -390,10 +510,11 @@ def _find_imbalances(candles: List[Candle]) -> List[Imbalance]:
                         bottom=candle1.h,
                         left_idx=candle1.body_right if candle1.body_right is not None else float(candle1.o_idx),
                         right_idx=candle2.body_left if candle2.body_left is not None else float(candle2.c_idx),
+                        color=settings.fvg_color,
                     )
                 )
             _ = candle3
-    if len(candles) > 2:
+    if len(candles) > 2 and settings.vi_show:
         for i in range(0, len(candles) - 1):
             candle1 = candles[i]
             candle2 = candles[i + 1]
@@ -405,6 +526,7 @@ def _find_imbalances(candles: List[Candle]) -> List[Imbalance]:
                         bottom=max(candle2.o, candle2.c),
                         left_idx=candle2.body_left if candle2.body_left is not None else float(candle2.o_idx),
                         right_idx=candle1.body_right if candle1.body_right is not None else float(candle1.c_idx),
+                        color=settings.vi_color,
                     )
                 )
             if candle1.h > candle2.l and max(candle1.o, candle1.c) < min(candle2.o, candle2.c):
@@ -415,6 +537,7 @@ def _find_imbalances(candles: List[Candle]) -> List[Imbalance]:
                         bottom=max(candle1.o, candle1.c),
                         left_idx=candle1.body_right if candle1.body_right is not None else float(candle1.o_idx),
                         right_idx=candle2.body_left if candle2.body_left is not None else float(candle2.c_idx),
+                        color=settings.vi_color,
                     )
                 )
     return imbalances
@@ -425,6 +548,8 @@ def calculate_ict_htf_candles(
     settings: Optional[Settings] = None,
     htf_settings: Optional[Sequence[CandleSettings]] = None,
     base_timeframe_seconds: Optional[int] = None,
+    realtime: bool = False,
+    now_ts: Optional[pd.Timestamp] = None,
 ) -> HTFResult:
     """
     Calculate ICT HTF candle sets from LTF OHLC data.
@@ -434,6 +559,8 @@ def calculate_ict_htf_candles(
         settings: Optional Settings override.
         htf_settings: Optional list of CandleSettings (max 6).
         base_timeframe_seconds: Optional base timeframe in seconds; inferred if omitted.
+        realtime: Whether the final bar should mimic TradingView realtime mode.
+        now_ts: Optional timestamp to use for realtime remaining time calculation.
 
     Returns:
         HTFResult with candle sets, imbalances, and trace levels.
@@ -538,6 +665,8 @@ def calculate_ict_htf_candles(
             settings.buffer,
             last_bar_index,
             settings.daily_name,
+            settings.dow_color,
+            settings.dow_size,
         )
         candle_set.offset_x = float(offset)
 
@@ -555,11 +684,12 @@ def calculate_ict_htf_candles(
                 last_bar_index,
                 settings.max_bars_back,
                 settings.label_show,
+                settings,
             )
         else:
             candle_set.traces = []
 
-        candle_set.imbalances = _find_imbalances(candle_set.candles)
+        candle_set.imbalances = _find_imbalances(candle_set.candles, settings)
 
         size = len(candle_set.candles)
         offset += (
@@ -595,17 +725,56 @@ def calculate_ict_htf_candles(
                 last_ts,
                 candle_set.settings.htf,
                 settings.custom_daily if settings.use_custom_daily else None,
+                realtime,
+                now_ts,
             )
+            label_top_text = htf_text
+            label_bottom_text = htf_text
+            if settings.htf_timer_show:
+                label_top_text = f"{label_top_text}\n"
+                label_bottom_text = f"\n{label_bottom_text}"
+            if settings.daily_name:
+                label_top_text = f"{label_top_text}\n"
             if settings.htf_label_show:
                 if settings.label_position in {"Both", "Top"}:
-                    candle_set.label_top = LabelInfo(x=left, y=top, text=htf_text)
+                    candle_set.label_top = LabelInfo(
+                        x=left,
+                        y=top,
+                        text=label_top_text,
+                        text_color=settings.htf_label_color,
+                        size=settings.htf_label_size,
+                        style="label_down",
+                    )
                 if settings.label_position in {"Both", "Bottom"}:
-                    candle_set.label_bottom = LabelInfo(x=left, y=bottom, text=htf_text)
+                    candle_set.label_bottom = LabelInfo(
+                        x=left,
+                        y=bottom,
+                        text=label_bottom_text,
+                        text_color=settings.htf_label_color,
+                        size=settings.htf_label_size,
+                        style="label_up",
+                    )
             if settings.htf_timer_show:
                 timer_value = f"({timer_text})"
+                if settings.daily_name:
+                    timer_value = f"{timer_value}\n"
                 if settings.label_position in {"Both", "Top"}:
-                    candle_set.timer_top = LabelInfo(x=left, y=top, text=timer_value)
+                    candle_set.timer_top = LabelInfo(
+                        x=left,
+                        y=top,
+                        text=timer_value,
+                        text_color=settings.htf_timer_color,
+                        size=settings.htf_timer_size,
+                        style="label_down",
+                    )
                 if settings.label_position in {"Both", "Bottom"}:
-                    candle_set.timer_bottom = LabelInfo(x=left, y=bottom, text=timer_value)
+                    candle_set.timer_bottom = LabelInfo(
+                        x=left,
+                        y=bottom,
+                        text=timer_value,
+                        text_color=settings.htf_timer_color,
+                        size=settings.htf_timer_size,
+                        style="label_up",
+                    )
 
     return HTFResult(candle_sets=candle_sets, base_timeframe_seconds=base_timeframe_seconds)
