@@ -1,0 +1,421 @@
+
+================================================================================
+Starting Portfolio Value: $10000.00
+================================================================================
+
+2025-11-26T13:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-11-26T14:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-26T14:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-26T15:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-26T16:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-26T19:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-27T01:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-11-27T01:35:00: SHORT entry=4153.42 stop=4168.08 target=4124.10 size=13.6426 signal=ICT_Setup01
+2025-11-27T04:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-27T13:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-28T00:05:00: CLOSED LOSS | Entry: 2025-11-27T01:35:00 @ 4153.42 | Exit: 2025-11-28T00:05:00 @ 4168.08 | P&L: $-200.00 (-1.96%)
+2025-11-28T01:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-28T05:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-28T06:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-28T07:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-28T18:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-01T00:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-01T06:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-01T09:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-01T10:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-01T11:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-01T20:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-01T20:05:00: SHORT entry=4235.75 stop=4243.77 target=4219.71 size=24.9377 signal=ICT_Setup01
+2025-12-02T01:00:00: CLOSED WIN | Entry: 2025-12-01T20:05:00 @ 4235.75 | Exit: 2025-12-02T01:00:00 @ 4219.71 | P&L: $400.00 (4.17%)
+2025-12-02T02:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-02T02:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-02T02:10:00: SHORT entry=4219.09 stop=4229.74 target=4197.79 size=18.7793 signal=ICT_Setup01
+2025-12-02T02:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-02T06:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-02T06:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-02T09:25:00: CLOSED WIN | Entry: 2025-12-02T02:10:00 @ 4219.09 | Exit: 2025-12-02T09:25:00 @ 4197.79 | P&L: $400.00 (4.17%)
+2025-12-02T10:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-02T12:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-02T16:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-02T16:20:00: SHORT entry=4176.44 stop=4230.55 target=4068.22 size=3.6962 signal=ICT_Setup01
+2025-12-02T16:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-02T21:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-03T01:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T02:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T06:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T12:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-03T12:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-03T13:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-03T13:50:00: CLOSED LOSS | Entry: 2025-12-02T16:20:00 @ 4176.44 | Exit: 2025-12-03T13:50:00 @ 4230.55 | P&L: $-200.00 (-1.96%)
+2025-12-03T16:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T17:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T18:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-03T18:30:00: SHORT entry=4205.69 stop=4215.41 target=4186.25 size=20.5761 signal=ICT_Setup01
+2025-12-03T20:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T23:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T23:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T00:35:00: CLOSED LOSS | Entry: 2025-12-03T18:30:00 @ 4205.69 | Exit: 2025-12-04T00:35:00 @ 4215.41 | P&L: $-200.00 (-1.96%)
+2025-12-04T02:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-04T02:15:00: SHORT entry=4203.36 stop=4216.81 target=4176.46 size=14.8699 signal=ICT_Setup01
+2025-12-04T02:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-04T02:30:00: SHORT entry=4202.28 stop=4216.81 target=4173.22 size=13.7646 signal=ICT_Setup01
+2025-12-04T05:50:00: CLOSED WIN | Entry: 2025-12-04T02:15:00 @ 4203.36 | Exit: 2025-12-04T05:50:00 @ 4176.46 | P&L: $400.00 (4.17%)
+2025-12-04T06:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T06:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T10:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-04T10:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-04T11:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T14:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-04T16:15:00: CLOSED LOSS | Entry: 2025-12-04T02:30:00 @ 4202.28 | Exit: 2025-12-04T16:15:00 @ 4216.81 | P&L: $-200.00 (-1.96%)
+2025-12-05T02:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T02:30:00: SHORT entry=4198.43 stop=4204.65 target=4185.99 size=32.1543 signal=ICT_Setup01
+2025-12-05T02:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T02:35:00: SHORT entry=4198.74 stop=4204.65 target=4186.92 size=33.8409 signal=ICT_Setup01
+2025-12-05T02:45:00: CLOSED LOSS | Entry: 2025-12-05T02:30:00 @ 4198.43 | Exit: 2025-12-05T02:45:00 @ 4204.65 | P&L: $-200.00 (-1.96%)
+2025-12-05T02:45:00: CLOSED LOSS | Entry: 2025-12-05T02:35:00 @ 4198.74 | Exit: 2025-12-05T02:45:00 @ 4204.65 | P&L: $-200.00 (-1.96%)
+2025-12-05T06:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T09:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T10:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T10:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T12:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T14:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T17:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-08T05:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-08T05:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-08T06:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-08T15:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-08T15:25:00: SHORT entry=4191.89 stop=4211.56 target=4152.55 size=10.1678 signal=ICT_Setup01
+2025-12-08T15:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-08T15:30:00: SHORT entry=4189.29 stop=4211.56 target=4144.75 size=8.9807 signal=ICT_Setup01
+2025-12-08T19:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-08T19:35:00: SHORT entry=4187.57 stop=4192.04 target=4178.63 size=44.7427 signal=ICT_Setup01
+2025-12-08T20:30:00: CLOSED LOSS | Entry: 2025-12-08T19:35:00 @ 4187.57 | Exit: 2025-12-08T20:30:00 @ 4192.04 | P&L: $-200.00 (-1.96%)
+2025-12-08T21:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-08T23:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-09T06:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-09T07:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-09T09:20:00: CLOSED LOSS | Entry: 2025-12-08T15:25:00 @ 4191.89 | Exit: 2025-12-09T09:20:00 @ 4211.56 | P&L: $-200.00 (-1.96%)
+2025-12-09T09:20:00: CLOSED LOSS | Entry: 2025-12-08T15:30:00 @ 4189.29 | Exit: 2025-12-09T09:20:00 @ 4211.56 | P&L: $-200.00 (-1.96%)
+2025-12-09T13:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-09T20:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-10T06:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-10T07:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-10T07:05:00: SHORT entry=4207.50 stop=4214.34 target=4193.82 size=29.2398 signal=ICT_Setup01
+2025-12-10T09:45:00: CLOSED WIN | Entry: 2025-12-10T07:05:00 @ 4207.50 | Exit: 2025-12-10T09:45:00 @ 4193.82 | P&L: $400.00 (4.17%)
+2025-12-10T17:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-11T02:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-11T03:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-11T14:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-11T20:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-12T01:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-12T07:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-12T10:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-12T15:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-15T12:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T13:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-15T18:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T19:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-15T23:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T23:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-16T02:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T02:05:00: SHORT entry=4310.31 stop=4317.81 target=4295.31 size=26.6667 signal=ICT_Setup01
+2025-12-16T02:50:00: CLOSED WIN | Entry: 2025-12-16T02:05:00 @ 4310.31 | Exit: 2025-12-16T02:50:00 @ 4295.31 | P&L: $400.00 (4.17%)
+2025-12-16T07:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-16T14:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T14:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T15:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T17:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-17T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T08:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T10:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-17T14:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T14:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T16:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T01:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-18T02:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-18T11:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-18T16:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T17:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-18T19:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-18T20:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T23:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-19T01:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T01:55:00: SHORT entry=4323.30 stop=4336.92 target=4296.06 size=14.6843 signal=ICT_Setup01
+2025-12-19T03:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T03:30:00: SHORT entry=4321.44 stop=4328.03 target=4308.26 size=30.3490 signal=ICT_Setup01
+2025-12-19T05:50:00: CLOSED LOSS | Entry: 2025-12-19T03:30:00 @ 4321.44 | Exit: 2025-12-19T05:50:00 @ 4328.03 | P&L: $-200.00 (-1.96%)
+2025-12-19T08:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T08:20:00: SHORT entry=4323.53 stop=4329.70 target=4311.19 size=32.4149 signal=ICT_Setup01
+2025-12-19T08:40:00: CLOSED LOSS | Entry: 2025-12-19T08:20:00 @ 4323.53 | Exit: 2025-12-19T08:40:00 @ 4329.70 | P&L: $-200.00 (-1.96%)
+2025-12-19T09:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T11:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-19T12:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-19T13:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-19T14:35:00: CLOSED LOSS | Entry: 2025-12-19T01:55:00 @ 4323.30 | Exit: 2025-12-19T14:35:00 @ 4336.92 | P&L: $-200.00 (-1.96%)
+2025-12-22T04:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-22T05:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T11:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-22T20:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-22T21:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T21:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T23:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-23T02:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-23T10:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-23T17:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-23T18:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T01:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T03:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-24T07:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T07:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T07:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T10:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-26T00:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-26T03:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-26T06:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-26T07:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-26T07:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-26T12:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-26T12:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-26T16:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-29T00:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T00:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T04:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T06:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T07:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-29T07:20:00: SHORT entry=4475.97 stop=4519.36 target=4389.19 size=4.6094 signal=ICT_Setup01
+2025-12-29T07:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T08:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T09:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-29T09:15:00: SHORT entry=4465.92 stop=4488.62 target=4420.52 size=8.8106 signal=ICT_Setup01
+2025-12-29T09:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T10:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T10:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T11:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T12:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T12:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T13:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T13:45:00: CLOSED WIN | Entry: 2025-12-29T09:15:00 @ 4465.92 | Exit: 2025-12-29T13:45:00 @ 4420.52 | P&L: $400.00 (4.17%)
+2025-12-29T14:05:00: CLOSED WIN | Entry: 2025-12-29T07:20:00 @ 4475.97 | Exit: 2025-12-29T14:05:00 @ 4389.19 | P&L: $400.00 (4.17%)
+2025-12-30T02:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-30T05:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-30T05:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-30T09:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-30T12:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-30T17:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-30T18:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-30T19:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-30T19:45:00: SHORT entry=4349.91 stop=4378.74 target=4292.25 size=6.9372 signal=ICT_Setup01
+2025-12-31T05:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T05:50:00: CLOSED WIN | Entry: 2025-12-30T19:45:00 @ 4349.91 | Exit: 2025-12-31T05:50:00 @ 4292.25 | P&L: $400.00 (4.17%)
+2025-12-31T06:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T06:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T08:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-31T11:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T11:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-02T03:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-02T05:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T06:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T09:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-02T11:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T11:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T17:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T18:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-05T00:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-05T02:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-05T09:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-05T14:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-05T15:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-05T17:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-05T20:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-05T23:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-06T06:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T06:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T13:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T13:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T15:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-07T02:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-07T06:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-07T15:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-07T20:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-08T14:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-08T15:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-08T17:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-09T07:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-09T07:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-09T11:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-09T11:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-09T18:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-09T18:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-09T19:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-12T05:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-12T10:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-12T15:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-12T19:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-12T19:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-12T20:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-13T01:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-13T08:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-13T18:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-13T19:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-13T20:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-14T08:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-14T10:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-14T12:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-14T13:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-15T01:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-15T08:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-15T08:20:00: SHORT entry=4603.32 stop=4613.63 target=4582.70 size=19.3986 signal=ICT_Setup01
+2026-01-15T10:05:00: CLOSED LOSS | Entry: 2026-01-15T08:20:00 @ 4603.32 | Exit: 2026-01-15T10:05:00 @ 4613.63 | P&L: $-200.00 (-1.96%)
+2026-01-15T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-15T14:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-15T20:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-15T21:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-16T06:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-16T07:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-16T12:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-16T17:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-19T04:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-19T05:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-19T08:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-19T08:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-19T19:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-20T03:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-20T05:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-20T08:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-20T08:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-20T13:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-20T16:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-21T02:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-21T07:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T09:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-21T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-21T13:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-21T15:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T15:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T16:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T20:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T20:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T21:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-22T02:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-22T09:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-23T00:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T00:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T02:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T05:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T11:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T11:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T14:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T14:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-23T18:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T18:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T20:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-26T01:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T01:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T02:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T03:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T05:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-26T06:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-26T09:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T00:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T01:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T03:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T05:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T10:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T12:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T13:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T14:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-27T14:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-27T23:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T02:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-28T02:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-28T11:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T11:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T14:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T19:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-28T20:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-29T12:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T13:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T14:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T18:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T21:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T23:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-30T00:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-30T02:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T02:35:00: SHORT entry=5211.72 stop=5450.96 target=4733.24 size=0.8360 signal=SB_FVG_Retrace
+2026-01-30T04:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-30T07:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T07:45:00: SHORT entry=5151.21 stop=5186.33 target=5080.97 size=5.6948 signal=ICT_Setup01
+2026-01-30T08:30:00: CLOSED WIN | Entry: 2026-01-30T07:45:00 @ 5151.21 | Exit: 2026-01-30T08:30:00 @ 5080.97 | P&L: $400.00 (4.17%)
+2026-01-30T08:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T08:50:00: SHORT entry=5110.54 stop=5184.97 target=4961.68 size=2.6871 signal=ICT_Setup01
+2026-01-30T09:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T09:00:00: SHORT entry=5115.04 stop=5184.97 target=4975.18 size=2.8600 signal=ICT_Setup01
+2026-01-30T09:45:00: CLOSED WIN | Entry: 2026-01-30T08:50:00 @ 5110.54 | Exit: 2026-01-30T09:45:00 @ 4961.68 | P&L: $400.00 (4.17%)
+2026-01-30T09:45:00: CLOSED WIN | Entry: 2026-01-30T09:00:00 @ 5115.04 | Exit: 2026-01-30T09:45:00 @ 4975.18 | P&L: $400.00 (4.17%)
+2026-01-30T14:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-30T18:20:00: CLOSED WIN | Entry: 2026-01-30T02:35:00 @ 5211.72 | Exit: 2026-01-30T18:20:00 @ 4733.24 | P&L: $400.00 (4.17%)
+2026-01-30T19:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+
+====================================================================================================
+DETAILED TRADE REPORT - Silver Bullet XAUUSD Backtest
+====================================================================================================
+
+                                       TRADE-BY-TRADE DETAILS                                       
+----------------------------------------------------------------------------------------------------
+#    Dir    Entry Time           Entry      Stop       Target     P&L          Result Signal                   
+----------------------------------------------------------------------------------------------------
+1    SHORT  2025-11-27T01:35:00  4153.42    4168.08    4124.10    $-200.00     LOSS   ICT_Setup01              
+2    SHORT  2025-12-01T20:05:00  4235.75    4243.77    4219.71    $400.00      WIN    ICT_Setup01              
+3    SHORT  2025-12-02T02:10:00  4219.09    4229.74    4197.79    $400.00      WIN    ICT_Setup01              
+4    SHORT  2025-12-02T16:20:00  4176.44    4230.55    4068.22    $-200.00     LOSS   ICT_Setup01              
+5    SHORT  2025-12-03T18:30:00  4205.69    4215.41    4186.25    $-200.00     LOSS   ICT_Setup01              
+6    SHORT  2025-12-04T02:15:00  4203.36    4216.81    4176.46    $400.00      WIN    ICT_Setup01              
+7    SHORT  2025-12-04T02:30:00  4202.28    4216.81    4173.22    $-200.00     LOSS   ICT_Setup01              
+8    SHORT  2025-12-05T02:30:00  4198.43    4204.65    4185.99    $-200.00     LOSS   ICT_Setup01              
+9    SHORT  2025-12-05T02:35:00  4198.74    4204.65    4186.92    $-200.00     LOSS   ICT_Setup01              
+12   SHORT  2025-12-08T19:35:00  4187.57    4192.04    4178.63    $-200.00     LOSS   ICT_Setup01              
+10   SHORT  2025-12-08T15:25:00  4191.89    4211.56    4152.55    $-200.00     LOSS   ICT_Setup01              
+11   SHORT  2025-12-08T15:30:00  4189.29    4211.56    4144.75    $-200.00     LOSS   ICT_Setup01              
+13   SHORT  2025-12-10T07:05:00  4207.50    4214.34    4193.82    $400.00      WIN    ICT_Setup01              
+14   SHORT  2025-12-16T02:05:00  4310.31    4317.81    4295.31    $400.00      WIN    ICT_Setup01              
+16   SHORT  2025-12-19T03:30:00  4321.44    4328.03    4308.26    $-200.00     LOSS   ICT_Setup01              
+17   SHORT  2025-12-19T08:20:00  4323.53    4329.70    4311.19    $-200.00     LOSS   ICT_Setup01              
+15   SHORT  2025-12-19T01:55:00  4323.30    4336.92    4296.06    $-200.00     LOSS   ICT_Setup01              
+19   SHORT  2025-12-29T09:15:00  4465.92    4488.62    4420.52    $400.00      WIN    ICT_Setup01              
+18   SHORT  2025-12-29T07:20:00  4475.97    4519.36    4389.19    $400.00      WIN    ICT_Setup01              
+20   SHORT  2025-12-30T19:45:00  4349.91    4378.74    4292.25    $400.00      WIN    ICT_Setup01              
+21   SHORT  2026-01-15T08:20:00  4603.32    4613.63    4582.70    $-200.00     LOSS   ICT_Setup01              
+23   SHORT  2026-01-30T07:45:00  5151.21    5186.33    5080.97    $400.00      WIN    ICT_Setup01              
+24   SHORT  2026-01-30T08:50:00  5110.54    5184.97    4961.68    $400.00      WIN    ICT_Setup01              
+25   SHORT  2026-01-30T09:00:00  5115.04    5184.97    4975.18    $400.00      WIN    ICT_Setup01              
+22   SHORT  2026-01-30T02:35:00  5211.72    5450.96    4733.24    $400.00      WIN    SB_FVG_Retrace           
+----------------------------------------------------------------------------------------------------
+
+                                         SUMMARY STATISTICS                                         
+----------------------------------------------------------------------------------------------------
+Total Trades:     25
+Wins:             12
+Losses:           13
+Win Rate:         48.00%
+Total P&L:        $2200.00
+Average P&L:      $88.00
+
+                                     PERFORMANCE BY SIGNAL TYPE                                     
+----------------------------------------------------------------------------------------------------
+Signal Type                    Wins       Losses     Win Rate     Total P&L      
+----------------------------------------------------------------------------------------------------
+ICT_Setup01                    11         13         45.83       % $1800.00       
+SB_FVG_Retrace                 1          0          100.00      % $400.00        
+====================================================================================================
+
+================================================================================
+Final Portfolio Value: $10000.00
+Closed Trades: 0 | Wins: 0 | Losses: 0
+================================================================================
