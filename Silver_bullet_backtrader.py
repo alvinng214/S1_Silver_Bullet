@@ -5,17 +5,15 @@ Steps:
 1) Load OHLC data from CSV and set a datetime index.
 2) Compute Smart Money Zones MTF trends (4H/1D) with pandas.
 3) Attach Smart Money trend columns to the base dataframe.
-4) Identify HTF Points of Interest (POI) using MirPapa HTF FVG/OB Threeple and ICT HTF Candles FVGs.
-5) Identify external liquidity targets (profit targets) via SMC + inducements.
-6) Mark session highs/lows and daily 50% levels for Step 4 preparation.
-7) Detect liquidity sweeps using session levels, inducements, and HTF sweeps.
-8) Confirm MSS/CHOCH via market structure + CISD sweep signals.
-9) Identify FVGs formed during MSS displacement (Silver Bullet/SMZ/BPR).
-10) Trigger entry signals at FVG zones (Silver Bullet/TradingFinder/Fib OTE).
-11) Build stop-loss placement levels from sweep/session liquidity.
-12) Identify target levels from liquidity, sweeps, and Monday range.
-13) Feed data into Backtrader and resample to 4H/1D.
-14) Run HTFBiasStrategy to log consolidated HTF bias and POI counts.
+4) Identify external liquidity targets (profit targets) via SMC + inducements.
+5) Detect liquidity sweeps using inducements and HTF sweeps.
+6) Confirm MSS/CHOCH via market structure + CISD sweep signals.
+7) Identify FVGs formed during MSS displacement (Silver Bullet/SMZ).
+8) Trigger entry signals at FVG zones (Silver Bullet/TradingFinder/Fib OTE).
+9) Build stop-loss placement levels from sweep/liquidity targets.
+10) Identify target levels from liquidity targets and HTF sweeps.
+11) Feed data into Backtrader and resample to 4H/1D.
+12) Run HTFBiasStrategy to log consolidated HTF bias.
 """
 
 from __future__ import annotations
@@ -37,49 +35,12 @@ from ICT_Silver_Bullet_with_signals import detect_silver_bullet_signals
 from Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_ import calculate_smc_tradingfinder
 from Smart_Money_Zones__FVG___OB____MTF_Trend_Panel import calculate_smart_money_zones
 
-THREEPLE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "MirPapa-ICT-HTF- FVG OB Threeple (EN).py",
-)
-threeple_module = SourceFileLoader("mirpapa_threeple", THREEPLE_PATH).load_module()
-calculate_fvg_ob_threeple = threeple_module.calculate_fvg_ob_threeple
-
-ICT_HTF_CANDLES_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "ICT HTF Candles (fadi).py",
-)
-ict_htf_candles_module = SourceFileLoader("ict_htf_candles", ICT_HTF_CANDLES_PATH).load_module()
-calculate_ict_htf_candles = ict_htf_candles_module.calculate_ict_htf_candles
-CandleSettings = ict_htf_candles_module.CandleSettings
-Settings = ict_htf_candles_module.Settings
-
 LIQUIDITY_PATH = os.path.join(
     os.path.dirname(__file__),
     "Liquidity & inducements.py",
 )
 liquidity_module = SourceFileLoader("liquidity_inducements", LIQUIDITY_PATH).load_module()
 calculate_liquidity_inducements = liquidity_module.calculate_liquidity_inducements
-
-ASIALONDON_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "SW's AsiaLondon HL's.py",
-)
-asialondon_module = SourceFileLoader("asialondon_levels", ASIALONDON_PATH).load_module()
-calculate_asia_london_levels = asialondon_module.calculate_asia_london_levels
-
-ICT_CUSTOM_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "ICT_Customizable_50__Line___DailyAsiaLondonNew_York_HighLow___True_Day_Open.py",
-)
-ict_custom_module = SourceFileLoader("ict_custom_50_line", ICT_CUSTOM_PATH).load_module()
-calculate_custom_50_line = ict_custom_module.calculate_indicator
-
-IGHODALO_CRT_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "Ighodalo_Gold_-_CRT__Candles_are_ranges_theory_.py",
-)
-ighodalo_module = SourceFileLoader("ighodalo_crt", IGHODALO_CRT_PATH).load_module()
-calculate_ighodalo_crt = ighodalo_module.calculate_ighodalo_crt
 
 LUXALGO_SB_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -116,25 +77,11 @@ FIB_OTE_PATH = os.path.join(
 fib_ote_module = SourceFileLoader("fib_ote_zeierman", FIB_OTE_PATH).load_module()
 calculate_fibonacci_ote = fib_ote_module.calculate_fibonacci_ote
 
-ICT_BPR_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "ICT Balanced Price Range [TradingFinder] BPR FVG + IFVG.py",
-)
-ict_bpr_module = SourceFileLoader("ict_bpr_fvg", ICT_BPR_PATH).load_module()
-calculate_bpr_indicator = ict_bpr_module.calculate_bpr_indicator
-
 ICT_SESSIONS_PATH = os.path.join(
     os.path.dirname(__file__),
     "ICT Sessions_One Setup for Life [MK].py",
 )
 ict_sessions_module = SourceFileLoader("ict_sessions_mk", ICT_SESSIONS_PATH).load_module()
-
-MONDAY_RANGE_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "Monday_Range__Lines_.py",
-)
-monday_range_module = SourceFileLoader("monday_range_lines", MONDAY_RANGE_PATH).load_module()
-calculate_monday_range = monday_range_module.calculate_monday_range
 
 MARKET_STRUCTURE_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -216,31 +163,10 @@ class PandasDataBias(bt.feeds.PandasData):
         "smz_trend_1d",
         "bb_pivot_high",
         "bb_pivot_low",
-        "poi_high_bull",
-        "poi_high_bear",
-        "poi_mid_bull",
-        "poi_mid_bear",
-        "htf_fvg_1h_bull",
-        "htf_fvg_1h_bear",
-        "htf_fvg_4h_bull",
-        "htf_fvg_4h_bear",
         "smc_liquidity_high",
         "smc_liquidity_low",
         "liq_buyside_target",
         "liq_sellside_target",
-        "asia_session_high",
-        "asia_session_low",
-        "london_session_high",
-        "london_session_low",
-        "ny_session_high",
-        "ny_session_low",
-        "pd_high",
-        "pd_low",
-        "pd_mid",
-        "daily_mid_50",
-        "true_day_open",
-        "crt_buy_signal",
-        "crt_sell_signal",
         "sb_sig_ln",
         "sb_sig_am",
         "sb_sig_pm",
@@ -265,8 +191,6 @@ class PandasDataBias(bt.feeds.PandasData):
         "fvg_sb_bear",
         "fvg_smz_bull",
         "fvg_smz_bear",
-        "fvg_bpr_bull",
-        "fvg_bpr_bear",
         "mss_fvg_bull",
         "mss_fvg_bear",
         "entry_sb_bull",
@@ -303,31 +227,10 @@ class PandasDataBias(bt.feeds.PandasData):
         ("smz_trend_1d", "smz_trend_1d"),
         ("bb_pivot_high", "bb_pivot_high"),
         ("bb_pivot_low", "bb_pivot_low"),
-        ("poi_high_bull", "poi_high_bull"),
-        ("poi_high_bear", "poi_high_bear"),
-        ("poi_mid_bull", "poi_mid_bull"),
-        ("poi_mid_bear", "poi_mid_bear"),
-        ("htf_fvg_1h_bull", "htf_fvg_1h_bull"),
-        ("htf_fvg_1h_bear", "htf_fvg_1h_bear"),
-        ("htf_fvg_4h_bull", "htf_fvg_4h_bull"),
-        ("htf_fvg_4h_bear", "htf_fvg_4h_bear"),
         ("smc_liquidity_high", "smc_liquidity_high"),
         ("smc_liquidity_low", "smc_liquidity_low"),
         ("liq_buyside_target", "liq_buyside_target"),
         ("liq_sellside_target", "liq_sellside_target"),
-        ("asia_session_high", "asia_session_high"),
-        ("asia_session_low", "asia_session_low"),
-        ("london_session_high", "london_session_high"),
-        ("london_session_low", "london_session_low"),
-        ("ny_session_high", "ny_session_high"),
-        ("ny_session_low", "ny_session_low"),
-        ("pd_high", "pd_high"),
-        ("pd_low", "pd_low"),
-        ("pd_mid", "pd_mid"),
-        ("daily_mid_50", "daily_mid_50"),
-        ("true_day_open", "true_day_open"),
-        ("crt_buy_signal", "crt_buy_signal"),
-        ("crt_sell_signal", "crt_sell_signal"),
         ("sb_sig_ln", "sb_sig_ln"),
         ("sb_sig_am", "sb_sig_am"),
         ("sb_sig_pm", "sb_sig_pm"),
@@ -352,8 +255,6 @@ class PandasDataBias(bt.feeds.PandasData):
         ("fvg_sb_bear", "fvg_sb_bear"),
         ("fvg_smz_bull", "fvg_smz_bull"),
         ("fvg_smz_bear", "fvg_smz_bear"),
-        ("fvg_bpr_bull", "fvg_bpr_bull"),
-        ("fvg_bpr_bear", "fvg_bpr_bear"),
         ("mss_fvg_bull", "mss_fvg_bull"),
         ("mss_fvg_bear", "mss_fvg_bear"),
         ("entry_sb_bull", "entry_sb_bull"),
@@ -442,127 +343,6 @@ def add_bigbeluga_pivots(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def infer_chart_timeframe_minutes(df: pd.DataFrame) -> int:
-    if len(df.index) < 2:
-        return 0
-    deltas = df.index.to_series().diff().dropna()
-    return int(deltas.median().total_seconds() // 60)
-
-
-def format_chart_timeframe(minutes: int) -> str:
-    if minutes <= 0:
-        return "5"
-    if minutes % (60 * 24) == 0:
-        days = minutes // (60 * 24)
-        return f"{days}D"
-    if minutes % 60 == 0:
-        hours = minutes // 60
-        return f"{hours * 60}"
-    return str(minutes)
-
-
-def add_htf_poi(df: pd.DataFrame) -> pd.DataFrame:
-    chart_minutes = infer_chart_timeframe_minutes(df)
-    chart_tf = format_chart_timeframe(chart_minutes)
-    outputs = calculate_fvg_ob_threeple(
-        df,
-        chart_timeframe=chart_tf,
-        mid_tf_override="60",
-        high_tf_override="240",
-    )
-
-    length = len(df)
-    high_bull = pd.Series(0, index=df.index, dtype=int)
-    high_bear = pd.Series(0, index=df.index, dtype=int)
-    mid_bull = pd.Series(0, index=df.index, dtype=int)
-    mid_bear = pd.Series(0, index=df.index, dtype=int)
-
-    def apply_boxes(series: pd.Series, boxes, is_bull: bool) -> None:
-        for box in boxes:
-            if not box.is_active or box.is_bullish != is_bull:
-                continue
-            if box.name != "sob":
-                continue
-            start = max(0, box.start_index)
-            end = min(length - 1, box.end_index)
-            if start <= end:
-                series.iloc[start : end + 1] += 1
-
-    def apply_htf_fvg(series: pd.Series, candles, is_bull: bool) -> None:
-        if len(candles) <= 3:
-            return
-        for i in range(0, len(candles) - 2):
-            candle1 = candles[i]
-            candle2 = candles[i + 2]
-            if (
-                candle1.l > candle2.h
-                and min(candle1.o, candle1.c) > max(candle2.o, candle2.c)
-                and is_bull
-            ):
-                start_idx = min(candle2.o_idx, candle1.c_idx)
-                end_idx = max(candle2.o_idx, candle1.c_idx)
-            elif (
-                candle1.h < candle2.l
-                and max(candle1.o, candle1.c) < min(candle2.o, candle2.c)
-                and not is_bull
-            ):
-                start_idx = min(candle1.o_idx, candle2.c_idx)
-                end_idx = max(candle1.o_idx, candle2.c_idx)
-            else:
-                continue
-
-            start_idx = max(int(start_idx), 0)
-            end_idx = min(int(end_idx), length - 1)
-            if start_idx <= end_idx:
-                series.iloc[start_idx : end_idx + 1] = 1
-
-    apply_boxes(high_bull, outputs.high_tf_boxes, True)
-    apply_boxes(high_bear, outputs.high_tf_boxes, False)
-    apply_boxes(mid_bull, outputs.mid_tf_boxes, True)
-    apply_boxes(mid_bear, outputs.mid_tf_boxes, False)
-
-    htf_settings = [
-        CandleSettings(show=True, htf="1H", max_display=200),
-        CandleSettings(show=True, htf="4H", max_display=200),
-    ]
-    htf_results = calculate_ict_htf_candles(
-        df,
-        settings=Settings(
-            max_sets=2,
-            trace_show=False,
-            label_show=False,
-            htf_label_show=False,
-            htf_timer_show=False,
-        ),
-        htf_settings=htf_settings,
-    )
-    htf_1h_bull = pd.Series(0, index=df.index, dtype=int)
-    htf_1h_bear = pd.Series(0, index=df.index, dtype=int)
-    htf_4h_bull = pd.Series(0, index=df.index, dtype=int)
-    htf_4h_bear = pd.Series(0, index=df.index, dtype=int)
-
-    candles_1h = htf_results.candle_sets.get("1H")
-    if candles_1h:
-        apply_htf_fvg(htf_1h_bull, candles_1h.candles, True)
-        apply_htf_fvg(htf_1h_bear, candles_1h.candles, False)
-
-    candles_4h = htf_results.candle_sets.get("4H")
-    if candles_4h:
-        apply_htf_fvg(htf_4h_bull, candles_4h.candles, True)
-        apply_htf_fvg(htf_4h_bear, candles_4h.candles, False)
-
-    df = df.copy()
-    df["poi_high_bull"] = high_bull
-    df["poi_high_bear"] = high_bear
-    df["poi_mid_bull"] = mid_bull
-    df["poi_mid_bear"] = mid_bear
-    df["htf_fvg_1h_bull"] = htf_1h_bull
-    df["htf_fvg_1h_bear"] = htf_1h_bear
-    df["htf_fvg_4h_bull"] = htf_4h_bull
-    df["htf_fvg_4h_bear"] = htf_4h_bear
-    return df
-
-
 def add_external_liquidity_targets(df: pd.DataFrame) -> pd.DataFrame:
     smc = _cache.get_smc_tradingfinder(df)
     liquidity_levels = smc["liquidity"]
@@ -578,93 +358,6 @@ def add_external_liquidity_targets(df: pd.DataFrame) -> pd.DataFrame:
     df["smc_liquidity_low"] = smc_liquidity_low
     df["liq_buyside_target"] = buyside_targets
     df["liq_sellside_target"] = sellside_targets
-    return df
-
-
-def _to_utc_naive(ts: pd.Timestamp) -> pd.Timestamp:
-    if ts.tzinfo is None:
-        return ts
-    return ts.tz_convert("UTC").tz_localize(None)
-
-
-def add_session_levels(
-    df: pd.DataFrame,
-    enable_custom_50: bool = True,
-    enable_crt: bool = True,
-) -> pd.DataFrame:
-    aligned = df.copy()
-    aligned.index = pd.to_datetime(aligned.index)
-    if aligned.index.tz is None:
-        aligned.index = aligned.index.tz_localize("UTC")
-
-    asia_levels = calculate_asia_london_levels(aligned, timezone_offset=3)
-
-    def build_session_series(session: str, is_high: bool) -> pd.Series:
-        values = pd.Series(0.0, index=df.index, dtype=float)
-        for line in asia_levels.session_lines:
-            if line.session != session or line.is_high != is_high:
-                continue
-            start = _to_utc_naive(line.start_time)
-            end = _to_utc_naive(line.end_time)
-            mask = (values.index >= start) & (values.index <= end)
-            values.loc[mask] = float(line.price)
-        return values
-
-    asia_high = build_session_series("Asia", True)
-    asia_low = build_session_series("Asia", False)
-    london_high = build_session_series("London", True)
-    london_low = build_session_series("London", False)
-    ny_high = build_session_series("NY", True)
-    ny_low = build_session_series("NY", False)
-
-    pd_high = float(asia_levels.pd_levels.high or 0.0)
-    pd_low = float(asia_levels.pd_levels.low or 0.0)
-    pd_mid = float(asia_levels.pd_levels.mid or 0.0)
-
-    daily_mid_50 = pd.Series(0.0, index=df.index, dtype=float)
-    true_day_open = pd.Series(0, index=df.index, dtype=int)
-    if enable_custom_50:
-        custom_config = ict_custom_module.IndicatorConfig(
-            show_checklist=False,
-            show_labels=False,
-            enable_watermark=False,
-        )
-        custom_levels = calculate_custom_50_line(aligned, config=custom_config)
-        daily_states = custom_levels["daily_states"]
-        for idx, state in enumerate(daily_states):
-            if idx >= len(daily_mid_50):
-                break
-            daily_mid_50.iloc[idx] = float(state.mid_level)
-
-        true_day_open_states = custom_levels["true_day_open_states"]
-        for idx in true_day_open_states.keys():
-            if 0 <= idx < len(true_day_open):
-                true_day_open.iloc[idx] = 1
-
-    crt_buy = pd.Series(0, index=df.index, dtype=int)
-    crt_sell = pd.Series(0, index=df.index, dtype=int)
-    if enable_crt:
-        crt = calculate_ighodalo_crt(df)
-        for signal in crt["signals"]:
-            if signal.direction == "buy" and 0 <= signal.index < len(crt_buy):
-                crt_buy.iloc[signal.index] = 1
-            if signal.direction == "sell" and 0 <= signal.index < len(crt_sell):
-                crt_sell.iloc[signal.index] = 1
-
-    df = df.copy()
-    df["asia_session_high"] = asia_high
-    df["asia_session_low"] = asia_low
-    df["london_session_high"] = london_high
-    df["london_session_low"] = london_low
-    df["ny_session_high"] = ny_high
-    df["ny_session_low"] = ny_low
-    df["pd_high"] = pd_high
-    df["pd_low"] = pd_low
-    df["pd_mid"] = pd_mid
-    df["daily_mid_50"] = daily_mid_50
-    df["true_day_open"] = true_day_open
-    df["crt_buy_signal"] = crt_buy
-    df["crt_sell_signal"] = crt_sell
     return df
 
 
@@ -761,14 +454,6 @@ def _bool_series_from_list(values: list[bool], index: pd.Index) -> pd.Series:
     return series
 
 
-def _series_from_indices(indices: list[int], index: pd.Index) -> pd.Series:
-    series = pd.Series(0, index=index, dtype=int)
-    for idx in indices:
-        if 0 <= idx < len(series):
-            series.iloc[idx] = 1
-    return series
-
-
 def _smz_fvg_series(zones: list, index: pd.Index, bullish: bool) -> pd.Series:
     series = pd.Series(0, index=index, dtype=int)
     for zone in zones:
@@ -786,26 +471,6 @@ def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
     htf_4h_bull, htf_4h_bear = _build_sweep_series(sweeps.get("4H", []), df.index)
     htf_1d_bull, htf_1d_bear = _build_sweep_series(sweeps.get("1D", []), df.index)
 
-    session_highs = (
-        df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
-        .replace(0, pd.NA)
-        .max(axis=1, skipna=True)
-        .fillna(0.0)
-    )
-    session_lows = (
-        df[["asia_session_low", "london_session_low", "ny_session_low", "pd_low"]]
-        .replace(0, pd.NA)
-        .min(axis=1, skipna=True)
-        .fillna(0.0)
-    )
-
-    buyside_session_sweep = (
-        (session_highs > 0) & (df["high"] > session_highs) & (df["close"] < session_highs)
-    )
-    sellside_session_sweep = (
-        (session_lows > 0) & (df["low"] < session_lows) & (df["close"] > session_lows)
-    )
-
     buyside_target_sweep = (
         (df["liq_buyside_target"] > 0)
         & (df["high"] > df["liq_buyside_target"])
@@ -818,14 +483,12 @@ def add_liquidity_sweeps(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     liquidity_sweep_bull = (
-        buyside_session_sweep
-        | buyside_target_sweep
+        buyside_target_sweep
         | (htf_4h_bull.astype(bool))
         | (htf_1d_bull.astype(bool))
     )
     liquidity_sweep_bear = (
-        sellside_session_sweep
-        | sellside_target_sweep
+        sellside_target_sweep
         | (htf_4h_bear.astype(bool))
         | (htf_1d_bear.astype(bool))
     )
@@ -924,21 +587,11 @@ def add_mss_fvg_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFr
     smz_fvg_bull = _smz_fvg_series(smz["bull_fvg"], df.index, True)
     smz_fvg_bear = _smz_fvg_series(smz["bear_fvg"], df.index, False)
 
-    bpr = calculate_bpr_indicator(df)
-    bpr_fvg_bull = _series_from_indices(
-        [zone.index for zone in bpr["fvgs"] if zone.direction == "bullish"],
-        df.index,
-    )
-    bpr_fvg_bear = _series_from_indices(
-        [zone.index for zone in bpr["fvgs"] if zone.direction == "bearish"],
-        df.index,
-    )
-
     mss_bull = df.get("mss_bull", pd.Series(0, index=df.index)).astype(bool)
     mss_bear = df.get("mss_bear", pd.Series(0, index=df.index)).astype(bool)
 
-    fvg_bull_sources = sb_fvg_bull.astype(bool) | smz_fvg_bull.astype(bool) | bpr_fvg_bull.astype(bool)
-    fvg_bear_sources = sb_fvg_bear.astype(bool) | smz_fvg_bear.astype(bool) | bpr_fvg_bear.astype(bool)
+    fvg_bull_sources = sb_fvg_bull.astype(bool) | smz_fvg_bull.astype(bool)
+    fvg_bear_sources = sb_fvg_bear.astype(bool) | smz_fvg_bear.astype(bool)
 
     lux_cols = ["sb_lux_ln", "sb_lux_am", "sb_lux_pm"]
     lux_available = [col for col in lux_cols if col in df.columns]
@@ -955,8 +608,6 @@ def add_mss_fvg_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFr
     df["fvg_sb_bear"] = sb_fvg_bear
     df["fvg_smz_bull"] = smz_fvg_bull
     df["fvg_smz_bear"] = smz_fvg_bear
-    df["fvg_bpr_bull"] = bpr_fvg_bull
-    df["fvg_bpr_bear"] = bpr_fvg_bear
     df["mss_fvg_bull"] = mss_fvg_bull.astype(int)
     df["mss_fvg_bear"] = mss_fvg_bear.astype(int)
     return df
@@ -1116,25 +767,11 @@ def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
     htf1d_bull_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, True)
     htf1d_bear_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, False)
 
-    session_highs = (
-        df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
-        .replace(0, pd.NA)
-        .max(axis=1, skipna=True)
-        .fillna(0.0)
-    )
-    session_lows = (
-        df[["asia_session_low", "london_session_low", "ny_session_low", "pd_low"]]
-        .replace(0, pd.NA)
-        .min(axis=1, skipna=True)
-        .fillna(0.0)
-    )
-
     sellside_liq = df.get("liq_sellside_target", pd.Series(0.0, index=df.index))
     buyside_liq = df.get("liq_buyside_target", pd.Series(0.0, index=df.index))
 
     bull_stop_candidates = pd.concat(
         [
-            session_lows.replace(0, pd.NA),
             sellside_liq.replace(0, pd.NA),
             htf_bear_prices.replace(0, pd.NA),
             htf1d_bear_prices.replace(0, pd.NA),
@@ -1143,7 +780,6 @@ def add_stop_loss_levels(df: pd.DataFrame) -> pd.DataFrame:
     ).min(axis=1, skipna=True)
     bear_stop_candidates = pd.concat(
         [
-            session_highs.replace(0, pd.NA),
             buyside_liq.replace(0, pd.NA),
             htf_bull_prices.replace(0, pd.NA),
             htf1d_bull_prices.replace(0, pd.NA),
@@ -1175,50 +811,22 @@ def add_target_levels(df: pd.DataFrame) -> pd.DataFrame:
     htf1d_bull_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, True)
     htf1d_bear_prices = _build_sweep_price_series(sweeps.get("1D", []), df.index, False)
 
-    session_highs = (
-        df[["asia_session_high", "london_session_high", "ny_session_high", "pd_high"]]
-        .replace(0, pd.NA)
-        .max(axis=1, skipna=True)
-        .fillna(0.0)
-    )
-    session_lows = (
-        df[["asia_session_low", "london_session_low", "ny_session_low", "pd_low"]]
-        .replace(0, pd.NA)
-        .min(axis=1, skipna=True)
-        .fillna(0.0)
-    )
-
-    monday_range = calculate_monday_range(
-        df,
-        chart_timeframe=format_chart_timeframe(infer_chart_timeframe_minutes(df)),
-    )
-    monday_high = pd.Series(0.0, index=df.index, dtype=float)
-    monday_low = pd.Series(0.0, index=df.index, dtype=float)
-    for monday in monday_range.mondays.values():
-        mask = (df.index >= monday.wk_start) & (df.index <= monday.wk_end)
-        monday_high.loc[mask] = float(monday.high)
-        monday_low.loc[mask] = float(monday.low)
-
     buyside_liq = df.get("liq_buyside_target", pd.Series(0.0, index=df.index))
     sellside_liq = df.get("liq_sellside_target", pd.Series(0.0, index=df.index))
 
     target_bull = pd.concat(
         [
-            session_highs.replace(0, pd.NA),
             buyside_liq.replace(0, pd.NA),
             htf_bull_prices.replace(0, pd.NA),
             htf1d_bull_prices.replace(0, pd.NA),
-            monday_high.replace(0, pd.NA),
         ],
         axis=1,
     ).max(axis=1, skipna=True)
     target_bear = pd.concat(
         [
-            session_lows.replace(0, pd.NA),
             sellside_liq.replace(0, pd.NA),
             htf_bear_prices.replace(0, pd.NA),
             htf1d_bear_prices.replace(0, pd.NA),
-            monday_low.replace(0, pd.NA),
         ],
         axis=1,
     ).min(axis=1, skipna=True)
@@ -1255,35 +863,18 @@ def run_backtest(
     _cache.clear()
 
     max_rows = _env_int("SB_MAX_ROWS")
-    enable_custom_50 = not _env_bool("SB_DISABLE_CUSTOM_50", default=False)
-    enable_crt = not _env_bool("SB_DISABLE_CRT", default=False)
     debug_signals = _env_bool("SB_DEBUG_SIGNALS", default=False)
 
     # Fast mode skips non-essential indicators for quicker backtesting
     if fast_mode or _env_bool("SB_FAST_MODE", default=False):
-        enable_custom_50 = False
-        enable_crt = False
+        pass
 
     data_df = add_smart_money_trends(load_data(csv_file, max_rows=max_rows))
 
     # Create HK-aligned DataFrame once for all functions that need it
     hk_aligned = _align_index_to_hk_as_ny(data_df)
 
-    # Skip HTF POI in fast mode (not used for trade entries)
-    if not fast_mode:
-        data_df = add_htf_poi(data_df)
-    else:
-        # Add placeholder columns for HTF POI
-        for col in ["poi_high_bull", "poi_high_bear", "poi_mid_bull", "poi_mid_bear",
-                    "htf_fvg_1h_bull", "htf_fvg_1h_bear", "htf_fvg_4h_bull", "htf_fvg_4h_bear"]:
-            data_df[col] = 0
-
     data_df = add_external_liquidity_targets(data_df)
-    data_df = add_session_levels(
-        data_df,
-        enable_custom_50=enable_custom_50,
-        enable_crt=enable_crt,
-    )
     data_df = add_killzone_windows(data_df, hk_aligned)
     data_df = add_liquidity_sweeps(data_df)
     data_df = add_mss_choch_signals(data_df)
