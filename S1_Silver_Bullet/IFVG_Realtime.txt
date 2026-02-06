@@ -1,0 +1,135 @@
+//@version=6
+//Gold Only Original logic （IFVG With EMA filter) Japan
+indicator("IFVG Signals Realtime (No Wait)", shorttitle="IFVG Realtime", overlay=true, max_bars_back=500)
+
+// --- Settings ---
+float PipSizeManual = input.float(1.0, "Pip Size Multiplier", tooltip="1.0 = Standard. Increase if signals are too many.")
+float TickSize = syminfo.mintick * PipSizeManual
+
+int IFVG_GapBars = input.int(15, "FVG Search Lookback (Bars)")
+float MinFVG_Pips = input.float(0.0, "Min FVG Size (Pips/Points)", tooltip="0.0 to disable size filter")
+float FVG_EpsPoints = input.float(0.0, "FVG Epsilon (Price Units)")
+
+bool ShowZones = input.bool(true, "Show IFVG Zones")
+color ZoneColorBuy = input.color(color.rgb(6, 38, 37, 40))
+color ZoneColorSell = input.color(color.rgb(62, 0, 62, 40))
+
+int MA_Period = input.int(21, "MA Period")
+string MA_Kind = input.string("EMA", "MA Type", options=["SMA", "EMA"])
+
+// --- MA Calculation ---
+// リアルタイムのcloseで計算されるため、価格と共にMAも動き、条件判定もリアルタイムに行われます
+float maVal = na
+if MA_Kind == "SMA"
+    maVal := ta.sma(close, MA_Period)
+else
+    maVal := ta.ema(close, MA_Period)
+
+// --- FVG Detection Function ---
+detect_fvg(int idx, float eps_val) =>
+    if idx + 2 >= bar_index
+        0
+    else
+        float h2 = high[idx + 2]
+        float l2 = low[idx + 2]
+        float lt = low[idx]
+        float ht = high[idx]
+        if lt > h2 - eps_val
+            1 // Bull Gap
+        else if ht < l2 + eps_val
+            -1 // Bear Gap
+        else
+            0
+
+// --- Main Logic ---
+var int signal_dir = 0
+signal_dir := 0 // 各ティックでリセット（条件を満たさなくなれば0に戻りサイン消滅）
+
+float calc_eps = FVG_EpsPoints
+float min_size_val = MinFVG_Pips * (syminfo.mintick * 10)
+
+for i = 1 to IFVG_GapBars
+    int fvgType = detect_fvg(i, calc_eps)
+
+    // === 売りシグナル判定 (Bull FVGの下抜け) ===
+    if fvgType == 1
+        float gapLow  = high[i + 2]  // Gapの下限（ここを現在の価格が割れば即反応）
+        float gapHigh = low[i]       
+        
+        if (gapHigh - gapLow) >= min_size_val
+            // 過去の足ですでにブレイク済みかチェック（ここは確定足のみを見る）
+            bool already_broken = false
+            if i > 1
+                for k = i - 1 to 1
+                    if close[k] < gapLow
+                        already_broken := true
+                        break
+            
+            if not already_broken
+                // 【ここが重要】現在の価格(close)がGap下限を下回っているか？
+                // 確定を待たず、価格が動いて条件を満たした瞬間にtrueになります
+                if close < gapLow
+                    // MAフィルターも現在の価格・MA値で判定
+                    bool maCondition = false
+                    if not na(maVal) and not na(maVal[1])
+                        maCondition := (maVal < maVal[1]) and (close < maVal)
+                    
+                    if maCondition
+                        signal_dir := -1
+                        if ShowZones
+                            // リアルタイムバーでボックスを描画。条件が外れれば次のティックで再描画されず消える
+                            box.new(
+                                 left = bar_index[i + 2], 
+                                 top = gapHigh, 
+                                 right = bar_index, 
+                                 bottom = gapLow, 
+                                 border_color = ZoneColorSell, 
+                                 bgcolor = ZoneColorSell, 
+                                 xloc = xloc.bar_index
+                                 )
+                        break 
+
+    // === 買いシグナル判定 (Bear FVGの上抜け) ===
+    if fvgType == -1
+        float gapLow2  = high[i]     
+        float gapHigh2 = low[i + 2]  // Gapの上限（ここを現在の価格が超えれば即反応）
+        
+        if (gapHigh2 - gapLow2) >= min_size_val
+            bool already_broken2 = false
+            if i > 1
+                for k = i - 1 to 1
+                    if close[k] > gapHigh2
+                        already_broken2 := true
+                        break
+            
+            if not already_broken2
+                // 現在の価格(close)がGap上限を上回っているか？
+                if close > gapHigh2
+                    bool maCondition2 = false
+                    if not na(maVal) and not na(maVal[1])
+                        maCondition2 := (maVal > maVal[1]) and (close > maVal)
+                    
+                    if maCondition2
+                        signal_dir := 1
+                        if ShowZones
+                            box.new(
+                                 left = bar_index[i + 2], 
+                                 top = gapHigh2, 
+                                 right = bar_index, 
+                                 bottom = gapLow2, 
+                                 border_color = ZoneColorBuy, 
+                                 bgcolor = ZoneColorBuy, 
+                                 xloc = xloc.bar_index
+                                 )
+                        break
+
+// --- Plotting ---
+// リアルタイムで条件を満たしている間だけ表示されます
+plotchar(signal_dir == 1, title = "IFVG Buy Signal", char = "▲", location = location.belowbar, color = color.teal, size = size.tiny)
+plotchar(signal_dir == -1, title = "IFVG Sell Signal", char = "▼", location = location.abovebar, color = color.maroon, size = size.tiny)
+
+// --- Alerts ---
+// 重要: アラート作成時は「バーにつき1回(Once per bar)」などを選んでください。「終値ごと」を選ぶと確定待ちになります。
+alertcondition(signal_dir == 1, title = "IFVG Buy Alert", message = "IFVG Buy Signal (Realtime)")
+alertcondition(signal_dir == -1, title = "IFVG Sell Alert", message = "IFVG Sell Signal (Realtime)")
+alertcondition(signal_dir != 0, title = "IFVG Buy/Sell Alert", message = "IFVG Signal Triggered")
