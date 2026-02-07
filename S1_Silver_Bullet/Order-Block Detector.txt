@@ -1,0 +1,197 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © veegee82
+
+//@version=5
+indicator("Order-Block Detector", max_boxes_count = 500, max_lines_count = 500, overlay=true)
+ 
+tf = input.timeframe(defval = '', title = 'Time-Frame Order-Block')
+linewidth_close = input.int(title="Line width Liquidated", defval=1, minval=1, maxval=4, group = 'Display')
+transparency = input.int(title="Transparency", defval=80, minval=1, maxval=100, group = 'Display')
+color_buy = input.color(defval = color.green, title = 'Color Bull', group = 'Display')
+color_sell = input.color(defval = color.red, title = 'Color Bear', group = 'Display')
+color_fvg_buy = input.color(defval = color.blue, title = 'Color FVG Bull', group = 'Display')
+color_fvg_sell = input.color(defval = color.orange, title = 'Color FVG Bear', group = 'Display')
+
+show_ob = input.bool(title='Show Order-Blocks', defval= true, group = 'Display')
+show_fvg = input.bool(title='Show Fair-Value-Gaps', defval= true, group = 'Display')
+show_signals_ob = input.bool(title='Show Signals Order-Block', defval= true, group = 'Display')
+show_signals_fvg = input.bool(title='Show Signals FVG', defval= true, group = 'Display')
+
+
+min_dist = input.int(title="Min dist", defval=1, minval=1, group = 'Signals')
+min_dist_fvg = input.int(title="Min dist FVG", defval=1, minval=1, group = 'Signals')
+use_ha = input.bool(title='Use Heikin-Ashi', defval=false, group = 'Signals')
+
+type OB
+    float max
+    float min
+    bool  isbull
+    int   t = time
+    int   idx = bar_index
+
+type FVG
+    float max
+    float min
+    bool  isbull
+    int   t = time
+    int   idx = bar_index
+
+type Signals
+    float candle_open
+    float candle_high
+    float candle_low 
+    float candle_close
+    float point 
+    bool  isbull
+    bool  entry = false
+    int   idx = bar_index
+    int   t = time
+
+detect() =>
+
+    var new_ob = OB.new(na, na, na)
+
+    candle_dir = close > open ? 1 : -1
+    candle_dir_prev = close[1] > open[1] ? 1 : -1
+    detected = false
+
+    if candle_dir == 1 and candle_dir_prev == -1 and high > high[1]
+        new_ob := OB.new(max = high[1], min=low[1], isbull=true) 
+        detected := true
+
+    if candle_dir == -1 and candle_dir_prev == 1 and low < low[1]
+        new_ob := OB.new(max = high[1], min = low[1],  isbull=false) 
+        detected := true
+    if not show_ob
+        detected := false
+    [new_ob, detected, open, high, low, close]
+
+detect_fvg() =>
+
+    var new_fvg = FVG.new(na, na, na)
+
+    candle_dir = close > open ? 1 : -1
+    candle_dir_prev = close[1] > open[1] ? 1 : -1
+    detected = false
+
+    if low > high[2]
+        new_fvg := FVG.new(max = low, min=high[2], isbull=true) 
+        detected := true
+
+    if low[2] > high
+        new_fvg := FVG.new(max = low[2], min=high, isbull=false) 
+        detected := true
+
+    if not show_fvg
+        detected := false
+    [new_fvg, detected, open, high, low, close]
+
+[new_ob, detected, s_open, s_high, s_low, s_close] = request.security(syminfo.tickerid, tf, detect())
+
+[new_fvg, fvg_detected, fvg_open, fvg_high, fvg_low, fvg_close] = request.security(syminfo.tickerid, tf, detect_fvg())
+
+[ha_open, ha_high, ha_low, ha_close] = request.security(ticker.heikinashi(syminfo.tickerid), tf, [open, high, low, close])
+
+var float max_bull_fvg = na, var float min_bull_fvg = na, var bull_count = 0, var bull_mitigated = 0
+var float max_bear_fvg = na, var float min_bear_fvg = na, var bear_count = 0, var bear_mitigated = 0
+
+n = bar_index
+var t = 0
+var t_fvg = 0
+var ob_records = array.new<OB>(0)
+var ob_boxes = array.new<box>(0)
+var fvg_records = array.new<FVG>(0)
+var fvg_boxes = array.new<box>(0)
+
+color_ob = color.new(new_ob.isbull ? color_buy : color_sell,  transparency)
+color_fvg = color.new(new_fvg.isbull ? color_fvg_buy : color_fvg_sell,  transparency)
+color_lines = color.new(new_ob.isbull ? color_buy : color_sell, 0)
+color_lines_fvg = color.new(new_fvg.isbull ? color_fvg_buy : color_fvg_sell, 0)
+
+if fvg_detected and new_fvg.t != t_fvg
+    fvg_boxes.unshift(box.new(n-1, new_fvg.max, bar_index, new_fvg.min, border_color=color_fvg, bgcolor = color_fvg, extend = extend.right))
+    fvg_records.unshift(new_fvg)
+    t_fvg := new_fvg.t
+
+if detected and new_ob.t != t
+    ob_boxes.unshift(box.new(n-1, new_ob.max, bar_index, new_ob.min, border_color=color_ob, bgcolor = color_ob, extend = extend.right))
+    ob_records.unshift(new_ob)
+    t := new_ob.t
+
+var signal = Signals.new(0)
+var signal_fvg = Signals.new(0)
+
+MS_IN_1H = 1000 * 60 * 1
+if ob_records.size() > 0
+    for i = ob_records.size()-1 to 0
+        get = ob_records.get(i)
+
+        if get.isbull
+            if (s_low <= get.max or low <= get.max) and get.t < time// get.idx < bar_index 
+                line.new(get.t, get.max, time, get.max, xloc.bar_time, color =  color_buy, style = line.style_dashed, width=linewidth_close)
+                ob_box = ob_boxes.remove(i)
+                ob_box.delete()
+                ob_records.remove(i)
+                if get.idx + min_dist < bar_index 
+                    signal := Signals.new(open, high, low, close, get.max, true)
+
+        else
+            if (s_high >= get.min or high >= get.min ) and get.t < time //get.idx < bar_index
+                line.new(get.t, get.min, time, get.min, xloc.bar_time, color =  color_sell, style = line.style_dashed, width=linewidth_close)
+                ob_box = ob_boxes.remove(i)
+                ob_box.delete()
+                ob_records.remove(i)
+                if get.idx + min_dist < bar_index 
+                    signal := Signals.new(open, high, low, close, get.min, false)
+
+if fvg_records.size() > 0
+    for i = fvg_records.size()-1 to 0
+        get_fvg = fvg_records.get(i)
+
+        if get_fvg.isbull
+            if (fvg_low <= get_fvg.max or low <= get_fvg.max) and get_fvg.t < time// get.idx < bar_index 
+                line.new(get_fvg.t, get_fvg.max, time, get_fvg.max, xloc.bar_time, color =  color_fvg_buy, style = line.style_dashed, width=linewidth_close)
+                fvg_box = fvg_boxes.remove(i)
+                fvg_box.delete()
+                fvg_records.remove(i)
+                if get_fvg.idx + min_dist_fvg < bar_index 
+                    signal_fvg := Signals.new(open, high, low, close, get_fvg.max, true)
+        else
+            if (fvg_high >= get_fvg.min or high >= get_fvg.min) and get_fvg.t < time //get.idx < bar_index
+                line.new(get_fvg.t, get_fvg.min, time, get_fvg.min, xloc.bar_time, color =  color_fvg_sell, style = line.style_dashed, width=linewidth_close)
+                fvg_box = fvg_boxes.remove(i)
+                fvg_box.delete()
+                fvg_records.remove(i)
+                if get_fvg.idx + min_dist_fvg < bar_index 
+                    signal_fvg := Signals.new(open, high, low, close, get_fvg.min, false)
+
+candle_dir = close > open ? 1 : -1
+
+cond = 0
+cond_fvg = 0
+
+s_close := use_ha ? ha_close : fvg_close
+if s_close > signal.point and signal.isbull and candle_dir == 1 and not signal.entry
+    signal.entry := true
+    cond := 1
+
+if s_close < signal.point and not signal.isbull and candle_dir == -1 and not signal.entry
+    signal.entry := true
+    cond := -1
+
+fvg_close := use_ha ? ha_close : fvg_close
+
+if fvg_close > signal_fvg.point and signal_fvg.isbull and candle_dir == 1 and not signal_fvg.entry
+    signal_fvg.entry := true
+    cond_fvg := 1
+
+if fvg_close < signal_fvg.point and not signal_fvg.isbull and candle_dir == -1 and not signal_fvg.entry
+    signal_fvg.entry := true
+    cond_fvg := -1
+
+
+plotshape(cond == 1 ? 1 : 0, "B", shape.labelup, location.belowbar, text = 'Buy', textcolor = color.white, color = color_buy, size = size.tiny, display = show_signals_ob ? display.all : display.none)
+plotshape(cond == -1 ? -1 : 0, "S", shape.labeldown, location.abovebar, text = 'Sell', textcolor = color.white,color = color_sell, size = size.tiny, display = show_signals_ob ? display.all : display.none)
+
+plotshape(cond_fvg == 1 ? 1 : 0, "B", shape.labelup, location.belowbar, text = 'Buy', textcolor = color.white, color = color_fvg_buy, size = size.tiny, display = show_signals_fvg ? display.all : display.none)
+plotshape(cond_fvg == -1 ? -1 : 0, "S", shape.labeldown, location.abovebar, text = 'Sell', textcolor = color.white,color = color_fvg_sell, size = size.tiny, display = show_signals_fvg ? display.all : display.none)

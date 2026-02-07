@@ -1,0 +1,92 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © svmstellarvisionmedia
+
+//@version=6
+
+
+//@version=5
+indicator("ICT FVG Buy/Sell Signals", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ===============================
+// Inputs
+// ===============================
+lenSwing     = input.int(5, "Swing length (dealing range pivots)", minval=2)
+usePDFilter  = input.bool(true, "Only Buy in Discount / Sell in Premium")
+displATR     = input.float(0.6, "Min body size as ATR multiple (displacement)", minval=0.0, step=0.1)
+atrLen       = input.int(14, "ATR length")
+
+// ===============================
+// Helpers
+// ===============================
+atr = ta.atr(atrLen)
+body = math.abs(close - open)
+isBullDisp = body/atr >= displATR and close > open
+isBearDisp = body/atr >= displATR and close < open
+
+// Dealing range pivots
+ph = ta.pivothigh(high, lenSwing, lenSwing)
+pl = ta.pivotlow(low,  lenSwing, lenSwing)
+
+var float drHigh = na
+var float drLow  = na
+if not na(ph)
+    drHigh := ph
+if not na(pl)
+    drLow  := pl
+
+rangeReady = not na(drHigh) and not na(drLow)
+eq = rangeReady ? (drHigh + drLow) / 2.0 : na
+inPremium  = rangeReady and close > eq
+inDiscount = rangeReady and close < eq
+
+bgcolor(rangeReady ? (inPremium ? color.new(color.red, 92) : color.new(color.teal, 92)) : na)
+
+// ===============================
+// Fair Value Gaps (3-bar)
+// ===============================
+bullFVG = low > high[2]
+bearFVG = high < low[2]
+
+bullTop    = bullFVG ? low : na
+bullBottom = bullFVG ? high[2] : na
+bullCE     = bullFVG ? (bullTop + bullBottom) / 2.0 : na
+
+bearTop    = bearFVG ? low[2] : na
+bearBottom = bearFVG ? high : na
+bearCE     = bearFVG ? (bearTop + bearBottom) / 2.0 : na
+
+lastBullTop    = ta.valuewhen(bullFVG, bullTop, 0)
+lastBullBottom = ta.valuewhen(bullFVG, bullBottom, 0)
+lastBullCE     = ta.valuewhen(bullFVG, bullCE, 0)
+
+lastBearTop    = ta.valuewhen(bearFVG, bearTop, 0)
+lastBearBottom = ta.valuewhen(bearFVG, bearBottom, 0)
+lastBearCE     = ta.valuewhen(bearFVG, bearCE, 0)
+
+// ===============================
+// Entry Logic
+// ===============================
+inBullZone = not na(lastBullTop) and not na(lastBullBottom) and low <= lastBullTop and high >= lastBullBottom
+inBearZone = not na(lastBearTop) and not na(lastBearBottom) and high >= lastBearBottom and low <= lastBearTop
+
+longOkPD  = not usePDFilter or inDiscount
+shortOkPD = not usePDFilter or inPremium
+
+longSignal  = inBullZone and longOkPD and isBullDisp and close > nz(lastBullCE, close)
+shortSignal = inBearZone and shortOkPD and isBearDisp and close < nz(lastBearCE, close)
+
+// ===============================
+// Plot Signals
+// ===============================
+plotshape(longSignal,  title="Buy Signal",  style=shape.labelup,   location=location.belowbar, color=color.green, text="BUY", size=size.small, textcolor=color.white)
+plotshape(shortSignal, title="Sell Signal", style=shape.labeldown, location=location.abovebar, color=color.red,   text="SELL", size=size.small, textcolor=color.white)
+
+// Alerts
+alertcondition(longSignal,  title="ICT Buy",  message="ICT Buy Signal")
+alertcondition(shortSignal, title="ICT Sell", message="ICT Sell Signal")
+
+// Plot reference lines
+plot(eq, "Dealing Range CE", color=color.yellow, linewidth=2, style=plot.style_stepline)
+plot(lastBullCE, "Bullish FVG CE", color=color.teal, style=plot.style_circles)
+plot(lastBearCE, "Bearish FVG CE", color=color.red,  style=plot.style_circles)
+

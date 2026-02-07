@@ -1,0 +1,168 @@
+//@version=6
+indicator("XAUUSD 1H – FVG Buy/Sell Signals (No Boxes)", overlay=true, max_labels_count=200)
+
+// ===== Inputs =====
+groupTrend   = "Trend"
+emaFastLen   = input.int(50,  "EMA Fast", group=groupTrend)
+emaSlowLen   = input.int(200, "EMA Slow", group=groupTrend)
+useTrend     = input.bool(true, "Require trend (EMA50 vs EMA200)", group=groupTrend)
+
+groupFVG     = "FVG detection"
+minGapPts    = input.float(0.60, "Min FVG size (points)", step=0.05, group=groupFVG)
+expiryBars   = input.int(200, "Expire FVG after X bars", minval=1, group=groupFVG)
+
+groupEntry   = "Retest confirmation"
+retestDepth  = input.float(0.50, "Min retest depth (% of zone)", step=0.05, minval=0.05, maxval=1.0, group=groupEntry)
+closeBuffer  = input.float(0.20, "Close buffer beyond edge (pts)", step=0.05, group=groupEntry)
+minBodyATR   = input.float(0.6,  "Min candle body ≥ ATR×", step=0.1, group=groupEntry)
+deleteOnUse  = input.bool(true, "Delete zone after signal", group=groupEntry)
+
+groupStrength = "Strength / Volatility filters"
+adxLen    = input.int(14,  "ADX length", group=groupStrength)
+adxMin    = input.float(20, "Min ADX", step=0.5, group=groupStrength)
+atrLen    = input.int(14,  "ATR length", group=groupStrength)
+atrSmaLen = input.int(100, "ATR SMA length (for info)", group=groupStrength)
+
+groupViz   = "Visuals"
+showLabels = input.bool(false, "Show BUY/SELL labels", group=groupViz)
+
+// ===== Trend =====
+ema50  = ta.ema(close, emaFastLen)
+ema200 = ta.ema(close, emaSlowLen)
+upTrend   = ema50 > ema200 and close > ema200
+downTrend = ema50 < ema200 and close < ema200
+
+plot(ema50,  "EMA 50",  color=color.new(color.teal, 0))
+plot(ema200, "EMA 200", color=color.new(color.red , 0))
+
+// ===== ATR & ADX (manual Wilder method) =====
+atr = ta.atr(atrLen)
+atrSm = ta.sma(atr, atrSmaLen)
+
+upMove   = high - high[1]
+downMove = low[1] - low
+plusDM   = (upMove > 0 and upMove > downMove) ? upMove : 0.0
+minusDM  = (downMove > 0 and downMove > upMove) ? downMove : 0.0
+
+tr1 = high - low
+tr2 = math.abs(high - close[1])
+tr3 = math.abs(low - close[1])
+tr  = math.max(math.max(tr1, tr2), tr3)
+
+trR = ta.rma(tr, adxLen)
+pR  = ta.rma(plusDM,  adxLen)
+mR  = ta.rma(minusDM, adxLen)
+plusDI  = 100.0 * pR / math.max(trR, 1e-10)
+minusDI = 100.0 * mR / math.max(trR, 1e-10)
+dx  = 100.0 * math.abs(plusDI - minusDI) / math.max(plusDI + minusDI, 1e-10)
+adxVal = ta.rma(dx, adxLen)
+
+// ===== FVG detection (hidden logic) =====
+bullNow = low  > high[2] and (low - high[2]) >= minGapPts
+bearNow = high < low[2]  and (low[2] - high)  >= minGapPts
+
+bullTopNow = low
+bullBotNow = high[2]
+bearTopNow = low[2]
+bearBotNow = high
+
+// ===== Store zones internally only =====
+var string[] zType  = array.new_string()
+var float[]  zTop   = array.new_float()
+var float[]  zBot   = array.new_float()
+var int[]    zBorn  = array.new_int()
+var bool[]   zUsed  = array.new_bool()
+
+newZone(_top, _bot, _isBear) =>
+    array.push(zType, _isBear ? "bear" : "bull")
+    array.push(zTop,  _top)
+    array.push(zBot,  _bot)
+    array.push(zBorn, bar_index)
+    array.push(zUsed, false)
+
+if bullNow
+    newZone(bullTopNow, bullBotNow, false)
+if bearNow
+    newZone(bearTopNow, bearBotNow, true)
+
+// ===== Maintain / expire =====
+n = array.size(zType)
+if n > 0
+    for i = n-1 to 0
+        expired = bar_index - array.get(zBorn, i) > expiryBars
+        T = array.get(zTop, i)
+        B = array.get(zBot, i)
+        ty = array.get(zType, i)
+        invalid = (ty == "bull" and close <= B) or (ty == "bear" and close >= T)
+        if expired or invalid
+            array.remove(zType, i)
+            array.remove(zTop, i)
+            array.remove(zBot, i)
+            array.remove(zBorn, i)
+            array.remove(zUsed, i)
+
+// ===== Signals =====
+buySig = false
+sellSig = false
+pad = (high - low) * 0.25
+
+m = array.size(zType)
+if m > 0
+    for j = m-1 to 0
+        if array.get(zUsed, j)
+            continue
+        ty = array.get(zType, j)
+        T = array.get(zTop, j)
+        B = array.get(zBot, j)
+        zoneH = T - B
+        touched = high >= B and low <= T
+        if not touched
+            continue
+
+        needBull = T - zoneH * retestDepth
+        needBear = B + zoneH * retestDepth
+        depthOKBull = low <= needBull
+        depthOKBear = high >= needBear
+
+        body = math.abs(close - open)
+        strongBull = close > T + closeBuffer and close > open and body >= atr * minBodyATR and close > high[1]
+        strongBear = close < B - closeBuffer and close < open and body >= atr * minBodyATR and close < low[1]
+
+        trendOKBull = not useTrend or upTrend
+        trendOKBear = not useTrend or downTrend
+        strengthOK  = adxVal >= adxMin
+
+        if ty == "bull" and depthOKBull and strongBull and trendOKBull and strengthOK
+            buySig := true
+            array.set(zUsed, j, true)
+            if deleteOnUse
+                array.remove(zType, j)
+                array.remove(zTop, j)
+                array.remove(zBot, j)
+                array.remove(zBorn, j)
+                array.remove(zUsed, j)
+            break
+
+        if ty == "bear" and depthOKBear and strongBear and trendOKBear and strengthOK
+            sellSig := true
+            array.set(zUsed, j, true)
+            if deleteOnUse
+                array.remove(zType, j)
+                array.remove(zTop, j)
+                array.remove(zBot, j)
+                array.remove(zBorn, j)
+                array.remove(zUsed, j)
+            break
+
+// ===== Plot signals =====
+plotshape(buySig,  title="BUY",  style=shape.triangleup,   color=color.lime, location=location.belowbar, size=size.small, text="BUY")
+plotshape(sellSig, title="SELL", style=shape.triangledown, color=color.red,  location=location.abovebar, size=size.small, text="SELL")
+
+if showLabels and buySig
+    label.new(bar_index, low - pad,  "BUY",  style=label.style_label_down, color=color.new(color.lime, 0), textcolor=color.black)
+if showLabels and sellSig
+    label.new(bar_index, high + pad, "SELL", style=label.style_label_up,   color=color.new(color.red, 0),  textcolor=color.white)
+
+// ===== Alerts =====
+alertcondition(buySig,  title="BUY – FVG selective",  message="XAUUSD 1H: BUY – deep FVG retest + strong close, trend & ADX ok")
+alertcondition(sellSig, title="SELL – FVG selective", message="XAUUSD 1H: SELL – deep FVG retest + strong close, trend & ADX ok")

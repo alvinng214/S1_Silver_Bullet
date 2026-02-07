@@ -1,0 +1,218 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Uncle_the_shooter
+
+//@version=6
+indicator('FVG Zones with Signals', overlay = true, max_boxes_count = 500)
+
+// General Settings
+length = input.int(20, 'Candle Size Period', minval = 1, group = 'FVG Size Filter')
+fvgSizeMultiplier = input.float(1, 'FVG Size Multiplier', minval = 0.1, step = 0.1, group = 'FVG Size Filter')
+transpPct = input.int(80, 'Transparency (0 = opaque, 100 = invisible)', minval = 0, maxval = 100, group = 'Box Style')
+midLineTranspPct = input.int(50, 'Middle Line Transparency (0 = opaque, 100 = invisible)', minval = 0, maxval = 100, group = 'Box Style')
+
+// Box Colors and Styles
+bullBoxBorderColor = input.color(color.rgb(22, 193, 67), title = 'Bull Box Border Color', group = 'Bull Box Style')
+bullBoxBgColor = input.color(color.green, title = 'Bull Box Gradient Color', group = 'Bull Box Style')
+bullBoxBorderWidth = input.int(1, minval = 1, maxval = 5, title = 'Bull Box Border Width', group = 'Bull Box Style')
+bullBoxBorderStyle = input.string('Solid', title = 'Bull Box Border Style', options = ['Solid', 'Dashed', 'Dotted'], group = 'Bull Box Style')
+bearBoxBorderColor = input.color(color.rgb(229, 11, 11), title = 'Bear Box Border Color', group = 'Bear Box Style')
+bearBoxBgColor = input.color(color.red, title = 'Bear Box Gradient Color', group = 'Bear Box Style')
+bearBoxBorderWidth = input.int(1, minval = 1, maxval = 5, title = 'Bear Box Border Width', group = 'Bear Box Style')
+bearBoxBorderStyle = input.string('Solid', title = 'Bear Box Border Style', options = ['Solid', 'Dashed', 'Dotted'], group = 'Bear Box Style')
+
+// Signal Colors
+breakUpSignalColor = input.color(color.green, title = 'Break Up Signal Color', group = 'Signal Style')
+breakDownSignalColor = input.color(color.red, title = 'Break Down Signal Color', group = 'Signal Style')
+exitUpSignalColor = input.color(color.green, title = 'Exit Up Signal Color', group = 'Signal Style')
+exitDownSignalColor = input.color(color.red, title = 'Exit Down Signal Color', group = 'Signal Style')
+
+// Signal Settings
+signalType = input.string('Break', title = 'Signal Type', options = ['Break', 'Exit', 'Both'], group = 'Signal Settings')
+showBreakSignals = signalType == 'Break' or signalType == 'Both'
+showExitSignals = signalType == 'Exit' or signalType == 'Both'
+
+// Line Style Mapping
+getLineStyle(style) =>
+    style == 'Solid' ? line.style_solid : style == 'Dashed' ? line.style_dashed : line.style_dotted
+
+// Arrays to Store FVG Data
+var array<float> fvgTops = array.new_float(0)
+var array<float> fvgBots = array.new_float(0)
+var array<int> fvgBarIndices = array.new_int(0)
+var array<bool> isBull = array.new_bool(0)
+var array<bool> activeFvgs = array.new_bool(0)
+var array<box> boxes = array.new_box(0)
+var array<bool> insideFvg = array.new_bool(0)
+var array<line> midLines = array.new_line(0) // Array for 50% FVG lines
+
+// Calculate Average Candle Body Size
+avgBody = ta.sma(math.abs(close[1] - open[1]), length)
+
+// Initialize Historical FVGs
+var bool initialized = false
+if not initialized
+    for m = 2 to 500 by 1
+        historicalBullFVG = high[m + 2] < low[m]
+        if historicalBullFVG
+            historicalTop = math.max(low[m], high[m + 2])
+            historicalBot = math.min(low[m], high[m + 2])
+            historicalFvgSize = historicalTop - historicalBot
+            historicalAvgBody = ta.sma(math.abs(close[1] - open[1]), length)[m]
+            if historicalFvgSize >= historicalAvgBody * fvgSizeMultiplier
+                array.push(fvgTops, historicalTop)
+                array.push(fvgBots, historicalBot)
+                array.push(fvgBarIndices, bar_index - m)
+                array.push(isBull, true)
+                array.push(activeFvgs, true)
+                array.push(boxes, na)
+                array.push(insideFvg, false)
+                array.push(midLines, na) // Initialize line
+        historicalBearFVG = low[m + 2] > high[m]
+        if historicalBearFVG
+            historicalTop = math.max(low[m + 2], high[m])
+            historicalBot = math.min(low[m + 2], high[m])
+            historicalFvgSize = historicalTop - historicalBot
+            historicalAvgBody = ta.sma(math.abs(close[1] - open[1]), length)[m]
+            if historicalFvgSize >= historicalAvgBody * fvgSizeMultiplier
+                array.push(fvgTops, historicalTop)
+                array.push(fvgBots, historicalBot)
+                array.push(fvgBarIndices, bar_index - m)
+                array.push(isBull, false)
+                array.push(activeFvgs, true)
+                array.push(boxes, na)
+                array.push(insideFvg, false)
+                array.push(midLines, na) // Initialize line
+    initialized := true
+    initialized
+
+// FVG Conditions
+bullFVG = high[2] < low
+bearFVG = low[2] > high
+
+// Clear Inactive or Old FVGs
+if array.size(fvgTops) > 0
+    for i = array.size(fvgTops) - 1 to 0 by 1
+        if not array.get(activeFvgs, i) or bar_index - array.get(fvgBarIndices, i) > 500
+            if not na(array.get(boxes, i))
+                box.delete(array.get(boxes, i))
+            if not na(array.get(midLines, i)) // Remove line
+                line.delete(array.get(midLines, i))
+            array.remove(fvgTops, i)
+            array.remove(fvgBots, i)
+            array.remove(fvgBarIndices, i)
+            array.remove(isBull, i)
+            array.remove(activeFvgs, i)
+            array.remove(boxes, i)
+            array.remove(insideFvg, i)
+            array.remove(midLines, i) // Remove from line array
+
+// Add New Bull FVG
+if bullFVG
+    topP = math.max(low, high[2])
+    botP = math.min(low, high[2])
+    fvgSize = topP - botP
+    if fvgSize >= avgBody * fvgSizeMultiplier
+        array.push(fvgTops, topP)
+        array.push(fvgBots, botP)
+        array.push(fvgBarIndices, bar_index)
+        array.push(isBull, true)
+        array.push(activeFvgs, true)
+        array.push(boxes, na)
+        array.push(insideFvg, false)
+        array.push(midLines, na) // Add line to array
+
+// Add New Bear FVG
+if bearFVG
+    topP = math.max(low[2], high)
+    botP = math.min(low[2], high)
+    fvgSize = topP - botP
+    if fvgSize >= avgBody * fvgSizeMultiplier
+        array.push(fvgTops, topP)
+        array.push(fvgBots, botP)
+        array.push(fvgBarIndices, bar_index)
+        array.push(isBull, false)
+        array.push(activeFvgs, true)
+        array.push(boxes, na)
+        array.push(insideFvg, false)
+        array.push(midLines, na) // Add line to array
+
+// Update All Active FVG Boxes
+if array.size(fvgTops) > 0
+    for i = 0 to array.size(fvgTops) - 1 by 1
+        if array.get(activeFvgs, i) and bar_index - array.get(fvgBarIndices, i) <= 500
+            if not na(array.get(boxes, i))
+                box.delete(array.get(boxes, i))
+            borderColor = array.get(isBull, i) ? bullBoxBorderColor : bearBoxBorderColor
+            bgColor = array.get(isBull, i) ? color.new(bullBoxBgColor, transpPct) : color.new(bearBoxBgColor, transpPct)
+            borderWidth = array.get(isBull, i) ? bullBoxBorderWidth : bearBoxBorderWidth
+            borderStyle = array.get(isBull, i) ? getLineStyle(bullBoxBorderStyle) : getLineStyle(bearBoxBorderStyle)
+            topPrice = array.get(fvgTops, i)
+            botPrice = array.get(fvgBots, i)
+            rightBar = math.min(bar_index, array.get(fvgBarIndices, i) + 500)
+            newBox = box.new(left = array.get(fvgBarIndices, i), top = topPrice, right = rightBar, bottom = botPrice, border_color = borderColor, border_width = borderWidth, border_style = borderStyle, bgcolor = bgColor, xloc = xloc.bar_index, extend = extend.none)
+            array.set(boxes, i, newBox)
+            // Draw Line at 50% FVG Level
+            midPrice = (topPrice + botPrice) / 2
+            if not na(array.get(midLines, i))
+                line.delete(array.get(midLines, i))
+            newLine = line.new(x1 = array.get(fvgBarIndices, i), y1 = midPrice, x2 = rightBar, y2 = midPrice, xloc = xloc.bar_index, color = color.new(array.get(isBull, i) ? bullBoxBorderColor : bearBoxBorderColor, midLineTranspPct), style = line.style_dashed)
+            array.set(midLines, i, newLine)
+
+// Check for Breakouts and Exits from FVG and Set Signals
+var bool buySignal = false
+var bool sellSignal = false
+var bool exitBuySignal = false
+var bool exitSellSignal = false
+buySignal := false
+sellSignal := false
+exitBuySignal := false
+exitSellSignal := false
+if array.size(fvgTops) > 0
+    for i = 0 to array.size(fvgTops) - 1 by 1
+        if array.get(activeFvgs, i)
+            topPrice = array.get(fvgTops, i)
+            botPrice = array.get(fvgBots, i)
+            wasInside = array.get(insideFvg, i)
+            isInside = close >= botPrice and close <= topPrice
+            array.set(insideFvg, i, isInside)
+            // Breakout Signals
+            if array.get(isBull, i) and close < botPrice
+                array.set(activeFvgs, i, false)
+                if not na(array.get(boxes, i))
+                    box.delete(array.get(boxes, i))
+                if not na(array.get(midLines, i)) // Remove line on breakout
+                    line.delete(array.get(midLines, i))
+                sellSignal := true
+                sellSignal
+            else if not array.get(isBull, i) and close > topPrice
+                array.set(activeFvgs, i, false)
+                if not na(array.get(boxes, i))
+                    box.delete(array.get(boxes, i))
+                if not na(array.get(midLines, i)) // Remove line on breakout
+                    line.delete(array.get(midLines, i))
+                buySignal := true
+                buySignal
+            // Exit Signals
+            else if wasInside and not isInside
+                if array.get(isBull, i) and close > topPrice
+                    exitBuySignal := true
+                    exitBuySignal
+                else if not array.get(isBull, i) and close < botPrice
+                    exitSellSignal := true
+                    exitSellSignal
+
+// Draw Signals
+plotshape(showBreakSignals and buySignal, title = 'Break Up Signal', location = location.belowbar, style = shape.triangleup, color = breakUpSignalColor, size = size.tiny)
+plotshape(showBreakSignals and sellSignal, title = 'Break Down Signal', location = location.abovebar, style = shape.triangledown, color = breakDownSignalColor, size = size.tiny)
+plotshape(showExitSignals and exitBuySignal, title = 'Exit Up Signal', location = location.belowbar, style = shape.circle, color = exitUpSignalColor, size = size.tiny)
+plotshape(showExitSignals and exitSellSignal, title = 'Exit Down Signal', location = location.abovebar, style = shape.circle, color = exitDownSignalColor, size = size.tiny)
+
+// Alerts for Signals
+if showBreakSignals and buySignal
+    alert('FVG Break Up Signal: Price broke above bearish FVG zone at ' + str.tostring(close), alert.freq_once_per_bar_close)
+if showBreakSignals and sellSignal
+    alert('FVG Break Down Signal: Price broke below bullish FVG zone at ' + str.tostring(close), alert.freq_once_per_bar_close)
+if showExitSignals and exitBuySignal
+    alert('FVG Exit Up Signal: Price exited above bullish FVG zone at ' + str.tostring(close), alert.freq_once_per_bar_close)
+if showExitSignals and exitSellSignal
+    alert('FVG Exit Down Signal: Price exited below bearish FVG zone at ' + str.tostring(close), alert.freq_once_per_bar_close)
