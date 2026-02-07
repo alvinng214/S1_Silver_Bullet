@@ -1,0 +1,990 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@malk1903
+
+//@version=5
+indicator(title='MTF FVG x2 [MK]', shorttitle = 'MTF FVG x2 [MK]',overlay=true, max_boxes_count = 250, max_labels_count = 250) 
+
+var color red = #e91e63
+var color green = #089981
+len = 0
+c = close
+o = open[len]
+plotcandle(o, o, c, c, title='Nogi', color=o < c ? color.new(green,80) : color.new(red,80), bordercolor=color.new(color.black,100))
+
+grp_tfs_enabled     =   "Enabled Timeframes"
+grp_tfs_enabled2    =   "Visibility"
+tfcstrg             =   "FVG Time Frame Fill Colors"
+
+inSession           =   not na(time(timeframe.period, "0930-1600"))
+
+MTFImb = input.bool(title= 'MTF FVGs (display to right)', defval=true, group='Enable/Disable Section---------------------------------------------', inline = '00')
+MTF_po = input.bool(title= 'MTF FVG (price overlay)', defval=true, group='Enable/Disable Section---------------------------------------------', inline = '01')
+tfinput         = input.timeframe(defval="60", title=' Timeframe ', group='Enable/Disable Section---------------------------------------------', inline = '01')
+//tZone = input.string("GMT-4", "Timezone", options=["GMT+0", "GMT+1", "GMT+2", "GMT+3","GMT+4","GMT+5","GMT+6","GMT+7","GMT+8","GMT+9","GMT+10","GMT+11","GMT+12","GMT-1", "GMT-2", "GMT-3","GMT-4","GMT-5","GMT-6","GMT-7","GMT-8","GMT-9","GMT-10","GMT-11","GMT-12"])
+
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////MTF FVGs
+OnlyMktHrs          =   false
+fmthds              =   "Body"
+fvgmethod           =   fmthds == "Body" ? true : false
+show_labels         =   true
+show_timeonlabels   =   false
+
+//hoursOffsetInput    =   input.float(-5.0, "Timezone offset", minval = -12.0, maxval = 14.0, step = 0.5, group = 'MTF Fair Vaue Gaps--------------------------------------------------', inline ='1')
+//var msOffsetInput   =   hoursOffsetInput * 1000 * 60 * 60
+label_shift         =   input.int(defval=5, minval=1, maxval=100, step=1, title="Left O/S", group = 'MTF Fair Vaue Gaps--------------------------------------------------', inline ='1')
+label_shiftr         =  input.int(defval=15, minval=1, maxval=100, step=1, title="Right O/S", group = 'MTF Fair Vaue Gaps--------------------------------------------------', inline ='1')
+incursion_alerts    =   true
+incursion_pct       =   20
+intrusion_percentage=   incursion_pct / 100
+
+mitiaction          =   "Normal"
+mitigationaction    =   if (mitiaction == 'Normal')
+    1
+else
+    if (mitiaction == 'Dynamic')
+        2
+    else 
+        if (mitiaction == 'None')
+            3
+        else
+            4
+
+nomiticolor         =   color.new(color.yellow,85)
+nmc_trans           =   color.t(nomiticolor)
+show_mitigated_text =   false
+mitig_type          =   "Wicks"
+UseBodyForMitigation=   mitig_type == "Body" ? true : false
+entrychangecolor    =   input.bool(true,"Change FVG Color On Entry          ",inline='3')
+entry_bull_color    =   input.color(color.new(color.lime,0),"Bull",inline='3')
+entry_bear_color    =   input.color(color.new(color.red,0),"Bear",inline='3')
+
+// ============================================ //
+// FVG Time Frame inputs and settings
+// ============================================ //
+enable_current_timeframe    = input.bool(false,"Chart",group = grp_tfs_enabled,inline="0")
+enable_5min                 = input.bool(false,"5 Minute",group = grp_tfs_enabled,inline="0")
+enable_10min                = input.bool(false,"10 Minute",group = grp_tfs_enabled,inline="0")
+enable_15min                = input.bool(true,"15 Minute",group = grp_tfs_enabled,inline="0")
+enable_30min                = input.bool(false,"30 Minute",group = grp_tfs_enabled,inline="0")
+enable_1hr                  = input.bool(true,"1 Hour",group = grp_tfs_enabled,inline="0")
+enable_4hr                  = input.bool(true,"4 Hour",group = grp_tfs_enabled,inline="0")
+enable_8hr                  = input.bool(false,"8 Hour",group = grp_tfs_enabled,inline="0")
+enable_12hr                  = input.bool(false,"12 Hour",group = grp_tfs_enabled,inline="0")
+enable_Daily                = input.bool(true,"Daily",group = grp_tfs_enabled,inline="0")
+enable_Week                 = input.bool(true,"Weekly",group = grp_tfs_enabled,inline="0")
+enable_Month                = input.bool(true,"Monthly",group = grp_tfs_enabled,inline="0")
+
+/////max tfs for enabled FVGs
+i_mintf_15           = input.int         (1, "15 Min Range", 1, 1440,tooltip="Min and Max timeframes to show 15min FVG", group = grp_tfs_enabled2,inline="1")
+disp_mintf_15        = (timeframe.isintraday and timeframe.multiplier >= i_mintf_15) or timeframe.isdwm
+i_maxtf_15           = input.int         (4, "", 1, 240,group = grp_tfs_enabled2,inline="1")
+disp_15              = timeframe.isintraday and timeframe.multiplier <= i_maxtf_15
+
+i_mintf_60           = input.int         (5, "1 Hour Range", 1, 1440,group = grp_tfs_enabled2,inline="2")
+disp_mintf_60        = (timeframe.isintraday and timeframe.multiplier >= i_mintf_60) or timeframe.isdwm
+i_maxtf_60           = input.int         (5, "", 1, 240,group = grp_tfs_enabled2,inline="2")
+disp_60              = timeframe.isintraday and timeframe.multiplier <= i_maxtf_60
+
+i_mintf_240          = input.int         (15, "4 Hour Range", 1, 1440,group = grp_tfs_enabled2,inline="3")
+disp_mintf_240       = (timeframe.isintraday and timeframe.multiplier >= i_mintf_240) or timeframe.isdwm
+i_maxtf_240          = input.int         (15, "", 1, 240,group = grp_tfs_enabled2,inline="3")
+disp_240             = timeframe.isintraday and timeframe.multiplier <= i_maxtf_240
+
+i_mintf_D            = input.int         (60, "Daily Range", 1, 1440,group = grp_tfs_enabled2,inline="4")
+disp_mintf_D         = (timeframe.isintraday and timeframe.multiplier >= i_mintf_D) or timeframe.isdwm
+i_maxtf_D            = input.int         (60, "", 1, 240,group = grp_tfs_enabled2,inline="4")
+disp_D               = timeframe.isintraday and timeframe.multiplier <= i_maxtf_D
+
+i_mintf_W            = input.int         (240, "Weekly Range", 1, 1440,group = grp_tfs_enabled2,inline="5")
+disp_mintf_W         = (timeframe.isintraday and timeframe.multiplier >= i_mintf_W) or timeframe.isdwm
+i_maxtf_W            = input.int         (240, "", 1, 240,group = grp_tfs_enabled2,inline="5")
+disp_W               = timeframe.isintraday and timeframe.multiplier <= i_maxtf_W
+
+i_mintf_M            = input.int         (1440, "Monthly Range", 1, 1440,group = grp_tfs_enabled2,inline="6")
+disp_mintf_M         = (timeframe.isintraday and timeframe.multiplier >= i_mintf_M) or timeframe.isdwm
+i_maxtf_M            = input.int         (1440, "", 1, 1440,group = grp_tfs_enabled2,inline="6")
+disp_M               = timeframe.isintraday and timeframe.multiplier <= i_maxtf_M or timeframe.isdwm
+
+current_timeframe = timeframe.period
+var timestring = ""
+if timeframe.isintraday
+    if str.tonumber(current_timeframe) > 59
+        timestring := str.tostring(str.tonumber(current_timeframe) / 60) + " Hr" 
+    else
+        timestring := current_timeframe + " Min"
+else if timeframe.isdaily
+    timestring := "Daily"
+else if timeframe.isweekly
+    timestring := "Weekly"
+else
+    timestring := "Monthly"
+
+// ============================================ //
+// FVG Supported Timeframe strings used for labels and alertcondition at end
+// ============================================ //
+currtfstring        = timestring
+
+// min5s               = '5 Min'
+// min10s              = '10 Min'
+// min15s              = '15 Min'
+// min1hrs             = '1 Hr'
+// min4hrs             = '4 Hr'
+// min8hrs             = '8 Hr'
+// minds               = 'Daily'
+// minws               = 'Weekly'
+// minms               = 'Monthly'
+
+maxgroup            = "MAX FVGs SETTINGS (COMBINED MAXIMUM MUST BE LESS THAN 500)"   
+curr_MaxArraySize   = input.int(8,"Chart",group = maxgroup,inline="0",minval = 1)
+MaxArraySize_5min   = input.int(8,"5 Min",group = maxgroup,inline="0",minval = 1)
+MaxArraySize_10min  = input.int(8,"10 Min",group = maxgroup,inline="0",minval = 1)
+MaxArraySize_15min  = input.int(8,"15 Min",group = maxgroup,inline="1",minval = 1)
+MaxArraySize_30min  = input.int(8,"30 Min",group = maxgroup,inline="1",minval = 1)
+MaxArraySize_1hr    = input.int(8,"1 Hr",group = maxgroup,inline="1",minval = 1)
+MaxArraySize_4hr    = input.int(8,"4 Hr",group = maxgroup,inline="2",minval = 1)
+MaxArraySize_8hr    = input.int(8,"8 Hr",group = maxgroup,inline="2",minval = 1)
+MaxArraySize_12hr   = input.int(8,"12 Hr",group = maxgroup,inline="2",minval = 1)
+MaxArraySize_Daily  = input.int(8,"Daily",group = maxgroup,inline="3",minval = 1)
+MaxArraySize_Wkly   = input.int(8,"Weekly",group = maxgroup,inline="3",minval = 1)
+MaxArraySize_Mthly  = input.int(8,"Monthly",group = maxgroup,inline="3",minval = 1)
+
+//Create error box template (as table) if user entered over 500 fvgs total
+var table ErrorBox  = table.new(position.bottom_right, 1, 1, frame_color=color.red,frame_width = 1)
+tot_user_max_boxes  = curr_MaxArraySize + MaxArraySize_5min + MaxArraySize_10min + MaxArraySize_15min + MaxArraySize_1hr + MaxArraySize_4hr + MaxArraySize_8hr + MaxArraySize_Daily + MaxArraySize_Wkly + MaxArraySize_Mthly
+isError             = tot_user_max_boxes > 500
+
+if isError
+    table.cell(ErrorBox, 0, 0, "MTF FVG INDICATOR ERROR\n\n"+"Max Number of FVGs exceeded, please change settings.", bgcolor = color.new(color.blue, 50), 
+     text_color = color.red,text_halign=text.align_center)
+    bgcolor=color.new(color.maroon,90)
+
+// SET DEFAULT COLORS FOR ALL TIMEFRAMES
+bullfvgcolor        = input.color(color.new(color.yellow,70),"Bull FVG Color",group = 'FVG BOX BORDER SETTINGS',inline='a')
+bearfvgcolor        = input.color(color.new(color.yellow,70),"Bull FVG Color",group = 'FVG BOX BORDER SETTINGS',inline='a')
+labelcolor          = input.color(color.new(#000000,0),"Label",group = 'FVG BOX BORDER SETTINGS',inline='a')
+
+// FVG Box Border Inputs
+box_border_bull_color   = (color.new(color.gray,100))
+box_border_bear_color   = (color.new(color.gray,100))
+box_border_width        = 1
+bbstyle_string          = "Solid"
+box_border_style        = line.style_dotted
+boxrightfvg             = true
+
+// --------------------------------------------------------------- //
+// |    FUNCTIONS|                                                 //
+// --------------------------------------------------------------- //
+
+// simple strings required for request.security function in latter main code calls to handle_all function
+_gettf_interval_str(simple int index) =>
+    string result = switch index
+        0 => "5"
+        1 => "10"
+        2 => "15"
+        3 => "30"
+        4 => "60"
+        5 => "240"
+        6 => "480"
+        7 => "720" 
+        8 => "D"
+        9 => "W"
+        10 => "M"
+        => "Unsupported Timeframe"
+
+// simple strings require for label displays used in add_label ultimately
+_gettf_label_str(simple int index) =>
+    string result = switch index
+        0 => "5m"
+        1 => "10m"
+        2 => "15m"
+        3 => "30m"
+        4 => "1hr"
+        5 => "4hr"
+        6 => "8hr"
+        7 => "12hr"
+        8 => "Daily"
+        9 => "Weekly"
+        10 => "Monthly"
+        => "Unsupported Timeframe"
+
+// used if user selected use chart timeframe option to see not double work if chart is set to same timeframe as another enabled timeframe for fvg creation        
+_not_current_timeframe_equal_enabled_tfs(_current_timeframe) =>
+    result = switch _current_timeframe
+        "5"     => not enable_5min
+        "10"    => not enable_10min
+        "15"    => not enable_15min
+        "30"    => not enable_30min
+        "60"    => not enable_1hr
+        "240"   => not enable_4hr
+        "480"   => not enable_8hr
+        "720"   => not enable_12hr
+        "D"     => not enable_Daily
+        "W"     => not enable_Week
+        "M"     => not enable_Month
+        => true
+// BottomInbalance = high[2] >= open[1] and low[0] <= close[1]
+// TopImbalance = low[2] <= open[1] and high[0] >= close[1]
+
+// ************* SEE IF NEW BULL FVGs DETECTED   
+_isfvgbull(_fvgmethod,_low,_high2,_close1,_open1) => 
+    if _fvgmethod 
+        _high2 < _low // if body fvg detection
+        //_low > _high2 and _low <= _close1 and _high2 > _open1 
+    else   // else wick detection
+        _high2 < _low 
+
+// ************* SEE IF NEW BEAR FVGs DETECTED         
+_isfvgbear(_fvgmethod,_low2,_high,_close1,_open1) =>
+    if _fvgmethod
+        _low2 > _high
+        //_low2 > _high and _high >= _close1 and _low2 <= _open1
+    else
+        _low2 > _high
+
+// *************** DELETE A BOX AND ASSOCIATED LABEL        
+_box_n_label_delete(_boxarray,_i,_labelarray,_labelflag) =>
+    bptr = array.get(_boxarray,_i)
+    box.delete(bptr)
+    array.remove(_boxarray, _i)
+    if _labelflag
+        lptr = array.get(_labelarray,_i)
+        label.delete(lptr)
+        array.remove(_labelarray,_i)
+
+// *************** DELETE A MIDLINE        
+//_mline_deletebull(_linearray,_i) =>
+    //lnptr = array.get(_linearray,_i)
+   // line.delete(lnptr)
+   // array.remove(_linearray, _i)
+
+//_mline_deletebear(_linearray2,_i) =>
+  //  ln2ptr = array.get(_linearray2,_i)
+   // line.delete(ln2ptr)
+  //  array.remove(_linearray2, _i)
+    //if _labelflag
+        //lptr = array.get(_labelarray,_i)
+        //label.delete(lptr)
+        //array.remove(_labelarray,_i)
+
+// *************** GET A FVG BOX TOP AND BOTTOM VALUES
+_getboxtopbtm(_boxptr,_i) =>
+    _boxelement = array.get(_boxptr,_i)
+    _top        = box.get_top(_boxelement)
+    _btm        = box.get_bottom(_boxelement)
+    [_boxelement,_top,_btm]
+
+// *************** ADD A LABEL TO AN FVG    
+_addlabel(_fvglabelsarray,_bar_index,_high,_string,_style,y,_show_label) =>
+    var string s = na
+    if _show_label
+        if show_timeonlabels
+            s := _string + str.format("  {0,date,HH:mm MM/dd/yy}", time)
+            //s := _string + str.format("  {0,date,HH:mm MM/dd/yy}", time + msOffsetInput) - original code
+        else
+            s := _string
+        blabel = label.new(_bar_index,_high,text=s,color=color.rgb(0,0,0,100),style = _style) //_string,color=color.rgb(0,0,0,100),style = _style)
+        label.set_textcolor(blabel,labelcolor)//color.rgb(label_red,label_grn,label_blu,label_trans))
+        label.set_xy(blabel,_bar_index + label_shift,y)
+        label.set_size(blabel,size.normal)
+        array.push(_fvglabelsarray,blabel)
+
+// added these two globally as can't use them in functions with consistency/reliability towards incursion alerts       
+lasthigh    =   high[1]    
+lastlow     =   low[1]
+
+// compare existing bull fvg box values to current price action
+_getbullfvgaction(_top,_bottom,_intrusion_percentage) =>
+    midpt = (_top + _bottom) / 2
+    threshold   = _top - (_intrusion_percentage * (_top - _bottom))
+    _have_intrusion = low < threshold and lastlow > threshold    
+    _lowundertop    = low < _top
+    _lowunderbtm    = low < _bottom
+    _lowundermid    = low < midpt
+    _closeundertop  = close < _top
+    _closeunderbtm  = close < _bottom
+    _closeundermid  = low < midpt
+    [_lowundertop,_lowunderbtm,_closeundertop,_closeunderbtm,_lowundermid,_closeundermid,_have_intrusion]//,_closecrosswithin]
+
+// compare existing bear fvg box values to current price action   
+_getbearfvgaction(_top,_bottom,_intrusion_percentage) =>
+    midpt = (_top + _bottom) / 2
+    //_have_intrusion = high > _bottom + (_intrusion_percentage * (_top - _bottom))
+    threshold   = _bottom + (_intrusion_percentage * (_top - _bottom))
+    _have_intrusion = high > threshold and lasthigh < threshold    
+    _highovertop    = high > _top
+    _highoverbtm    = high > _bottom
+    _highovermid    = high > midpt
+    _closeovertop   = close > _top
+    _closeoverbtm   = close > _bottom
+    _closeovermid   = close > midpt
+    [_highovertop,_highoverbtm,_closeovertop,_closeoverbtm,_highovermid,_closeovermid,_have_intrusion]
+
+// used for adjusting fvg label position with each new bar
+_setlabelxy(_fvglabels,_i,_barindex,_top,_bottom) =>
+    _lptr = array.get(_fvglabels,_i)
+    label.set_xy(_lptr,_barindex + label_shift,(_top + _bottom) / 2)
+
+// used for adjusting bull box position with each new bar - LEFT O/S
+_setboxleftbull(_boxbull,_i,_barindex) =>
+    _bxbull = box.get_left(_boxbull)
+    box.set_left(_boxbull,last_bar_index + label_shift)
+
+// used for adjusting bear box position with each new bar - LEFT O/S
+_setboxleftbear(_boxbear,_i,_barindex) =>
+    _bxbear = box.get_left(_boxbear)
+    box.set_left(_boxbear,last_bar_index + label_shift)
+
+// used for adjusting bull box position with each new bar - RIGHT O/S
+_setboxrightbull(_boxbull,_i,_barindex) =>
+    _bxbull = box.get_left(_boxbull)
+    box.set_right(_boxbull,last_bar_index + label_shiftr)
+
+// used for adjusting bear box position with each new bar - RIGHT o/S
+_setboxrightbear(_boxbear,_i,_barindex) =>
+    _bxbear = box.get_left(_boxbear)
+    box.set_right(_boxbear,last_bar_index + label_shiftr)
+
+// get higher timeframe price values
+_gethighlowcloseopens(_ticker,_period,_high,_high2,_low,_low2,_close1,_open1) =>
+    request.security(_ticker,_period,[_high,_high2,_low,_low2,_close1,_open1],lookahead = barmerge.lookahead_on)
+
+var _bullmid = array.new_line()    
+var _bearmid = array.new_line()
+var line bullmidl = na
+var line bearmidl = na
+
+// modify existing bull fvg boxes for incursion, deletion etc.
+_update_bull_fvgs(_boxbull,_labelsbull,_timestring) =>
+    //var bool cclosecrosswithin = false
+    for i = array.size(_boxbull) - 1 to 0 by 1
+        [fvgboxbull,top,bottom] = _getboxtopbtm(_boxbull,i)
+        [lowundertop,lowunderbtm,closeundertop,closeunderbtm,lowundermid,closeundermid,intrusion] = _getbullfvgaction(top,bottom,intrusion_percentage)
+
+        // INCURSION ALERT DONE HERE: if mitigation action is normal or none then do alert
+        if (mitigationaction == 1 or mitigationaction == 3) and intrusion and incursion_alerts
+            alert("Bull FVG Incursion " + str.tostring(_timestring), alert.freq_once_per_bar)
+
+        if entrychangecolor
+            if lowundertop  // low < top   
+                box.set_bgcolor(fvgboxbull,entry_bull_color)
+            else
+                box.set_bgcolor(fvgboxbull,bullfvgcolor)
+
+        if show_labels     
+            _setlabelxy(_labelsbull,i,bar_index,top,bottom)
+            _setboxleftbull(fvgboxbull,i,bar_index)
+            _setboxrightbull(fvgboxbull,i,bar_index)
+
+        // *** if mitigation is set to dynamic and body is referenced with price and price is within fvg
+        if mitigationaction == 2 and UseBodyForMitigation and closeundertop 
+            box.set_top(fvgboxbull,close)
+            if show_labels
+                _setlabelxy(_labelsbull,i,bar_index,close,bottom)                
+        else
+        // else if mitigation set to dynamic and body mitigation NOT enabled and btm wick goes below top of fvg band then move band top lower            
+            if mitigationaction == 2 and lowundertop 
+                box.set_top(fvgboxbull,low)
+                if show_labels
+                    _setlabelxy(_labelsbull,i,bar_index,low,bottom)
+        
+        // section to delete boxes when fvg filled
+        if mitigationaction == 3 // if 'none' selected for mitigation
+            if UseBodyForMitigation and closeunderbtm
+                box.set_bgcolor(fvgboxbull,color.new(nomiticolor,nmc_trans))
+            else
+                if lowunderbtm 
+                    box.set_bgcolor(fvgboxbull,color.new(nomiticolor,nmc_trans)) 
+                    
+            if (UseBodyForMitigation and closeunderbtm) or lowunderbtm
+                if show_labels and show_mitigated_text
+                    larray = array.get(_labelsbull,i)
+                    curr_text = label.get_text(larray)
+                    found = str.contains(curr_text,"Mitigated")                    
+                    if not found
+                        label.set_text(larray,curr_text + "Mitigated")                     
+        
+        if mitigationaction == 1 or mitigationaction == 2
+            if UseBodyForMitigation and closeunderbtm
+                _box_n_label_delete(_boxbull, i,_labelsbull, show_labels)
+               // _mline_deletebull(_bullmid, i)            
+            else
+                if lowunderbtm 
+                    _box_n_label_delete(_boxbull, i,_labelsbull, show_labels) 
+                    
+        if mitigationaction == 4 // if half mitigation
+            if UseBodyForMitigation and closeundermid
+                _box_n_label_delete(_boxbull, i,_labelsbull, show_labels)             
+            else
+                if lowundermid 
+                    _box_n_label_delete(_boxbull, i,_labelsbull, show_labels) 
+
+// modify existing bear fvg boxes for incursion, deletion etc.
+_update_bear_fvgs(_boxbear,_labelsbear,_timestring) =>                
+    for i = array.size(_boxbear) - 1 to 0 by 1
+        [fvgboxbear,top,bottom] = _getboxtopbtm(_boxbear,i)
+        [highovertop,highoverbtm,closeovertop,closeoverbtm,highovermid,closeovermid,intrusion] = _getbearfvgaction(top,bottom,intrusion_percentage)         
+
+        // INCURSION ALERT DONE HERE: if mitigation action is normal or none then do alert
+        if (mitigationaction == 1 or mitigationaction == 3) and intrusion and incursion_alerts
+            alert("Bear FVG Incursion " + str.tostring(_timestring), alert.freq_once_per_bar)
+
+        if entrychangecolor
+            if highoverbtm   
+                box.set_bgcolor(fvgboxbear,entry_bear_color)//color.new(bearfvgcolor,_bear_trans - (_bear_trans / 4)))
+            else
+                box.set_bgcolor(fvgboxbear,bearfvgcolor)//color.new(bearfvgcolor,_bear_trans))                
+                
+        if show_labels 
+            _setlabelxy(_labelsbear,i,bar_index,top,bottom)
+            _setboxleftbear(fvgboxbear,i,bar_index)            
+            _setboxrightbear(fvgboxbear,i,bar_index)
+
+        // *** if mitigation is set to dynamic and body is referenced with price and price is within fvg
+        if mitigationaction == 2 and UseBodyForMitigation and closeoverbtm  
+            box.set_bottom(fvgboxbear,close) 
+            if show_labels
+                _setlabelxy(_labelsbear,i,bar_index,close,bottom)                  
+        else
+        // else if mitigation set to dynamic and body mitigation NOT enabled and top wick goes above bottom of fvg band then move band bottom up            
+            if mitigationaction == 2 and highoverbtm 
+                box.set_bottom(fvgboxbear,high)
+                if show_labels
+                    _setlabelxy(_labelsbear,i,bar_index,top,high)  
+                    
+        if mitigationaction == 3 // if 'none' selected for mitigation
+            if UseBodyForMitigation and closeovertop
+                box.set_bgcolor(fvgboxbear,color.new(nomiticolor,nmc_trans))
+            else
+                if highovertop
+                    box.set_bgcolor(fvgboxbear,color.new(nomiticolor,nmc_trans))  
+            
+            if (UseBodyForMitigation and closeovertop) or highovertop
+                if show_labels and show_mitigated_text
+                    larray = array.get(_labelsbear,i)
+                    curr_text = label.get_text(larray)
+                    found = str.contains(curr_text,"Mitigated")                    
+                    if not found
+                        label.set_text(larray,curr_text + "Mitigated")                    
+        
+        if mitigationaction == 1 or mitigationaction == 2
+            if UseBodyForMitigation and closeovertop 
+                _box_n_label_delete(_boxbear, i,_labelsbear, show_labels) 
+                //_mline_deletebear(_bearmid, i)             
+            else
+                if highovertop 
+                    _box_n_label_delete(_boxbear, i,_labelsbear, show_labels) 
+
+        if mitigationaction == 4 // if half mitigation
+            if UseBodyForMitigation and closeovermid
+                _box_n_label_delete(_boxbear, i,_labelsbear, show_labels)             
+            else
+                if highovermid 
+                    _box_n_label_delete(_boxbear, i,_labelsbear, show_labels)                 
+                    
+// main function call here - detects and calls to create fvg boxes then calls the update fvg functions for bulls and bears fvgs for already existing fvg boxes
+_handle_all(_tstring,_bullfvgs,_bearfvgs,_bulllabels,_bearlabels,_maxarraysize,_high,_highback2,_low,_lowback2,_closeback1,_openback1) =>
+    var bool _newBull = false
+    var bool _newBear = false
+   
+
+    if OnlyMktHrs and inSession or not OnlyMktHrs
+        _newBull := _isfvgbull(fvgmethod,_low,_highback2,_closeback1,_openback1) 
+        _newBear := _isfvgbear(fvgmethod,_lowback2,_high,_closeback1,_openback1) 
+    
+    if _newBull //and barstate.isconfirmed
+        if array.size(_bullfvgs) > _maxarraysize
+            _box_n_label_delete(_bullfvgs, 0,_bulllabels, show_labels)   
+
+        if _highback2 != _highback2[1] and _low != _low[1]
+            array.push(_bullfvgs, box.new(left=last_bar_index + 5, bottom=_highback2, right=last_bar_index + 15, top=_low, bgcolor=bullfvgcolor, border_color=box_border_bull_color, border_width = box_border_width, border_style = box_border_style, extend=extend.none,text_halign = text.align_center, xloc = xloc.bar_index, text_size = size.normal))
+            //array.push(_bullmid, line.new(x1=boxrightfvg ? last_bar_index + 1 : bar_index[2],y1=(_low+_highback2)/2,x2=boxrightfvg ? last_bar_index + 2 : last_bar_index + 1,y2=(_low+_highback2)/2, style=line.style_solid, color=color.white, width=1, extend=extend.right))
+            //array.push(_bullmid,bullmidl)
+            if show_labels
+                _addlabel(_bulllabels,bar_index,_high,_tstring + "",label.style_label_left,(_high[2] + _low) / 2, show_labels)
+
+    if _newBear //and barstate.isconfirmed
+        if array.size(_bearfvgs) > _maxarraysize
+            _box_n_label_delete(_bearfvgs, 0,_bearlabels, show_labels)          
+    
+        if _lowback2 != _lowback2[1] and _high != _high[1]
+            array.push(_bearfvgs, box.new(left=last_bar_index +5, top=_lowback2, right= last_bar_index + 15, bottom=_high, bgcolor=bearfvgcolor, border_color=box_border_bear_color, border_width = box_border_width, border_style = box_border_style, extend=extend.none,text_halign = text.align_center, xloc=xloc.bar_index, text_size = size.normal))
+            //array.push(_bearmid, line.new(x1=boxrightfvg ? last_bar_index + 1 : bar_index[2],y1=(_lowback2+_high)/2,x2=boxrightfvg ? last_bar_index + 2 : last_bar_index + 1,y2=(_lowback2+_high)/2, style=line.style_solid, color=color.white, width=1, extend=extend.right))
+            //array.push(_bearmid,bearmidl)
+            if show_labels
+                _addlabel(_bearlabels,bar_index,_high,_tstring + "",label.style_label_left,(_high[2] + _low) / 2, show_labels)
+
+    //|       BULL FVG HANDLING AREA         | //
+    // ----------------------------------------------- //
+    if array.size(_bullfvgs) > 0  // this code is to handle incursion alerts before FVG's possibly being mitigated
+        _update_bull_fvgs(_bullfvgs,_bulllabels,_tstring) 
+    
+    // ----------------------------------------------- //
+    // |        BEAR FVG HANDLING AREA         | //
+    // ----------------------------------------------- //
+    if array.size(_bearfvgs) > 0  // this code is to handle incursion alerts before FVG's possibly being mitigated
+        _update_bear_fvgs(_bearfvgs,_bearlabels,_tstring)                 
+
+
+
+// ***************************************************
+// Array and Box definition area
+// ***************************************************
+var box[]   fvgboxBull      = array.new_box()
+var box[]   fvgboxBear      = array.new_box()
+var         fvglabelsBull   = array.new_label()
+var         fvglabelsBear   = array.new_label()
+var bool    newboxBull      = false
+var bool    newboxBear      = false
+
+var box[]   fvgboxBull5     = array.new_box()
+var box[]   fvgboxBear5     = array.new_box()
+var         fvglabelsBull5  = array.new_label()
+var         fvglabelsBear5  = array.new_label()
+var bool    newboxBull5     = false
+var bool    newboxBear5     = false
+
+var box[]   fvgboxBull10    = array.new_box()
+var box[]   fvgboxBear10    = array.new_box()
+var         fvglabelsBull10 = array.new_label()
+var         fvglabelsBear10 = array.new_label()
+var bool    newboxBull10    = false
+var bool    newboxBear10    = false
+
+var box[]   fvgboxBull15    = array.new_box()
+var box[]   fvgboxBear15    = array.new_box()
+var         fvglabelsBull15 = array.new_label()
+var         fvglabelsBear15 = array.new_label()
+var bool    newboxBull15    = false
+var bool    newboxBear15    = false
+
+var box[]   fvgboxBull30    = array.new_box()
+var box[]   fvgboxBear30    = array.new_box()
+var         fvglabelsBull30 = array.new_label()
+var         fvglabelsBear30 = array.new_label()
+var bool    newboxBull30    = false
+var bool    newboxBear30    = false
+
+var box[]   fvgboxBull1hr   = array.new_box()
+var box[]   fvgboxBear1hr   = array.new_box()
+var         fvglabelsBull1hr= array.new_label()
+var         fvglabelsBear1hr= array.new_label()
+var bool    newboxBull1hr   = false
+var bool    newboxBear1hr   = false
+
+var box[]   fvgboxBull4hr   = array.new_box()
+var box[]   fvgboxBear4hr   = array.new_box()
+var         fvglabelsBull4hr= array.new_label()
+var         fvglabelsBear4hr= array.new_label()
+var bool    newboxBull4hr   = false
+var bool    newboxBear4hr   = false
+
+var box[]   fvgboxBull8hr   = array.new_box()
+var box[]   fvgboxBear8hr   = array.new_box()
+var bool    newboxBull8hr   = false
+var bool    newboxBear8hr   = false
+var         fvglabelsBull8hr= array.new_label()
+var         fvglabelsBear8hr= array.new_label()
+
+var box[]   fvgboxBull12hr   = array.new_box()
+var box[]   fvgboxBear12hr   = array.new_box()
+var bool    newboxBull12hr   = false
+var bool    newboxBear12hr   = false
+var         fvglabelsBull12hr= array.new_label()
+var         fvglabelsBear12hr= array.new_label()
+
+var box[]   fvgboxBullDaily = array.new_box()
+var box[]   fvgboxBearDaily = array.new_box()
+var         fvglabelsBullDaily = array.new_label()
+var         fvglabelsBearDaily = array.new_label()
+var bool    newboxBullDaily = false
+var bool    newboxBearDaily = false
+
+var box[]   fvgboxBullWeekly = array.new_box()
+var box[]   fvgboxBearWeekly = array.new_box()
+var         fvglabelsBullWeekly = array.new_label()
+var         fvglabelsBearWeekly = array.new_label()
+var bool    newboxBullWeekly = false
+var bool    newboxBearWeekly = false
+
+var box[]   fvgboxBullMonthly = array.new_box()
+var box[]   fvgboxBearMonthly = array.new_box()
+var         fvglabelsBullMonthly = array.new_label()
+var         fvglabelsBearMonthly = array.new_label()
+var bool    newboxBullMonthly = false
+var bool    newboxBearMonthly = false
+
+
+//    
+///////////////////////////////////////
+//|        MAIN CODE                  |
+///////////////////////////////////////
+if enable_current_timeframe and _not_current_timeframe_equal_enabled_tfs(current_timeframe) and MTFImb
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,current_timeframe,high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(currtfstring,fvgboxBull,fvgboxBear,fvglabelsBull,fvglabelsBear,curr_MaxArraySize,_high,highback2,_low,lowback2,closeback1,openback1)
+if enable_5min and MTFImb
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(0),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(0),fvgboxBull5,fvgboxBear5,fvglabelsBull5,fvglabelsBear5,MaxArraySize_5min,_high,highback2,_low,lowback2,closeback1,openback1)
+if enable_10min and MTFImb
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(1),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(1),fvgboxBull10,fvgboxBear10,fvglabelsBull10,fvglabelsBear10,MaxArraySize_10min,_high,highback2,_low,lowback2,closeback1,openback1)
+if enable_15min and MTFImb and disp_15 and disp_mintf_15
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(2),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(2),fvgboxBull15,fvgboxBear15,fvglabelsBull15,fvglabelsBear15,MaxArraySize_15min,_high,highback2,_low,lowback2,closeback1,openback1)            
+if enable_30min and MTFImb
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(3),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(3),fvgboxBull30,fvgboxBear30,fvglabelsBull30,fvglabelsBear30,MaxArraySize_30min,_high,highback2,_low,lowback2,closeback1,openback1)            
+
+if enable_1hr and MTFImb and disp_60 and disp_mintf_60
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(4),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(4),fvgboxBull1hr,fvgboxBear1hr,fvglabelsBull1hr,fvglabelsBear1hr,MaxArraySize_1hr,_high,highback2,_low,lowback2,closeback1,openback1)            
+if enable_4hr and MTFImb and disp_240 and disp_mintf_240
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(5),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(5),fvgboxBull4hr,fvgboxBear4hr,fvglabelsBull4hr,fvglabelsBear4hr,MaxArraySize_4hr,_high,highback2,_low,lowback2,closeback1,openback1)            
+if enable_8hr and MTFImb
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(6),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(6),fvgboxBull8hr,fvgboxBear8hr,fvglabelsBull8hr,fvglabelsBear8hr,MaxArraySize_8hr,_high,highback2,_low,lowback2,closeback1,openback1) 
+if enable_12hr and MTFImb
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(7),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(7),fvgboxBull12hr,fvgboxBear8hr,fvglabelsBull12hr,fvglabelsBear12hr,MaxArraySize_12hr,_high,highback2,_low,lowback2,closeback1,openback1)
+if enable_Daily and MTFImb and disp_D and disp_mintf_D
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(8),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(8),fvgboxBullDaily,fvgboxBearDaily,fvglabelsBullDaily,fvglabelsBearDaily,MaxArraySize_Daily,_high,highback2,_low,lowback2,closeback1,openback1)
+if enable_Week and MTFImb and disp_W and disp_mintf_W
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(9),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(9),fvgboxBullWeekly,fvgboxBearWeekly,fvglabelsBullWeekly,fvglabelsBearWeekly,MaxArraySize_Wkly,_high,highback2,_low,lowback2,closeback1,openback1)    
+if enable_Month and MTFImb and disp_M and disp_mintf_M
+    [_high,highback2,_low,lowback2,closeback1,openback1] = _gethighlowcloseopens(syminfo.tickerid,_gettf_interval_str(10),high[1],high[3],low[1],low[3],close[2],open[2])
+    _handle_all(_gettf_label_str(10),fvgboxBullMonthly,fvgboxBearMonthly,fvglabelsBullMonthly,fvglabelsBearMonthly,MaxArraySize_Mthly,_high,highback2,_low,lowback2,closeback1,openback1)
+
+// // ------------------------------------------------------- //
+// // |            STANDARD CONDITIONAL ALERT SECTION         | //
+// // ------------------------------------------------------- // 
+
+bull_fvg_creation_alert = newboxBull or newboxBull5 or newboxBull10 or newboxBull15 or newboxBull1hr or newboxBull4hr or newboxBull8hr or newboxBullDaily or newboxBullWeekly or newboxBullMonthly
+alertcondition(bull_fvg_creation_alert,title='Bull FVG Creation',message = 'Bull FVG Creation' )
+bear_fvg_creation_alert = newboxBear or newboxBear5 or newboxBear10 or newboxBear15 or newboxBear1hr or newboxBear4hr or newboxBear8hr or newboxBearDaily or newboxBearWeekly or newboxBearMonthly          
+alertcondition(bear_fvg_creation_alert,title='Bear FVG Creation',message = 'Bear FVG Creation' )
+both_fvg_creation_alert = newboxBull or newboxBull5 or newboxBull10 or newboxBull15 or newboxBull1hr or newboxBull4hr or newboxBull8hr or newboxBullDaily or newboxBullWeekly or newboxBullMonthly or newboxBear or newboxBear5 or newboxBear10 or newboxBear15 or newboxBear1hr or newboxBear4hr or newboxBear8hr or newboxBearDaily or newboxBearWeekly or newboxBearMonthly        
+alertcondition(both_fvg_creation_alert,title='Both Bull or Bear FVG Creations',message = 'Both Bull or Bear FVG Creations' )
+
+////////////////////////////////////////////////////////////////////////////////MTF FVG (price overlay)
+// General Settings
+boxtype         = 'Imbalance'
+
+showmiddleline  = true
+showbottomline  = false
+showtopline     = false
+showup          = true
+showdown        = true
+upcol1          = input.color(color.new(color.yellow,70), 'Box/Border/Text - UP', inline='appup', group = 'FVG (price overlay)')
+upbordercol     = input.color(color.rgb(76, 175, 79, 100), '', inline='appup', group = 'FVG (price overlay)')
+uptextcol       = input.color(color.new(#000000,0), '', inline='appup', group = 'FVG (price overlay)')
+downcol1        = input.color(color.new(color.yellow,70), 'Box/Border/Text - DOWN', inline='appdown', group = 'FVG (price overlay)')
+downbordercol   = input.color(color.rgb(255, 82, 82, 100), '', inline='appdown', group = 'FVG (price overlay)')
+downtextcol     = input.color(color.new(#000000,0), '', inline='appdown', group = 'FVG (price overlay)')
+extendtilfilled = input.bool(true, '', group = 'FVG (price overlay)', inline='fill')
+filledtype      = input.string('Full Fill', 'Fill Condition                ', options=['Touch', 'Full Fill', 'Half Fill'], group = 'FVG (price overlay)', inline='fill')
+lookback        = input.bool(true, '', inline='lb', group = 'FVG (price overlay)')
+daysBack        = input.float(5, 'Lookback (D)               ', group = 'FVG (price overlay)',inline='lb')
+hidefilled      = input.bool(true, 'Hide Filled Levels', inline='hd', group= 'FVG (price overlay)')
+showboxes       = input.bool(true, 'Show Boxes', inline='hd', group= 'FVG (price overlay)')
+conditiontype   = 'None'
+atrlength       = 30
+atrmult         = 1
+pctcond         = 0.30
+pctmult         = 1
+showboxtext     = true
+textType        = 'Labels + Timeframe'
+textsize        = 'Size: Normal'
+textvalign      = 'Center'
+texthalign      = 'Right'
+imbtext         = ''//"FVG"
+gaptext         = "GAP"
+wicktext        = 'WICK'
+actionbool      = false
+actiondel       = 'Stop Zone'
+nmbars          = 3500
+linestyle       = 'Dotted'
+lineCol         = color.rgb(178, 181, 190, 31)
+nbars           = 4
+maxBoxes        = 499
+
+// Requesting HTF data 
+[o0, h0, l0, c0]     = request.security(syminfo.tickerid, tfinput, [open, high, low, close])
+[o1, h1, l1, c1] = request.security(syminfo.tickerid, tfinput, [open[1], high[1], low[1], close[1]])
+[o2, h2, l2, c2] = request.security(syminfo.tickerid, tfinput, [open[2], high[2], low[2], close[2]])
+t                = request.security(syminfo.tickerid, tfinput, time)
+tvol             = request.security(syminfo.tickerid, tfinput, volume)
+atr              = request.security(syminfo.tickerid, tfinput, ta.atr(atrlength))
+bool new         = ta.change(time(tfinput))
+
+// Distances in %
+upimbdist     = (l0-h2) / h2 * 100
+downimbdist   = (l2-h0) / h0 * 100
+upgapdist     = (l0-h1) / h1 * 100
+downgapdist   = (l1-h0) / h0 * 100
+upwickdist    = (h1-math.max(o1, c1)) / math.max(o1, c1) * 100
+downwickdist  = (math.min(o1, c1)-l1) / l1 * 100
+// Candle body size and the size of lower&upper wicks
+bodysize      = math.abs(o1-c1)
+upperWickSize = h1 - math.max(o1, c1)
+lowerWickSize = math.min(o1, c1) - l1
+// Hide boxes (transparency to 100)
+clear = color.rgb(0,0,0,100)
+color upcol   = showboxes ? upcol1   : clear
+color downcol = showboxes ? downcol1 : clear
+// Volume
+float labeltype = 0
+if boxtype=='Imbalance' or boxtype=='Wick'
+    labeltype := tfinput==timeframe.period ? tvol[1] : tvol[2]
+if boxtype=='Gap'
+    labeltype := tfinput==timeframe.period ? tvol[0] : tvol[1]
+// Calculating inRange, used for lookback in days
+MSPD          = 24 * 60 * 60 * 1000
+lastBarDate   = timestamp(year(timenow), month(timenow), dayofmonth(timenow), hour(timenow), minute(timenow), second(timenow))
+thisBarDate   = timestamp(year, month, dayofmonth, hour, minute, second)
+daysLeft      = math.abs(math.floor((lastBarDate - thisBarDate) / MSPD))
+inRange       = lookback ? (daysLeft < daysBack) : true
+// Timeframe labels
+timeframelabel(tfinput) =>
+    switch tfinput
+        ''    => timeframe.period + (timeframe.isminutes ? 'm' : na)
+        '1'   => '1m'
+        '2'   => '2m'
+        '3'   => '3m'
+        '4'   => '4m'
+        '5'   => '5m'
+        '10'  => '10m'
+        '15'  => '15m'
+        '30'  => '30m'
+        '60'  => '1 Hr'
+        '120' => '2 Hr'
+        '240' => '4 Hr'
+        '480' => '8 Hr'
+        '720' => '12 Hr'
+        => tfinput     
+  
+// Box Text
+var string imbboxtext   = na, var string gapboxtext   = na, var string wickboxtext  = na
+if showboxtext and textType == 'Labels'
+    imbboxtext  := str.tostring(imbtext)
+    gapboxtext  := str.tostring(gaptext)
+    wickboxtext := str.tostring(wicktext)
+if showboxtext and textType == 'Volume'
+    imbboxtext  := str.tostring(labeltype, format.volume)
+    gapboxtext  := str.tostring(labeltype, format.volume)
+    wickboxtext := str.tostring(labeltype, format.volume)
+if showboxtext and textType == 'Labels + Timeframe'
+    //imbboxtext  := str.tostring(imbtext)  + ' • ' + str.tostring(timeframelabel(tfinput))
+    imbboxtext  := str.tostring(timeframelabel(tfinput) + ' ' + str.tostring(imbtext))
+    gapboxtext  := str.tostring(gaptext)  + ' • ' + str.tostring(timeframelabel(tfinput))
+    wickboxtext := str.tostring(wicktext) + ' • ' + str.tostring(timeframelabel(tfinput))
+if showboxtext and textType == 'Labels + Timeframe + Volume'
+    imbboxtext  := str.tostring(imbtext)  + ' • ' + str.tostring(timeframelabel(tfinput)) + ' • ' + str.tostring(labeltype, format.volume)
+    gapboxtext  := str.tostring(gaptext)  + ' • ' + str.tostring(timeframelabel(tfinput)) + ' • ' + str.tostring(labeltype, format.volume)
+    wickboxtext := str.tostring(wicktext) + ' • ' + str.tostring(timeframelabel(tfinput)) + ' • ' + str.tostring(labeltype, format.volume)
+
+// Line style and text label appearance
+lineStyle(x) =>
+    switch x
+        'Solid'         => line.style_solid
+        'Dashed'        => line.style_dashed
+        'Dotted'        => line.style_dotted
+switchhalign(texthalign) =>
+    switch texthalign
+        'Middle'        => text.align_center
+        'Right'         => text.align_right
+        'Left'          => text.align_left
+switchvalign(textvalign) =>
+    switch textvalign
+        'Center'        => text.align_center
+        'Top'           => text.align_top
+        'Bottom'        => text.align_bottom
+switchtextsize(textsize) =>
+    switch textsize
+        'Size: Normal'  => size.normal
+        'Size: Small'   => size.small
+        'Size: Tiny'    => size.tiny
+        'Size: Auto'    => size.auto
+        'Size: Large'   => size.large
+
+// Conditions for Imbalances, Gaps and Wicks
+var bool condition = na, var bool condition2 = na, var bool condition3 = na, var bool condition4 = na, var bool condition5 = na, var bool condition6 = na
+if conditiontype == 'Percentage'
+    condition := upimbdist>(pctcond*pctmult)
+    condition2 := downimbdist>(pctcond*pctmult)
+    condition3 := upgapdist>(pctcond*pctmult) 
+    condition4 := downgapdist>(pctcond*pctmult) 
+    condition5 := upwickdist>(pctcond*pctmult)
+    condition6 := downwickdist>(pctcond*pctmult)
+if conditiontype == 'ATR'
+    condition := (l0-h2)>(atrmult*atr)
+    condition2 := (l2-h0)>(atrmult*atr) 
+    condition3 := (l0-h1)>(atrmult*atr) 
+    condition4 := (l1-h0)>(atrmult*atr)   
+    condition5 := (h1-math.max(o1, c1))>(atrmult*atr) 
+    condition6 := (math.min(o1, c1)-l1)>(atrmult*atr)   
+if conditiontype == 'None'
+    condition  := true
+    condition2 := true
+    condition3 := true
+    condition4 := true
+    condition5 := true
+    condition6 := true
+
+// Drawing Boxes and Lines
+var boxes       = array.new_box(), var topLines    = array.new_line(), var middleLines = array.new_line(), var bottomLines = array.new_line()
+
+if boxtype == 'Imbalance' and (l0 > h2) and showup and condition and inRange and new and MTF_po
+    imbboxUP = box.new(t[2], l0, time, h2, bgcolor = upcol, border_color=upbordercol,border_width = 1, text=imbboxtext, text_size = switchtextsize(textsize), text_halign = switchhalign(texthalign), text_valign = switchvalign(textvalign), text_color = uptextcol,xloc =  xloc.bar_time)
+    topLine = showtopline ? line.new(t[2], l0, time, l0, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    bottomLine = showbottomline ? line.new(t[2], h2, time, h2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    middleLine = showmiddleline ? line.new(t[2], (l0 + h2)/2, time, (l0 + h2)/2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    array.push(topLines, topLine)
+    array.push(middleLines, middleLine)
+    array.push(bottomLines, bottomLine)
+    array.push(boxes, imbboxUP)
+if boxtype == 'Imbalance' and (h0 < l2) and showdown and condition2 and inRange and new and MTF_po
+    imbboxDOWN  = box.new(t[2], h0, time, l2, bgcolor = downcol, border_color=downbordercol,border_width = 1, text=imbboxtext, text_size = switchtextsize(textsize), text_halign = switchhalign(texthalign), text_valign = switchvalign(textvalign), text_color = downtextcol, xloc =  xloc.bar_time)
+    topLine     = showtopline    ? line.new(t[2], l2, time, l2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    bottomLine  = showbottomline ? line.new(t[2], h0, time, h0, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    middleLine  = showmiddleline ? line.new(t[2], (h0+l2)/2, time, (h0+l2)/2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    array.push(topLines, topLine)
+    array.push(middleLines, middleLine)
+    array.push(bottomLines, bottomLine)
+    array.push(boxes, imbboxDOWN)
+if boxtype == 'Gap' and l0 > h1 and showup and condition3 and inRange and new
+    gapboxUP    = box.new(t[1], l0, time, h1, bgcolor = upcol, border_color=upbordercol, border_width = 1, text=gapboxtext, text_size = switchtextsize(textsize), text_halign = switchhalign(texthalign), text_valign = switchvalign(textvalign), text_color = uptextcol, xloc =  xloc.bar_time)
+    topLine     = showtopline    ? line.new(t[1], l0, time, l0, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    bottomLine  = showbottomline ? line.new(t[1], h1, time, h1, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    middleLine  = showmiddleline ? line.new(t[1], (l0+h1)/2, time, (l0+h1)/2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    array.push(topLines, topLine)
+    array.push(middleLines, middleLine)
+    array.push(bottomLines, bottomLine)
+    array.push(boxes, gapboxUP)
+if boxtype == 'Gap' and h0 < l1 and showdown and condition4 and inRange and new
+    gapboxDOWN  = box.new(t[1], l1, time, h0, bgcolor = downcol, border_color=downbordercol,border_width = 1, text=gapboxtext, text_size = switchtextsize(textsize), text_halign = switchhalign(texthalign), text_valign = switchvalign(textvalign), text_color = downtextcol, xloc =  xloc.bar_time)
+    topLine     = showtopline    ? line.new(t[1], l1, time, l1, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    bottomLine  = showbottomline ? line.new(t[1], h0, time, h0, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    middleLine  = showmiddleline ? line.new(t[1], (h0+l1)/2, time, (h0+l1)/2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    array.push(topLines, topLine)
+    array.push(middleLines, middleLine)
+    array.push(bottomLines, bottomLine)
+    array.push(boxes, gapboxDOWN)
+if boxtype == 'Wick' and upperWickSize>(bodysize/6) and showup and condition5 and inRange and new
+    wickboxUP   = box.new(t[1], h1, time, math.max(o1, c1), bgcolor = upcol, border_color=upbordercol,border_width = 1, text=wickboxtext, text_size = switchtextsize(textsize), text_halign = switchhalign(texthalign), text_valign = switchvalign(textvalign), text_color = uptextcol, xloc =  xloc.bar_time)
+    topLine     = showtopline    ? line.new(t[1], math.max(h1, math.max(o1, c1)), time, math.max(h1, math.max(o1, c1)), color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    bottomLine  = showbottomline ? line.new(t[1], math.min(h1, math.max(o1, c1)), time, math.min(h1, math.max(o1, c1)), color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    middleLine  = showmiddleline ? line.new(t[1], (h1+math.max(o1, c1))/2, time, (h1+math.max(o1, c1))/2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    array.push(topLines, topLine)
+    array.push(middleLines, middleLine)
+    array.push(bottomLines, bottomLine)
+    array.push(boxes, wickboxUP)
+if boxtype == 'Wick' and lowerWickSize>(bodysize/6) and showdown and condition6 and inRange and new
+    wickboxDOWN = box.new(t[1], math.min(o1, c1), time, l1, bgcolor = downcol, border_color=downbordercol,border_width = 1, text=wickboxtext, text_size = switchtextsize(textsize), text_halign = switchhalign(texthalign), text_valign = switchvalign(textvalign), text_color = downtextcol, xloc =  xloc.bar_time)
+    topLine     = showtopline    ? line.new(t[1], math.max(l1, math.min(o1, c1)), time, math.max(l1, math.min(o1, c1)), color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    bottomLine  = showbottomline ? line.new(t[1], math.min(l1, math.min(o1, c1)), time, math.min(l1, math.min(o1, c1)), color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    middleLine  = showmiddleline ? line.new(t[1], (l1+math.min(o1, c1))/2, time, (l1+math.min(o1, c1))/2, color=lineCol, style=lineStyle(linestyle), xloc =  xloc.bar_time) : na
+    array.push(topLines, topLine)
+    array.push(middleLines, middleLine)
+    array.push(bottomLines, bottomLine)
+    array.push(boxes, wickboxDOWN)
+
+// Looping over the arrays and updating objects
+size = array.size(boxes)
+if size > 0
+    for i = 0 to size - 1
+        j = size - 1 - i
+        box = array.get(boxes, j)
+        topLine = array.get(topLines, j)
+        middleLine = array.get(middleLines, j)
+        bottomLine = array.get(bottomLines, j) 
+        level = box.get_bottom(box)
+        level2 = box.get_top(box)
+        level3 = (level2+level)/2
+        // Defining fill conditions for zones and lines
+        var bool filled = na
+        unifill = (high > level and low < level) or (high > level2 and low < level2)
+        if filledtype == 'Touch'
+            filled := (high > level and low < level) or (high > level2 and low < level2)
+        if filledtype == 'Half Fill'
+            filled := (high > level3 and low < level3)
+        if filledtype == 'Full Fill'
+            for imbboxUP in boxes
+                filled  := (high > level2 and low < level2)
+            for imbboxDOWN in boxes
+                filled  := (high > level and low < level)
+            for gapboxUP in boxes
+                filled  := (high > level2 and low < level2)
+            for gapboxDOWN in boxes
+                filled  := (high > level and low < level)
+            for wickboxUP in boxes
+                filled  := (high > level2 and low < level2)
+            for wickboxDOWN in boxes
+                filled  := (high > level and low < level)
+        if hidefilled and filled
+            line.delete(topLine)
+            line.delete(middleLine)
+            line.delete(bottomLine)
+            box.delete(box)
+            array.remove(boxes, j)
+            array.remove(topLines, j)
+            array.remove(middleLines, j)
+            array.remove(bottomLines, j)
+            continue
+        if filled and extendtilfilled
+            array.remove(boxes, j)
+            array.remove(topLines, j)
+            array.remove(middleLines, j)
+            array.remove(bottomLines, j)
+            continue 
+
+        box.set_right(box, time+1)
+        line.set_x2(topLine, time+1)
+        line.set_x2(middleLine, time+1)
+        line.set_x2(bottomLine, time+1)
+
+        if not filled and not extendtilfilled
+            array.remove(boxes, j)
+            array.remove(topLines, j)
+            array.remove(middleLines, j)
+            array.remove(bottomLines, j)
+            continue 
+            box.set_right(box, time+nbars)
+            line.set_x2(topLine, time+nbars)
+            line.set_x2(middleLine, time+nbars)
+            line.set_x2(bottomLine, time+nbars)
+        if not filled and actionbool and actiondel == 'Delete Zone' and ((box.get_right(box)-box.get_left(box)) > nmbars)
+            line.delete(topLine)
+            line.delete(middleLine)
+            line.delete(bottomLine)
+            box.delete(box)
+        if not filled and actionbool and actiondel == 'Stop Zone' and ((box.get_right(box)-box.get_left(box)) > nmbars)
+            array.remove(boxes, j)
+            array.remove(topLines, j)
+            array.remove(middleLines, j)
+            array.remove(bottomLines, j)
+            continue 
+            box.set_right(box, time)
+            line.set_x2(topLine, time)
+            line.set_x2(middleLine, time)
+            line.set_x2(bottomLine, time)
+// Deleting if the array is too big
+if array.size(boxes) >= maxBoxes
+    int i = 0
+    while array.size(boxes) >= maxBoxes
+        box        = array.get(boxes, i)
+        topLine    = array.get(topLines, i)
+        middleLine = array.get(middleLines, i)
+        bottomLine = array.get(bottomLines, i)
+
+        line.delete(topLine)
+        line.delete(middleLine)
+        line.delete(bottomLine)
+        box.delete(box)
+        array.remove(boxes, i)
+        array.remove(topLines, i)
+        array.remove(middleLines, i)
+        array.remove(bottomLines, i)
+        i += 1
+
