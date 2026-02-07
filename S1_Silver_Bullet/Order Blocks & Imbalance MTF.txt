@@ -1,0 +1,161 @@
+//@version=5
+indicator("Order Blocks & Imbalance MTF", overlay=true, max_boxes_count=500)
+
+grp_logic    = "Logic Settings"
+grp_vis      = "Smart Visibility"
+
+tf_input       = input.timeframe("", "Timeframe", group=grp_logic)
+fvgThreshold   = input.float(0.5, "Min FVG Size (ATR Multiplier)", step=0.1, group=grp_logic)
+mitigationType = input.string("Wick", "Mitigation Method", options=["Close", "Wick"], group=grp_logic)
+showBull       = input.bool(true, "Show Demand (Bullish)", group=grp_logic)
+showBear       = input.bool(true, "Show Supply (Bearish)", group=grp_logic)
+
+useSmartView   = input.bool(true, "Enable Smart Visibility", group=grp_vis)
+visibleLimit   = input.int(10, "Max Zones to Show (Per Side)", minval=1, maxval=20, group=grp_vis)
+extendActive   = input.bool(true, "Auto-Extend Visible Zones", group=grp_vis)
+
+type OB
+    box     id
+    float   top
+    float   bottom
+    bool    isBullish
+    bool    mitigated
+    int     created_time
+
+var OB[] obArray = array.new<OB>()
+
+toggle_zone(OB zone, bool visible) =>
+    color baseCol = zone.isBullish ? color.green : color.red
+    if visible
+        if zone.mitigated
+            box.set_bgcolor(zone.id, color.new(baseCol, 90))
+            box.set_border_color(zone.id, baseCol)
+            box.set_border_style(zone.id, line.style_dotted)
+            box.set_text_color(zone.id, color.white)
+        else
+            box.set_bgcolor(zone.id, color.new(baseCol, 70))
+            box.set_border_color(zone.id, color.new(baseCol, 0))
+            box.set_border_style(zone.id, line.style_solid)
+            box.set_text_color(zone.id, color.white)
+    else
+        box.set_bgcolor(zone.id, color.new(color.white, 100))
+        box.set_border_color(zone.id, color.new(color.white, 100))
+        box.set_text_color(zone.id, color.new(color.white, 100))
+
+f_calc_ob() =>
+    _atr = ta.atr(14)
+    _bull_fvg_size = low[0] - high[2]
+    _bear_fvg_size = low[2] - high[0]
+    _isBull = _bull_fvg_size > (_atr[1] * fvgThreshold)
+    _isBear = _bear_fvg_size > (_atr[1] * fvgThreshold)
+    [_isBull, _isBear, high[2], low[2], time[2]]
+
+[htf_isBull, htf_isBear, htf_high, htf_low, htf_time] = request.security(syminfo.tickerid, tf_input, f_calc_ob())
+
+var int last_created_time = 0
+
+if htf_time != last_created_time
+    if showBull and htf_isBull
+        b = box.new(htf_time, htf_high, time + 60000, htf_low,
+             border_color=color.new(color.green, 0), 
+             bgcolor=color.new(color.green, 70),
+             text="OB Demand", text_color=color.white, text_size=size.tiny,
+             xloc=xloc.bar_time)
+        newZone = OB.new(b, htf_high, htf_low, true, false, htf_time)
+        if useSmartView
+            toggle_zone(newZone, false)
+        array.push(obArray, newZone)
+        last_created_time := htf_time
+
+    else if showBear and htf_isBear
+        b = box.new(htf_time, htf_high, time + 60000, htf_low,
+             border_color=color.new(color.red, 0), 
+             bgcolor=color.new(color.red, 70),
+             text="OB Supply", text_color=color.white, text_size=size.tiny,
+             xloc=xloc.bar_time)
+        newZone = OB.new(b, htf_high, htf_low, false, false, htf_time)
+        if useSmartView
+            toggle_zone(newZone, false)
+        array.push(obArray, newZone)
+        last_created_time := htf_time
+
+if array.size(obArray) > 0
+    for i = array.size(obArray) - 1 to 0
+        zone = array.get(obArray, i)
+        bool remove = false
+        
+        if zone.isBullish
+            if close < zone.bottom
+                remove := true
+            else if (mitigationType == "Wick" ? low : close) <= zone.top and not zone.mitigated
+                zone.mitigated := true
+                if not useSmartView
+                    box.set_bgcolor(zone.id, color.new(color.green, 90))
+                    box.set_border_style(zone.id, line.style_dotted)
+                    box.set_text(zone.id, "Mitigated")
+                else
+                    box.set_text(zone.id, "Mitigated")
+        else
+            if close > zone.top
+                remove := true
+            else if (mitigationType == "Wick" ? high : close) >= zone.bottom and not zone.mitigated
+                zone.mitigated := true
+                if not useSmartView
+                    box.set_bgcolor(zone.id, color.new(color.red, 90))
+                    box.set_border_style(zone.id, line.style_dotted)
+                    box.set_text(zone.id, "Mitigated")
+                else
+                    box.set_text(zone.id, "Mitigated")
+
+        if remove
+            box.delete(zone.id)
+            array.remove(obArray, i)
+
+if array.size(obArray) > 450
+    oldest = array.shift(obArray)
+    box.delete(oldest.id)
+
+int time_delta = (time - time[1]) 
+int future_time = time + (time_delta * 10)
+
+if barstate.islast and useSmartView
+    matrix<float> bullMat = matrix.new<float>(0, 2) 
+    matrix<float> bearMat = matrix.new<float>(0, 2)
+    
+    for i = 0 to array.size(obArray) - 1
+        z = array.get(obArray, i)
+        toggle_zone(z, false)
+        if z.isBullish 
+            matrix.add_row(bullMat, 0, array.from(z.top, i))
+        else
+            matrix.add_row(bearMat, 0, array.from(z.bottom, i))
+
+    matrix.sort(bullMat, 0, order.descending)
+    matrix.sort(bearMat, 0, order.ascending)
+
+    int rowsBull = matrix.rows(bullMat)
+    int limitBull = math.min(rowsBull, visibleLimit)
+    
+    if limitBull > 0
+        for r = 0 to limitBull - 1
+            int idx = int(matrix.get(bullMat, r, 1))
+            OB z = array.get(obArray, idx)
+            toggle_zone(z, true)
+            if extendActive
+                box.set_right(z.id, future_time)
+    
+    int rowsBear = matrix.rows(bearMat)
+    int limitBear = math.min(rowsBear, visibleLimit)
+    
+    if limitBear > 0
+        for r = 0 to limitBear - 1
+            int idx = int(matrix.get(bearMat, r, 1))
+            OB z = array.get(obArray, idx)
+            toggle_zone(z, true)
+            if extendActive
+                box.set_right(z.id, future_time)
+
+if not useSmartView and barstate.islast
+    for i = 0 to array.size(obArray) - 1
+        z = array.get(obArray, i)
+        box.set_right(z.id, time + (time - time[1]) * 5)
