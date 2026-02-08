@@ -224,16 +224,22 @@ def _pivot_series(high: pd.Series, low: pd.Series, left: int, right: int) -> Tup
             continue
         center_high = high.iloc[pivot_idx]
         center_low = low.iloc[pivot_idx]
+        # Pivot high and low must be detected independently (Pine's ta.pivothigh
+        # and ta.pivotlow are separate functions).
+        is_pivot_high = True
         if (high.iloc[pivot_idx - left : pivot_idx] >= center_high).any():
-            continue
-        if (high.iloc[pivot_idx + 1 : pivot_idx + right + 1] >= center_high).any():
-            continue
-        pivot_high[i] = center_high
+            is_pivot_high = False
+        if is_pivot_high and (high.iloc[pivot_idx + 1 : pivot_idx + right + 1] >= center_high).any():
+            is_pivot_high = False
+        if is_pivot_high:
+            pivot_high[i] = center_high
+        is_pivot_low = True
         if (low.iloc[pivot_idx - left : pivot_idx] <= center_low).any():
-            continue
-        if (low.iloc[pivot_idx + 1 : pivot_idx + right + 1] <= center_low).any():
-            continue
-        pivot_low[i] = center_low
+            is_pivot_low = False
+        if is_pivot_low and (low.iloc[pivot_idx + 1 : pivot_idx + right + 1] <= center_low).any():
+            is_pivot_low = False
+        if is_pivot_low:
+            pivot_low[i] = center_low
     return pd.Series(pivot_high, index=high.index), pd.Series(pivot_low, index=high.index)
 
 
@@ -427,7 +433,7 @@ def calculate_liquidity_inducements(
 
     structure_high, structure_low = _pivot_series(df["high"], df["low"], market_left, market_right)
     structure_pivots: List[Pivot] = []
-    trend = 0
+    trend = -1  # Pine Script initializes structure trend to -1
     change_of_character: Optional[Pivot] = None
     break_of_structure: Optional[Pivot] = None
     previous_structure_break_pivot: Optional[Pivot] = None
@@ -436,6 +442,8 @@ def calculate_liquidity_inducements(
 
     grabs_highs: List[Liquidity] = []
     grabs_lows: List[Liquidity] = []
+    big_grabs_highs: List[Liquidity] = []
+    big_grabs_lows: List[Liquidity] = []
     sweeps_highs: List[Liquidity] = []
     sweeps_lows: List[Liquidity] = []
     equal_state = EqualPivotState()
@@ -484,33 +492,12 @@ def calculate_liquidity_inducements(
             previous_structure_break_pivot = bos_pivot
             structure_break_event = True
 
-        if grabs_enabled and grab_closed[i] and grab_high_series[i]:
-            grabs_highs.insert(0, Liquidity(grab_high_series[i]))
-            grabs_highs = grabs_highs[:grabs_lookback]
-        if grabs_enabled and grab_closed[i] and grab_low_series[i]:
-            grabs_lows.insert(0, Liquidity(grab_low_series[i]))
-            grabs_lows = grabs_lows[:grabs_lookback]
-        if big_grabs_enabled and big_grab_closed[i] and big_grab_high_series[i]:
-            grabs_highs.insert(0, Liquidity(big_grab_high_series[i]))
-            grabs_highs = grabs_highs[:big_grabs_lookback]
-        if big_grabs_enabled and big_grab_closed[i] and big_grab_low_series[i]:
-            grabs_lows.insert(0, Liquidity(big_grab_low_series[i]))
-            grabs_lows = grabs_lows[:big_grabs_lookback]
-
-        if sweeps_enabled and sweep_closed[i] and sweep_high_series[i]:
-            sweeps_highs.insert(0, Liquidity(sweep_high_series[i]))
-            sweeps_highs = sweeps_highs[:sweeps_lookback]
-        if sweeps_enabled and sweep_closed[i] and sweep_low_series[i]:
-            sweeps_lows.insert(0, Liquidity(sweep_low_series[i]))
-            sweeps_lows = sweeps_lows[:sweeps_lookback]
-        if sweeps_enabled and change_of_character and previous_structure_break_index is not None:
-            sweeps_highs.clear()
-            sweeps_lows.clear()
-
+        # Pine Script detects grabs/sweeps on existing pivots BEFORE storing
+        # new ones (LiquidityGrabs() runs before SetLiquidityGrabs()).
         if i > 0:
             prev_high = float(df["high"].iloc[i - 1])
             prev_low = float(df["low"].iloc[i - 1])
-            for grab in grabs_highs + grabs_lows:
+            for grab in grabs_highs + grabs_lows + big_grabs_highs + big_grabs_lows:
                 if grab.taken or grab.invalidated:
                     continue
                 if grab.pivot.type == -1:
@@ -543,6 +530,30 @@ def calculate_liquidity_inducements(
                             sweep.taken = True
                     elif prev_high >= sweep.pivot.price and close <= sweep.pivot.price:
                         sweep.invalidated = True
+
+        # Store new pivots AFTER detection (matching Pine Script order).
+        if grabs_enabled and grab_closed[i] and grab_high_series[i]:
+            grabs_highs.insert(0, Liquidity(grab_high_series[i]))
+            grabs_highs = grabs_highs[:grabs_lookback]
+        if grabs_enabled and grab_closed[i] and grab_low_series[i]:
+            grabs_lows.insert(0, Liquidity(grab_low_series[i]))
+            grabs_lows = grabs_lows[:grabs_lookback]
+        if big_grabs_enabled and big_grab_closed[i] and big_grab_high_series[i]:
+            big_grabs_highs.insert(0, Liquidity(big_grab_high_series[i]))
+            big_grabs_highs = big_grabs_highs[:big_grabs_lookback]
+        if big_grabs_enabled and big_grab_closed[i] and big_grab_low_series[i]:
+            big_grabs_lows.insert(0, Liquidity(big_grab_low_series[i]))
+            big_grabs_lows = big_grabs_lows[:big_grabs_lookback]
+
+        if sweeps_enabled and sweep_closed[i] and sweep_high_series[i]:
+            sweeps_highs.insert(0, Liquidity(sweep_high_series[i]))
+            sweeps_highs = sweeps_highs[:sweeps_lookback]
+        if sweeps_enabled and sweep_closed[i] and sweep_low_series[i]:
+            sweeps_lows.insert(0, Liquidity(sweep_low_series[i]))
+            sweeps_lows = sweeps_lows[:sweeps_lookback]
+        if sweeps_enabled and change_of_character and previous_structure_break_index is not None:
+            sweeps_highs.clear()
+            sweeps_lows.clear()
 
         if turtle_soups_enabled:
             if i > 0:
@@ -689,7 +700,7 @@ def calculate_liquidity_inducements(
                 stop_reason="take",
                 keep_invalidated=retr_keep_invalidated,
             )
-            if change_of_character or break_of_structure:
+            if structure_break_event:
                 _stop_retracement_inducements(
                     retr_state,
                     high=high,
@@ -714,6 +725,8 @@ def calculate_liquidity_inducements(
         "previous_structure_break_pivot": previous_structure_break_pivot,
         "grabs_highs": grabs_highs,
         "grabs_lows": grabs_lows,
+        "big_grabs_highs": big_grabs_highs,
+        "big_grabs_lows": big_grabs_lows,
         "sweeps_highs": sweeps_highs,
         "sweeps_lows": sweeps_lows,
         "equal_pivots": equal_state,
