@@ -56,7 +56,7 @@ def _atr(df: pd.DataFrame, length: int) -> pd.Series:
             (df["low"] - df["close"].shift(1)).abs(),
         ),
     )
-    return tr.rolling(window=length).mean()
+    return tr.ewm(alpha=1.0 / length, adjust=False).mean()
 
 
 def _mitigate_zone(zone: SMZone, row: pd.Series, remove_on_mit: bool) -> bool:
@@ -90,10 +90,10 @@ def _enforce_cap(zones: List[SMZone], cap: int) -> None:
 def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
     """Calculate MTF trend series matching Pine Script request.security behavior.
 
-    Pine Script with lookahead_on=true:
-    - The HTF bar's value is known only AFTER it closes
-    - The signal appears at the START of the NEXT period
-    - Example: 15M bar [21:45, 22:00) closes bullish -> signal visible at 22:00
+    Pine Script with barmerge.lookahead_on:
+    - The HTF bar's FINAL value is available at the START of that bar
+    - Example: 15M bar [21:45, 22:00) close value is visible from 21:45 onward
+    - This introduces look-ahead bias (uses future close during the bar)
     """
     # Use left-closed intervals [start, end) to match TradingView behavior
     # A 15M bar "21:45" contains 5M bars at: 21:45, 21:50, 21:55
@@ -117,13 +117,8 @@ def _trend_series(df: pd.DataFrame, tf: str, ma_period: int) -> pd.Series:
         )
         trend = trend.reindex(full_index).ffill()
 
-    # Shift the trend forward by 1 period so the signal appears AFTER the bar closes
-    # Example: 15M bar [21:45, 22:00) calculates bullish -> value moves to 22:00 index
-    # This matches TradingView where the signal is confirmed after bar close
-    trend = trend.shift(1)
-
-    # Forward-fill to all LTF bars within each period
-    # Bars at 22:00, 22:05, 22:10 will see the bullish signal from the closed 21:45 bar
+    # With lookahead_on, the HTF bar's final value is available at the START
+    # of the bar (no shift needed). Forward-fill to all LTF bars within each period.
     return trend.reindex(df.index, method="ffill").fillna(False)
 
 
@@ -153,7 +148,7 @@ def calculate_smart_money_zones(
     bear_ob: List[SMZone] = []
 
     for i in range(len(df)):
-        if i >= 2:
+        if i > 2:
             if show_fvg and df["low"].iloc[i] > df["high"].iloc[i - 2]:
                 mid_bull = df["close"].iloc[i - 1] > df["open"].iloc[i - 1]
                 mid_body = _calc_body_pct(
@@ -208,7 +203,7 @@ def calculate_smart_money_zones(
                     )
                     _enforce_cap(bear_fvg, max_zones)
 
-        if i >= ob_lookback and show_ob:
+        if i > ob_lookback and show_ob:
             atr_val = atr.iloc[i]
             is_bull_break = df["close"].iloc[i] > df["close"].iloc[i - 1] and (df["high"].iloc[i] - df["low"].iloc[i]) > atr_val * 1.2
             prev_bear = df["close"].iloc[i - 1] < df["open"].iloc[i - 1]
