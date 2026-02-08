@@ -190,7 +190,7 @@ def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> Market
         break_of_structure = False
         if not np.isnan(last_pivot_high):
             prev_close = closes[i - 1] if i > 0 else closes[i]
-            if prev_close <= last_pivot_high and closes[i] > last_pivot_high:
+            if prev_close <= prev_last_pivot_high and closes[i] > last_pivot_high:
                 break_of_structure = bool(current_trend and last_pivot_high != last_broken_high)
                 current_trend = True
                 last_broken_high = last_pivot_high
@@ -198,7 +198,7 @@ def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> Market
 
         if not np.isnan(last_pivot_low):
             prev_close = closes[i - 1] if i > 0 else closes[i]
-            if prev_close >= last_pivot_low and closes[i] < last_pivot_low:
+            if prev_close >= prev_last_pivot_low and closes[i] < last_pivot_low:
                 break_of_structure = bool((not current_trend) and last_pivot_low != last_broken_low)
                 current_trend = False
                 last_broken_low = last_pivot_low
