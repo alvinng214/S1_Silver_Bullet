@@ -72,8 +72,95 @@ class RetracementState:
 class TurtleSoupEvent:
     pivot: Pivot
     direction: int
-    index: int
+    start_index: int
+    end_index: int
+    break_price: float
+    reversal_index: int
     confirmed: bool
+
+    @property
+    def break_index(self) -> int:
+        return self.end_index
+
+    @property
+    def is_bullish(self) -> bool:
+        return self.direction == 1
+
+
+def _detect_turtle_soups(
+    pivots: List[Pivot],
+    turtle_events: List[TurtleSoupEvent],
+    *,
+    high: float,
+    low: float,
+    prev_high: float,
+    prev_low: float,
+    bar_index: int,
+    highs: pd.Series,
+    lows: pd.Series,
+    confirmation_enabled: bool,
+    direction: int,
+) -> None:
+    reversed_pivots = list(pivots)
+    reversed_pivots.reverse()
+    for pivot in reversed_pivots:
+        if pivot.liquidity_broken:
+            continue
+        confirmed = (
+            low > pivot.price and prev_low <= pivot.price
+            if pivot.type == -1
+            else high < pivot.price and prev_high >= pivot.price
+        )
+        if not confirmed:
+            continue
+        offset = 2
+        deepest = prev_low if pivot.type == -1 else prev_high
+        while True:
+            idx = bar_index - offset
+            if idx < 0:
+                break
+            price = lows.iloc[idx] if pivot.type == -1 else highs.iloc[idx]
+            swept = price <= pivot.price if pivot.type == -1 else price >= pivot.price
+            if swept:
+                offset += 1
+                if pivot.type == -1:
+                    if price < deepest:
+                        deepest = price
+                else:
+                    if price > deepest:
+                        deepest = price
+            else:
+                break
+        if offset == 2:
+            continue
+        pivot.liquidity_broken = True
+        start_index = bar_index - offset
+        end_index = bar_index - 1
+        event = TurtleSoupEvent(
+            pivot=pivot,
+            direction=direction,
+            start_index=start_index,
+            end_index=end_index,
+            break_price=deepest,
+            reversal_index=end_index + 1,
+            confirmed=False,
+        )
+        turtle_events[:] = [
+            existing
+            for existing in turtle_events
+            if not (
+                existing.direction == direction
+                and existing.start_index >= event.start_index
+                and existing.end_index <= event.end_index
+            )
+        ]
+        same_direction_count = sum(1 for existing in turtle_events if existing.direction == direction)
+        if same_direction_count >= 5:
+            for idx in range(len(turtle_events) - 1, -1, -1):
+                if turtle_events[idx].direction == direction:
+                    turtle_events.pop(idx)
+                    break
+        turtle_events.insert(0, event)
 
 
 @dataclass
@@ -345,6 +432,7 @@ def calculate_liquidity_inducements(
     break_of_structure: Optional[Pivot] = None
     previous_structure_break_pivot: Optional[Pivot] = None
     previous_structure_break_index: Optional[int] = None
+    retracement_structure_break_index: Optional[int] = None
 
     grabs_highs: List[Liquidity] = []
     grabs_lows: List[Liquidity] = []
@@ -353,6 +441,8 @@ def calculate_liquidity_inducements(
     equal_state = EqualPivotState()
     retr_state = RetracementState()
     turtle_events: List[TurtleSoupEvent] = []
+    turtle_highs: List[Pivot] = []
+    turtle_lows: List[Pivot] = []
     buyside: List[ExternalLiquidity] = []
     sellside: List[ExternalLiquidity] = []
 
@@ -382,16 +472,17 @@ def calculate_liquidity_inducements(
         last_low = next((p for p in structure_pivots if p.type == -1), None)
 
         change_of_character, trend = _detect_change_of_character(structure_pivots, trend, close, prev_close)
+        structure_break_event = False
         if change_of_character:
             break_of_structure = None
             previous_structure_break_pivot = change_of_character
-            previous_structure_break_index = i
+            structure_break_event = True
 
         bos_pivot = _detect_break_of_structure(structure_pivots, trend, close)
         if bos_pivot:
             break_of_structure = bos_pivot
             previous_structure_break_pivot = bos_pivot
-            previous_structure_break_index = i
+            structure_break_event = True
 
         if grabs_enabled and grab_closed[i] and grab_high_series[i]:
             grabs_highs.insert(0, Liquidity(grab_high_series[i]))
@@ -412,6 +503,9 @@ def calculate_liquidity_inducements(
         if sweeps_enabled and sweep_closed[i] and sweep_low_series[i]:
             sweeps_lows.insert(0, Liquidity(sweep_low_series[i]))
             sweeps_lows = sweeps_lows[:sweeps_lookback]
+        if sweeps_enabled and change_of_character and previous_structure_break_index is not None:
+            sweeps_highs.clear()
+            sweeps_lows.clear()
 
         if i > 0:
             prev_high = float(df["high"].iloc[i - 1])
@@ -450,23 +544,49 @@ def calculate_liquidity_inducements(
                     elif prev_high >= sweep.pivot.price and close <= sweep.pivot.price:
                         sweep.invalidated = True
 
-        if turtle_soups_enabled and turtle_closed[i]:
-            ph = turtle_high_series[i]
-            pl = turtle_low_series[i]
-            if ph:
-                pivot = ph
-                if i > 0 and df["high"].iloc[i - 1] >= pivot.price and close <= pivot.price:
-                    confirmed = not turtle_confirmation
-                    if turtle_confirmation and change_of_character and change_of_character.type == -1:
-                        confirmed = True
-                    turtle_events.append(TurtleSoupEvent(pivot, -1, i - 1, confirmed))
-            if pl:
-                pivot = pl
-                if i > 0 and df["low"].iloc[i - 1] <= pivot.price and close >= pivot.price:
-                    confirmed = not turtle_confirmation
-                    if turtle_confirmation and change_of_character and change_of_character.type == 1:
-                        confirmed = True
-                    turtle_events.append(TurtleSoupEvent(pivot, 1, i - 1, confirmed))
+        if turtle_soups_enabled:
+            if i > 0:
+                prev_high = float(df["high"].iloc[i - 1])
+                prev_low = float(df["low"].iloc[i - 1])
+                _detect_turtle_soups(
+                    turtle_highs,
+                    turtle_events,
+                    high=high,
+                    low=low,
+                    prev_high=prev_high,
+                    prev_low=prev_low,
+                    bar_index=i,
+                    highs=df["high"],
+                    lows=df["low"],
+                    confirmation_enabled=turtle_confirmation,
+                    direction=-1,
+                )
+                _detect_turtle_soups(
+                    turtle_lows,
+                    turtle_events,
+                    high=high,
+                    low=low,
+                    prev_high=prev_high,
+                    prev_low=prev_low,
+                    bar_index=i,
+                    highs=df["high"],
+                    lows=df["low"],
+                    confirmation_enabled=turtle_confirmation,
+                    direction=1,
+                )
+            if turtle_confirmation and change_of_character and previous_structure_break_index is not None:
+                for event in turtle_events:
+                    if event.direction == trend and event.end_index > previous_structure_break_index:
+                        event.confirmed = True
+            if turtle_closed[i]:
+                ph = turtle_high_series[i]
+                pl = turtle_low_series[i]
+                if ph:
+                    turtle_highs.insert(0, ph)
+                    turtle_highs = turtle_highs[:turtle_lookback]
+                if pl:
+                    turtle_lows.insert(0, pl)
+                    turtle_lows = turtle_lows[:turtle_lookback]
 
         if equal_pivots_enabled:
             atr_val = float(atr.iloc[i]) if not pd.isna(atr.iloc[i]) else 0.0
@@ -516,6 +636,9 @@ def calculate_liquidity_inducements(
             for inducement in equal_state.bullish_inducements:
                 if trend == 1 and not inducement.liquidity_taken and low <= inducement.stop_losses:
                     inducement.liquidity_taken = True
+            if structure_break_event:
+                equal_state.bullish_inducements.clear()
+                equal_state.bearish_inducements.clear()
 
         if external_liquidity_enabled:
             if last_high and last_high.bar_index == i - market_right:
@@ -549,9 +672,13 @@ def calculate_liquidity_inducements(
                 if len(pivots) > 1:
                     latest = pivots[0]
                     next_latest = pivots[1]
-                    if previous_structure_break_index is not None:
-                        latest_after_break = latest.bar_index > previous_structure_break_index
-                        if latest.bar_index == i - retr_right and latest_after_break and next_latest.bar_index < previous_structure_break_index:
+                    if retracement_structure_break_index is not None:
+                        latest_after_break = latest.bar_index > retracement_structure_break_index
+                        if (
+                            latest.bar_index == i - retr_right
+                            and latest_after_break
+                            and next_latest.bar_index < retracement_structure_break_index
+                        ):
                             target_list = retr_state.highs if trend == -1 else retr_state.lows
                             target_list.insert(0, RetracementInducement(latest))
             _stop_retracement_inducements(
@@ -562,7 +689,7 @@ def calculate_liquidity_inducements(
                 stop_reason="take",
                 keep_invalidated=retr_keep_invalidated,
             )
-            if previous_structure_break_index is not None and (change_of_character or break_of_structure):
+            if change_of_character or break_of_structure:
                 _stop_retracement_inducements(
                     retr_state,
                     high=high,
@@ -571,9 +698,14 @@ def calculate_liquidity_inducements(
                     stop_reason="invalidate",
                     keep_invalidated=retr_keep_invalidated,
                 )
+            if structure_break_event:
+                retracement_structure_break_index = i
 
         buyside_targets.iloc[i] = buyside[0].price if buyside else np.nan
         sellside_targets.iloc[i] = sellside[0].price if sellside else np.nan
+
+        if structure_break_event:
+            previous_structure_break_index = i
 
     return {
         "trend": trend,
