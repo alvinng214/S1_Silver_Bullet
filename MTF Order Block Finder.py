@@ -211,7 +211,7 @@ def compute_mtf_order_block_finder(
                     ob_bull_chigh = chigh[ob_period - selector_shift]
                     ob_bull_clow = clow[ob_period - selector_shift]
                 else:
-                    temp_high, temp_low, selector_shift = _low_wick_search(ob_period - selector_shift, 0, copen, clow, cclose)
+                    temp_high, temp_low, _index = _low_wick_search(ob_period - selector_shift, 0, copen, clow, cclose)
                     ob_bull_chigh = temp_high
                     ob_bull_clow = temp_low
                 if settings.bull_channels > 0:
@@ -242,7 +242,7 @@ def compute_mtf_order_block_finder(
                     ob_bear_chigh = chigh[ob_period - selector_shift]
                     ob_bear_clow = clow[ob_period - selector_shift]
                 else:
-                    temp_high, temp_low, selector_shift = _high_wick_search(ob_period - selector_shift, 0, copen, chigh, cclose)
+                    temp_high, temp_low, _index = _high_wick_search(ob_period - selector_shift, 0, copen, chigh, cclose)
                     ob_bear_chigh = temp_high
                     ob_bear_clow = temp_low
                 if settings.bear_channels > 0:
