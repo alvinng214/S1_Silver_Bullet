@@ -22,6 +22,7 @@ import argparse
 import os
 import sys
 import warnings
+from typing import Dict
 
 import backtrader as bt
 import numpy as np
@@ -106,6 +107,14 @@ BIGBELUGA_SMC_PATH = os.path.join(
 )
 bigbeluga_module = SourceFileLoader("bigbeluga_smc", BIGBELUGA_SMC_PATH).load_module()
 calculate_bigbeluga_smc = bigbeluga_module.calculate_bigbeluga_smc
+
+MTF_OB_FINDER_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "MTF Order Block Finder.py",
+)
+mtf_ob_module = SourceFileLoader("mtf_order_block_finder", MTF_OB_FINDER_PATH).load_module()
+compute_mtf_order_block_finder = mtf_ob_module.compute_mtf_order_block_finder
+OBSettings = mtf_ob_module.OBSettings
 
 
 # =============================================================================
@@ -640,6 +649,82 @@ def add_ict_session_filter(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _resample_rule_from_resolution(res: str) -> str:
+    if res.endswith("D") or res.endswith("W") or res.endswith("M"):
+        return res
+    return f"{res}min"
+
+
+def _compute_htf_zones(df: pd.DataFrame, *, resolution: str) -> Dict[pd.Timestamp, list]:
+    rule = _resample_rule_from_resolution(resolution)
+    htf = (
+        df.resample(rule)
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+        .dropna()
+    )
+    settings = OBSettings(resolution=resolution)
+    zones_by_ts: Dict[pd.Timestamp, list] = {}
+    for ts in htf.index:
+        zones_by_ts[ts] = compute_mtf_order_block_finder(df.loc[:ts], settings=settings)["zones"]
+    return zones_by_ts
+
+
+def _zones_to_in_zone_series(df: pd.DataFrame, zones_by_ts: Dict[pd.Timestamp, list], *, side: str) -> pd.Series:
+    series = pd.Series(False, index=df.index)
+    sorted_items = sorted(zones_by_ts.items())
+    current_zones: list = []
+    next_idx = 0
+    for i, ts in enumerate(df.index):
+        while next_idx < len(sorted_items) and ts >= sorted_items[next_idx][0]:
+            current_zones = sorted_items[next_idx][1]
+            next_idx += 1
+        if not current_zones:
+            continue
+        low = df.iloc[i]["low"]
+        high = df.iloc[i]["high"]
+        for zone in current_zones:
+            if zone.direction != side:
+                continue
+            if low <= zone.high and high >= zone.low:
+                series.iat[i] = True
+                break
+    return series
+
+
+def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
+    zones_1h = _compute_htf_zones(df, resolution="60")
+    zones_4h = _compute_htf_zones(df, resolution="240")
+
+    bull_1h = _zones_to_in_zone_series(df, zones_1h, side="bull")
+    bear_1h = _zones_to_in_zone_series(df, zones_1h, side="bear")
+    bull_4h = _zones_to_in_zone_series(df, zones_4h, side="bull")
+    bear_4h = _zones_to_in_zone_series(df, zones_4h, side="bear")
+
+    bull_recent = (
+        pd.concat([bull_1h, bull_4h], axis=1)
+        .any(axis=1)
+        .rolling(20, min_periods=1)
+        .max()
+        .shift(1)
+        .fillna(0)
+        .astype(int)
+    )
+    bear_recent = (
+        pd.concat([bear_1h, bear_4h], axis=1)
+        .any(axis=1)
+        .rolling(20, min_periods=1)
+        .max()
+        .shift(1)
+        .fillna(0)
+        .astype(int)
+    )
+
+    df = df.copy()
+    df["filter_htf_poi_bull"] = bull_recent
+    df["filter_htf_poi_bear"] = bear_recent
+    return df
+
+
 def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFrame:
     """
     Generate entry signals with a two-stage approach:
@@ -689,9 +774,9 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
         sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
     ).astype(int)
 
-    # Filter 1: HTF POI Filter - disabled (pass-through).
-    htf_poi_bull = pd.Series(1, index=df.index, dtype=int)
-    htf_poi_bear = pd.Series(1, index=df.index, dtype=int)
+    # Filter 1: HTF POI Filter (OB wick zones)
+    htf_poi_bull = df.get("filter_htf_poi_bull", pd.Series(1, index=df.index)).astype(int)
+    htf_poi_bear = df.get("filter_htf_poi_bear", pd.Series(1, index=df.index)).astype(int)
 
     # Filter 2: Trend Filter - SMZ OR Market Structure (15M/1H) must agree
     smz_trend_15m = df.get("smz_trend_15m", pd.Series(0, index=df.index)).astype(int)
@@ -880,6 +965,7 @@ def run_backtest(
     data_df = add_mss_choch_signals(data_df)
     data_df = add_mss_fvg_signals(data_df, hk_aligned)
     data_df = add_ict_session_filter(data_df)
+    data_df = add_htf_ob_filter(data_df)
     data_df = add_entry_signals(data_df, hk_aligned)
 
     # Skip pivots in fast mode (not used for trade entries)
