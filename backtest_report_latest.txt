@@ -1,0 +1,94 @@
+
+================================================================================
+Starting Portfolio Value: $10000.00
+================================================================================
+
+2026-01-27T07:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-27T07:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T10:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T12:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T13:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T14:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T14:30:00: SHORT entry=5066.83 stop=5092.83 target=5014.83 size=7.6923 signal=ICT_Setup01
+2026-01-27T14:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T14:35:00: SHORT entry=5068.10 stop=5092.83 target=5018.64 size=8.0873 signal=ICT_Setup01
+2026-01-27T14:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T14:45:00: SHORT entry=5065.12 stop=5092.83 target=5009.70 size=7.2176 signal=Fib_OTE
+2026-01-27T16:10:00: CLOSED LOSS | Entry: 2026-01-27T14:30:00 @ 5066.83 | Exit: 2026-01-27T16:10:00 @ 5092.83 | P&L: $-200.00 (-1.96%)
+2026-01-27T16:10:00: CLOSED LOSS | Entry: 2026-01-27T14:35:00 @ 5068.10 | Exit: 2026-01-27T16:10:00 @ 5092.83 | P&L: $-200.00 (-1.96%)
+2026-01-27T16:10:00: CLOSED LOSS | Entry: 2026-01-27T14:45:00 @ 5065.12 | Exit: 2026-01-27T16:10:00 @ 5092.83 | P&L: $-200.00 (-1.96%)
+2026-01-27T23:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-28T02:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-28T02:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-28T11:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-28T11:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-28T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-28T14:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-28T19:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-28T19:15:00: SHORT entry=5296.59 stop=5326.18 target=5237.41 size=6.7590 signal=ICT_Setup01
+2026-01-28T19:55:00: CLOSED LOSS | Entry: 2026-01-28T19:15:00 @ 5296.59 | Exit: 2026-01-28T19:55:00 @ 5326.18 | P&L: $-200.00 (-1.96%)
+2026-01-28T20:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-29T12:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T13:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T14:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T18:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T21:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T23:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-30T00:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-30T02:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T02:35:00: SHORT entry=5211.72 stop=5450.96 target=4733.24 size=0.8360 signal=SB_FVG_Retrace
+2026-01-30T04:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-30T07:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T07:45:00: SHORT entry=5151.21 stop=5186.33 target=5080.97 size=5.6948 signal=ICT_Setup01
+2026-01-30T08:30:00: CLOSED WIN | Entry: 2026-01-30T07:45:00 @ 5151.21 | Exit: 2026-01-30T08:30:00 @ 5080.97 | P&L: $400.00 (4.17%)
+2026-01-30T08:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T08:50:00: SHORT entry=5110.54 stop=5184.97 target=4961.68 size=2.6871 signal=ICT_Setup01
+2026-01-30T09:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T09:00:00: SHORT entry=5115.04 stop=5184.97 target=4975.18 size=2.8600 signal=ICT_Setup01
+2026-01-30T09:45:00: CLOSED WIN | Entry: 2026-01-30T08:50:00 @ 5110.54 | Exit: 2026-01-30T09:45:00 @ 4961.68 | P&L: $400.00 (4.17%)
+2026-01-30T09:45:00: CLOSED WIN | Entry: 2026-01-30T09:00:00 @ 5115.04 | Exit: 2026-01-30T09:45:00 @ 4975.18 | P&L: $400.00 (4.17%)
+2026-01-30T14:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-30T18:20:00: CLOSED WIN | Entry: 2026-01-30T02:35:00 @ 5211.72 | Exit: 2026-01-30T18:20:00 @ 4733.24 | P&L: $400.00 (4.17%)
+2026-01-30T19:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+
+====================================================================================================
+DETAILED TRADE REPORT - Silver Bullet XAUUSD Backtest
+====================================================================================================
+
+                                       TRADE-BY-TRADE DETAILS                                       
+----------------------------------------------------------------------------------------------------
+#    Dir    Entry Time           Entry      Stop       Target     P&L          Result Signal                   
+----------------------------------------------------------------------------------------------------
+1    SHORT  2026-01-27T14:30:00  5066.83    5092.83    5014.83    $-200.00     LOSS   ICT_Setup01              
+2    SHORT  2026-01-27T14:35:00  5068.10    5092.83    5018.64    $-200.00     LOSS   ICT_Setup01              
+3    SHORT  2026-01-27T14:45:00  5065.12    5092.83    5009.70    $-200.00     LOSS   Fib_OTE                  
+4    SHORT  2026-01-28T19:15:00  5296.59    5326.18    5237.41    $-200.00     LOSS   ICT_Setup01              
+6    SHORT  2026-01-30T07:45:00  5151.21    5186.33    5080.97    $400.00      WIN    ICT_Setup01              
+7    SHORT  2026-01-30T08:50:00  5110.54    5184.97    4961.68    $400.00      WIN    ICT_Setup01              
+8    SHORT  2026-01-30T09:00:00  5115.04    5184.97    4975.18    $400.00      WIN    ICT_Setup01              
+5    SHORT  2026-01-30T02:35:00  5211.72    5450.96    4733.24    $400.00      WIN    SB_FVG_Retrace           
+----------------------------------------------------------------------------------------------------
+
+                                         SUMMARY STATISTICS                                         
+----------------------------------------------------------------------------------------------------
+Total Trades:     8
+Wins:             4
+Losses:           4
+Win Rate:         50.00%
+Total P&L:        $800.00
+Average P&L:      $100.00
+
+                                     PERFORMANCE BY SIGNAL TYPE                                     
+----------------------------------------------------------------------------------------------------
+Signal Type                    Wins       Losses     Win Rate     Total P&L      
+----------------------------------------------------------------------------------------------------
+Fib_OTE                        0          1          0.00        % $-200.00       
+ICT_Setup01                    3          3          50.00       % $600.00        
+SB_FVG_Retrace                 1          0          100.00      % $400.00        
+====================================================================================================
+
+================================================================================
+Final Portfolio Value: $10000.00
+Closed Trades: 0 | Wins: 0 | Losses: 0
+================================================================================
