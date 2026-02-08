@@ -656,6 +656,14 @@ def _resample_rule_from_resolution(res: str) -> str:
 
 
 def _compute_htf_zones(df: pd.DataFrame, *, resolution: str) -> Dict[pd.Timestamp, list]:
+    """Compute HTF order block zones, accumulating them across HTF bars.
+
+    For each HTF bar, detect new order blocks via ``compute_mtf_order_block_finder``
+    and add them to a running list.  Channel limits (``bull_channels`` /
+    ``bear_channels``) cap the number of active zones per side.  Zones are
+    invalidated when the HTF close breaks through them (bullish OB broken when
+    close < zone low; bearish OB broken when close > zone high).
+    """
     rule = _resample_rule_from_resolution(resolution)
     htf = (
         df.resample(rule)
@@ -663,9 +671,28 @@ def _compute_htf_zones(df: pd.DataFrame, *, resolution: str) -> Dict[pd.Timestam
         .dropna()
     )
     settings = OBSettings(resolution=resolution)
+    accumulated_bull: list = []
+    accumulated_bear: list = []
     zones_by_ts: Dict[pd.Timestamp, list] = {}
     for ts in htf.index:
-        zones_by_ts[ts] = compute_mtf_order_block_finder(df.loc[:ts], settings=settings)["zones"]
+        new_zones = compute_mtf_order_block_finder(df.loc[:ts], settings=settings)["zones"]
+        for z in new_zones:
+            if z.direction == "bull":
+                accumulated_bull.append(z)
+                if len(accumulated_bull) > settings.bull_channels:
+                    accumulated_bull = accumulated_bull[-settings.bull_channels:]
+            else:
+                accumulated_bear.append(z)
+                if len(accumulated_bear) > settings.bear_channels:
+                    accumulated_bear = accumulated_bear[-settings.bear_channels:]
+
+        # Invalidate mitigated zones: bull OB broken when close < low,
+        # bear OB broken when close > high.
+        close = float(htf.loc[ts, "close"])
+        accumulated_bull = [z for z in accumulated_bull if close >= z.low]
+        accumulated_bear = [z for z in accumulated_bear if close <= z.high]
+
+        zones_by_ts[ts] = list(accumulated_bull + accumulated_bear)
     return zones_by_ts
 
 
