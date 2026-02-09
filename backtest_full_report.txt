@@ -1,0 +1,859 @@
+
+================================================================================
+Starting Portfolio Value: $10000.00
+================================================================================
+
+2025-11-26T13:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-11-26T13:45:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-11-26T14:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-26T14:00:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-26T14:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-26T14:10:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-26T15:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-26T15:05:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-26T16:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-26T16:55:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-26T19:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-26T19:10:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-27T01:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-11-27T01:35:00: SHORT entry=4153.42 stop=4168.08 target=4124.10 size=13.6426 signal=ICT_Setup01
+2025-11-27T04:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-27T04:45:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-27T13:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-27T13:50:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-28T00:05:00: CLOSED LOSS | Entry: 2025-11-27T01:35:00 @ 4153.42 | Exit: 2025-11-28T00:05:00 @ 4168.08 | P&L: $-200.00 (-1.96%)
+2025-11-28T01:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-28T01:25:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-28T05:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-28T05:05:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-28T06:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-11-28T06:55:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-28T07:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-11-28T07:00:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-11-28T18:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-11-28T18:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-01T00:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-01T00:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-01T06:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-01T06:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-01T09:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-01T09:40:00: LONG entry=4247.63 stop=4238.39 target=4266.11 size=21.6450 signal=ICT_Setup01
+2025-12-01T10:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-01T10:40:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-01T11:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-01T11:20:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-01T14:35:00: CLOSED LOSS | Entry: 2025-12-01T09:40:00 @ 4247.63 | Exit: 2025-12-01T14:35:00 @ 4238.39 | P&L: $-200.00 (-1.96%)
+2025-12-01T20:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-01T20:05:00: SHORT entry=4235.75 stop=4243.77 target=4219.71 size=24.9377 signal=ICT_Setup01
+2025-12-02T01:00:00: CLOSED WIN | Entry: 2025-12-01T20:05:00 @ 4235.75 | Exit: 2025-12-02T01:00:00 @ 4219.71 | P&L: $400.00 (4.17%)
+2025-12-02T02:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-02T02:05:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-02T02:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-02T02:10:00: SHORT entry=4219.09 stop=4229.74 target=4197.79 size=18.7793 signal=ICT_Setup01
+2025-12-02T02:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-02T02:30:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-02T06:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-02T06:50:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-02T06:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-02T06:55:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-02T09:25:00: CLOSED WIN | Entry: 2025-12-02T02:10:00 @ 4219.09 | Exit: 2025-12-02T09:25:00 @ 4197.79 | P&L: $400.00 (4.17%)
+2025-12-02T10:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-02T10:25:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-02T12:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-02T12:20:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-02T16:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-02T16:20:00: SHORT entry=4176.44 stop=4230.55 target=4068.22 size=3.6962 signal=ICT_Setup01
+2025-12-02T16:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-02T16:50:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-02T21:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-02T21:05:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-03T01:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T01:30:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-03T02:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-03T02:25:00: LONG entry=4223.26 stop=4213.14 target=4243.50 size=19.7628 signal=ICT_Setup01
+2025-12-03T05:35:00: CLOSED LOSS | Entry: 2025-12-03T02:25:00 @ 4223.26 | Exit: 2025-12-03T05:35:00 @ 4213.14 | P&L: $-200.00 (-1.96%)
+2025-12-03T06:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T06:05:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-03T12:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-03T12:20:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-03T12:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-03T12:50:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-03T13:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T13:35:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-03T13:50:00: CLOSED LOSS | Entry: 2025-12-02T16:20:00 @ 4176.44 | Exit: 2025-12-03T13:50:00 @ 4230.55 | P&L: $-200.00 (-1.96%)
+2025-12-03T16:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T16:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-03T17:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T17:20:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-03T18:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-03T18:30:00: SHORT entry=4205.69 stop=4215.41 target=4186.25 size=20.5761 signal=ICT_Setup01
+2025-12-03T20:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-03T20:00:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-03T23:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T23:05:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-03T23:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-03T23:20:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-04T00:35:00: CLOSED LOSS | Entry: 2025-12-03T18:30:00 @ 4205.69 | Exit: 2025-12-04T00:35:00 @ 4215.41 | P&L: $-200.00 (-1.96%)
+2025-12-04T02:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-04T02:15:00: SHORT entry=4203.36 stop=4216.81 target=4176.46 size=14.8699 signal=ICT_Setup01
+2025-12-04T02:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-04T02:30:00: SHORT entry=4202.28 stop=4216.81 target=4173.22 size=13.7646 signal=ICT_Setup01
+2025-12-04T05:50:00: CLOSED WIN | Entry: 2025-12-04T02:15:00 @ 4203.36 | Exit: 2025-12-04T05:50:00 @ 4176.46 | P&L: $400.00 (4.17%)
+2025-12-04T06:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T06:30:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-04T06:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T06:45:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-04T10:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-04T10:10:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-04T10:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-04T10:30:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-04T11:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-04T11:35:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-04T14:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-04T14:35:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-04T16:15:00: CLOSED LOSS | Entry: 2025-12-04T02:30:00 @ 4202.28 | Exit: 2025-12-04T16:15:00 @ 4216.81 | P&L: $-200.00 (-1.96%)
+2025-12-05T02:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T02:30:00: SHORT entry=4198.43 stop=4204.65 target=4185.99 size=32.1543 signal=ICT_Setup01
+2025-12-05T02:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T02:35:00: SHORT entry=4198.74 stop=4204.65 target=4186.92 size=33.8409 signal=ICT_Setup01
+2025-12-05T02:45:00: CLOSED LOSS | Entry: 2025-12-05T02:30:00 @ 4198.43 | Exit: 2025-12-05T02:45:00 @ 4204.65 | P&L: $-200.00 (-1.96%)
+2025-12-05T02:45:00: CLOSED LOSS | Entry: 2025-12-05T02:35:00 @ 4198.74 | Exit: 2025-12-05T02:45:00 @ 4204.65 | P&L: $-200.00 (-1.96%)
+2025-12-05T06:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T06:30:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-05T09:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T09:55:00: LONG entry=4223.45 stop=4215.70 target=4238.95 size=25.8065 signal=ICT_Setup01
+2025-12-05T10:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T10:25:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-05T10:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T10:50:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-05T12:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-05T12:20:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-05T13:35:00: CLOSED WIN | Entry: 2025-12-05T09:55:00 @ 4223.45 | Exit: 2025-12-05T13:35:00 @ 4238.95 | P&L: $400.00 (4.17%)
+2025-12-05T14:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-05T14:35:00: LONG entry=4232.83 stop=4221.31 target=4255.87 size=17.3611 signal=ICT_Setup01
+2025-12-05T15:35:00: CLOSED WIN | Entry: 2025-12-05T14:35:00 @ 4232.83 | Exit: 2025-12-05T15:35:00 @ 4255.87 | P&L: $400.00 (4.17%)
+2025-12-05T17:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-05T17:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-08T05:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-08T05:45:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-08T05:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-08T05:50:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-08T06:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-08T06:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-08T15:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-08T15:25:00: SHORT entry=4191.89 stop=4211.56 target=4152.55 size=10.1678 signal=ICT_Setup01
+2025-12-08T15:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-08T15:30:00: SHORT entry=4189.29 stop=4211.56 target=4144.75 size=8.9807 signal=ICT_Setup01
+2025-12-08T19:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-08T19:35:00: SHORT entry=4187.57 stop=4192.04 target=4178.63 size=44.7427 signal=ICT_Setup01
+2025-12-08T20:30:00: CLOSED LOSS | Entry: 2025-12-08T19:35:00 @ 4187.57 | Exit: 2025-12-08T20:30:00 @ 4192.04 | P&L: $-200.00 (-1.96%)
+2025-12-08T21:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-08T21:15:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-08T23:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-08T23:35:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-09T06:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-09T06:45:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-09T07:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-09T07:15:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-09T09:20:00: CLOSED LOSS | Entry: 2025-12-08T15:25:00 @ 4191.89 | Exit: 2025-12-09T09:20:00 @ 4211.56 | P&L: $-200.00 (-1.96%)
+2025-12-09T09:20:00: CLOSED LOSS | Entry: 2025-12-08T15:30:00 @ 4189.29 | Exit: 2025-12-09T09:20:00 @ 4211.56 | P&L: $-200.00 (-1.96%)
+2025-12-09T13:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-09T13:00:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-09T20:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-09T20:25:00: LONG entry=4210.67 stop=4207.10 target=4217.81 size=56.0224 signal=ICT_Setup01
+2025-12-10T00:20:00: CLOSED LOSS | Entry: 2025-12-09T20:25:00 @ 4210.67 | Exit: 2025-12-10T00:20:00 @ 4207.10 | P&L: $-200.00 (-1.96%)
+2025-12-10T06:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-10T06:10:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-10T07:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-10T07:05:00: SHORT entry=4207.50 stop=4214.34 target=4193.82 size=29.2398 signal=ICT_Setup01
+2025-12-10T09:45:00: CLOSED WIN | Entry: 2025-12-10T07:05:00 @ 4207.50 | Exit: 2025-12-10T09:45:00 @ 4193.82 | P&L: $400.00 (4.17%)
+2025-12-10T17:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-10T17:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-11T02:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-11T02:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-11T03:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-11T03:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-11T14:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-11T14:20:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-11T20:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-11T20:50:00: LONG entry=4274.18 stop=4264.43 target=4293.68 size=20.5128 signal=ICT_Setup01
+2025-12-12T01:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-12T01:55:00: LONG entry=4270.90 stop=4264.48 target=4283.74 size=31.1526 signal=ICT_Setup01
+2025-12-12T07:05:00: CLOSED WIN | Entry: 2025-12-12T01:55:00 @ 4270.90 | Exit: 2025-12-12T07:05:00 @ 4283.74 | P&L: $400.00 (4.17%)
+2025-12-12T07:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-12T07:40:00: LONG entry=4287.56 stop=4266.15 target=4330.38 size=9.3414 signal=ICT_Setup01
+2025-12-12T08:10:00: CLOSED WIN | Entry: 2025-12-11T20:50:00 @ 4274.18 | Exit: 2025-12-12T08:10:00 @ 4293.68 | P&L: $400.00 (4.17%)
+2025-12-12T10:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-12T10:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-12T10:45:00: CLOSED WIN | Entry: 2025-12-12T07:40:00 @ 4287.56 | Exit: 2025-12-12T10:45:00 @ 4330.38 | P&L: $400.00 (4.17%)
+2025-12-12T15:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-12T15:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-12T18:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-12T18:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-15T12:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T12:40:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-15T13:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-15T13:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-15T18:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T18:25:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-15T19:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-15T19:15:00: LONG entry=4314.21 stop=4299.87 target=4342.89 size=13.9470 signal=ICT_Setup01
+2025-12-15T20:20:00: CLOSED LOSS | Entry: 2025-12-15T19:15:00 @ 4314.21 | Exit: 2025-12-15T20:20:00 @ 4299.87 | P&L: $-200.00 (-1.96%)
+2025-12-15T23:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T23:10:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-15T23:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-15T23:50:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-16T02:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T02:05:00: SHORT entry=4310.31 stop=4317.81 target=4295.31 size=26.6667 signal=ICT_Setup01
+2025-12-16T02:50:00: CLOSED WIN | Entry: 2025-12-16T02:05:00 @ 4310.31 | Exit: 2025-12-16T02:50:00 @ 4295.31 | P&L: $400.00 (4.17%)
+2025-12-16T07:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-16T07:45:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-16T14:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T14:35:00: LONG entry=4328.77 stop=4273.74 target=4438.83 size=3.6344 signal=ICT_Setup01
+2025-12-16T14:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T14:40:00: LONG entry=4326.32 stop=4273.74 target=4431.48 size=3.8037 signal=ICT_Setup01
+2025-12-16T15:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-16T15:00:00: LONG entry=4329.61 stop=4273.74 target=4441.35 size=3.5797 signal=ICT_Setup01
+2025-12-16T17:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-16T17:15:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-17T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T07:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-17T08:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T08:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-17T10:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-17T10:50:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-17T14:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T14:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-17T14:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-17T14:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-17T16:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-17T16:55:00: LONG entry=4333.59 stop=4320.50 target=4359.77 size=15.2788 signal=ICT_Setup01
+2025-12-18T01:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-18T01:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-18T02:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T02:15:00: LONG entry=4334.08 stop=4324.56 target=4353.12 size=21.0084 signal=ICT_Setup01
+2025-12-18T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-18T07:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-18T08:55:00: CLOSED LOSS | Entry: 2025-12-18T02:15:00 @ 4334.08 | Exit: 2025-12-18T08:55:00 @ 4324.56 | P&L: $-200.00 (-1.96%)
+2025-12-18T11:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-18T11:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-18T12:25:00: CLOSED LOSS | Entry: 2025-12-17T16:55:00 @ 4333.59 | Exit: 2025-12-18T12:25:00 @ 4320.50 | P&L: $-200.00 (-1.96%)
+2025-12-18T16:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T16:55:00: LONG entry=4360.41 stop=4308.51 target=4464.21 size=3.8536 signal=ICT_Setup01
+2025-12-18T17:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-18T17:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-18T19:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T19:30:00: SHORT entry=4331.50 stop=4341.33 target=4311.84 size=20.3459 signal=ICT_Setup01
+2025-12-18T20:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-18T20:45:00: LONG entry=4335.72 stop=4322.81 target=4361.54 size=15.4919 signal=ICT_Setup01
+2025-12-18T23:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-18T23:30:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-19T01:00:00: CLOSED LOSS | Entry: 2025-12-18T20:45:00 @ 4335.72 | Exit: 2025-12-19T01:00:00 @ 4322.81 | P&L: $-200.00 (-1.96%)
+2025-12-19T01:25:00: CLOSED WIN | Entry: 2025-12-18T19:30:00 @ 4331.50 | Exit: 2025-12-19T01:25:00 @ 4311.84 | P&L: $400.00 (4.17%)
+2025-12-19T01:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T01:55:00: SHORT entry=4323.30 stop=4336.92 target=4296.06 size=14.6843 signal=ICT_Setup01
+2025-12-19T03:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T03:30:00: SHORT entry=4321.44 stop=4328.03 target=4308.26 size=30.3490 signal=ICT_Setup01
+2025-12-19T05:50:00: CLOSED LOSS | Entry: 2025-12-19T03:30:00 @ 4321.44 | Exit: 2025-12-19T05:50:00 @ 4328.03 | P&L: $-200.00 (-1.96%)
+2025-12-19T08:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T08:20:00: SHORT entry=4323.53 stop=4329.70 target=4311.19 size=32.4149 signal=ICT_Setup01
+2025-12-19T08:40:00: CLOSED LOSS | Entry: 2025-12-19T08:20:00 @ 4323.53 | Exit: 2025-12-19T08:40:00 @ 4329.70 | P&L: $-200.00 (-1.96%)
+2025-12-19T09:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-19T09:55:00: LONG entry=4329.57 stop=4324.37 target=4339.97 size=38.4615 signal=ICT_Setup01
+2025-12-19T10:30:00: CLOSED LOSS | Entry: 2025-12-19T09:55:00 @ 4329.57 | Exit: 2025-12-19T10:30:00 @ 4324.37 | P&L: $-200.00 (-1.96%)
+2025-12-19T11:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-19T11:55:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-19T12:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-19T12:25:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-19T13:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-19T13:25:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-19T14:35:00: CLOSED LOSS | Entry: 2025-12-19T01:55:00 @ 4323.30 | Exit: 2025-12-19T14:35:00 @ 4336.92 | P&L: $-200.00 (-1.96%)
+2025-12-22T04:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-22T04:00:00: LONG entry=4394.89 stop=4378.43 target=4427.81 size=12.1507 signal=ICT_Setup01
+2025-12-22T05:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T05:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-22T11:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-22T11:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-22T14:15:00: CLOSED WIN | Entry: 2025-12-22T04:00:00 @ 4394.89 | Exit: 2025-12-22T14:15:00 @ 4427.81 | P&L: $400.00 (4.17%)
+2025-12-22T15:45:00: CLOSED WIN | Entry: 2025-12-16T14:40:00 @ 4326.32 | Exit: 2025-12-22T15:45:00 @ 4431.48 | P&L: $400.00 (4.17%)
+2025-12-22T16:15:00: CLOSED WIN | Entry: 2025-12-16T14:35:00 @ 4328.77 | Exit: 2025-12-22T16:15:00 @ 4438.83 | P&L: $400.00 (4.17%)
+2025-12-22T16:30:00: CLOSED WIN | Entry: 2025-12-16T15:00:00 @ 4329.61 | Exit: 2025-12-22T16:30:00 @ 4441.35 | P&L: $400.00 (4.17%)
+2025-12-22T20:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-22T20:40:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-22T21:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T21:45:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-22T21:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T21:50:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-22T23:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-22T23:40:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-23T00:05:00: CLOSED WIN | Entry: 2025-12-18T16:55:00 @ 4360.41 | Exit: 2025-12-23T00:05:00 @ 4464.21 | P&L: $400.00 (4.17%)
+2025-12-23T02:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-23T02:50:00: LONG entry=4490.56 stop=4481.15 target=4509.38 size=21.2540 signal=ICT_Setup01
+2025-12-23T04:50:00: CLOSED LOSS | Entry: 2025-12-23T02:50:00 @ 4490.56 | Exit: 2025-12-23T04:50:00 @ 4481.15 | P&L: $-200.00 (-1.96%)
+2025-12-23T10:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-23T10:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-23T17:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-23T17:15:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-23T18:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-23T18:35:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-24T01:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T01:35:00: LONG entry=4522.08 stop=4506.86 target=4552.52 size=13.1406 signal=ICT_Setup01
+2025-12-24T02:05:00: CLOSED LOSS | Entry: 2025-12-24T01:35:00 @ 4522.08 | Exit: 2025-12-24T02:05:00 @ 4506.86 | P&L: $-200.00 (-1.96%)
+2025-12-24T03:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-24T03:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-24T07:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T07:05:00: LONG entry=4492.04 stop=4485.28 target=4505.56 size=29.5858 signal=ICT_Setup01
+2025-12-24T07:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T07:10:00: LONG entry=4493.47 stop=4485.28 target=4509.85 size=24.4200 signal=ICT_Setup01
+2025-12-24T07:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-24T07:30:00: LONG entry=4491.84 stop=4485.28 target=4504.96 size=30.4878 signal=ICT_Setup01
+2025-12-24T07:45:00: CLOSED LOSS | Entry: 2025-12-24T07:05:00 @ 4492.04 | Exit: 2025-12-24T07:45:00 @ 4485.28 | P&L: $-200.00 (-1.96%)
+2025-12-24T07:45:00: CLOSED LOSS | Entry: 2025-12-24T07:10:00 @ 4493.47 | Exit: 2025-12-24T07:45:00 @ 4485.28 | P&L: $-200.00 (-1.96%)
+2025-12-24T07:45:00: CLOSED LOSS | Entry: 2025-12-24T07:30:00 @ 4491.84 | Exit: 2025-12-24T07:45:00 @ 4485.28 | P&L: $-200.00 (-1.96%)
+2025-12-24T10:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-24T10:25:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-26T00:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-26T00:20:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-26T03:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-26T03:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-26T06:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-26T06:10:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-26T07:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-26T07:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-26T07:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-26T07:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-26T12:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-26T12:10:00: LONG trigger rejected: Time Filter (ICT session not active)
+2025-12-26T12:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-26T12:55:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-26T16:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-26T16:10:00: LONG entry=4538.85 stop=4513.11 target=4590.33 size=7.7700 signal=ICT_Setup01
+2025-12-26T17:30:00: CLOSED LOSS | Entry: 2025-12-26T16:10:00 @ 4538.85 | Exit: 2025-12-26T17:30:00 @ 4513.11 | P&L: $-200.00 (-1.96%)
+2025-12-29T00:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T00:35:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T00:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T00:40:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T04:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T04:45:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-29T06:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T06:10:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T07:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-29T07:20:00: SHORT entry=4475.97 stop=4519.36 target=4389.19 size=4.6094 signal=ICT_Setup01
+2025-12-29T07:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T07:30:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-29T08:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T08:00:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-29T09:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-29T09:15:00: SHORT entry=4465.92 stop=4488.62 target=4420.52 size=8.8106 signal=ICT_Setup01
+2025-12-29T09:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-29T09:55:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-29T10:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T10:15:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-29T10:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T10:40:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T11:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T11:20:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T11:50:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T12:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T12:15:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T12:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-29T12:20:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-29T13:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-29T13:00:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-29T13:45:00: CLOSED WIN | Entry: 2025-12-29T09:15:00 @ 4465.92 | Exit: 2025-12-29T13:45:00 @ 4420.52 | P&L: $400.00 (4.17%)
+2025-12-29T14:05:00: CLOSED WIN | Entry: 2025-12-29T07:20:00 @ 4475.97 | Exit: 2025-12-29T14:05:00 @ 4389.19 | P&L: $400.00 (4.17%)
+2025-12-30T02:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-30T02:10:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-30T09:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-30T09:35:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-30T12:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-30T12:50:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-30T17:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-30T17:20:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-30T18:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-30T18:25:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-30T19:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2025-12-30T19:45:00: SHORT entry=4349.91 stop=4378.74 target=4292.25 size=6.9372 signal=ICT_Setup01
+2025-12-31T05:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T05:15:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-31T05:50:00: CLOSED WIN | Entry: 2025-12-30T19:45:00 @ 4349.91 | Exit: 2025-12-31T05:50:00 @ 4292.25 | P&L: $400.00 (4.17%)
+2025-12-31T06:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T06:20:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-31T06:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T06:55:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-31T08:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2025-12-31T08:10:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2025-12-31T11:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2025-12-31T11:15:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2025-12-31T11:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2025-12-31T11:35:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-02T03:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-02T03:55:00: LONG entry=4375.20 stop=4344.97 target=4435.66 size=6.6159 signal=ICT_Setup01
+2026-01-02T05:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T05:20:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-02T06:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T06:15:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-02T09:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-02T09:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-02T11:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T11:35:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-02T11:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T11:55:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-02T15:00:00: CLOSED LOSS | Entry: 2026-01-02T03:55:00 @ 4375.20 | Exit: 2026-01-02T15:00:00 @ 4344.97 | P&L: $-200.00 (-1.96%)
+2026-01-02T17:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T17:05:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2026-01-02T18:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-02T18:25:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2026-01-05T00:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-05T00:05:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-05T02:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-05T02:45:00: LONG entry=4403.32 stop=4388.47 target=4433.02 size=13.4680 signal=ICT_Setup01
+2026-01-05T08:50:00: CLOSED WIN | Entry: 2026-01-05T02:45:00 @ 4403.32 | Exit: 2026-01-05T08:50:00 @ 4433.02 | P&L: $400.00 (4.17%)
+2026-01-05T09:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-05T09:10:00: LONG entry=4430.38 stop=4419.43 target=4452.28 size=18.2648 signal=ICT_Setup01
+2026-01-05T11:25:00: CLOSED LOSS | Entry: 2026-01-05T09:10:00 @ 4430.38 | Exit: 2026-01-05T11:25:00 @ 4419.43 | P&L: $-200.00 (-1.96%)
+2026-01-05T14:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-05T14:30:00: LONG entry=4425.60 stop=4396.27 target=4484.26 size=6.8190 signal=ICT_Setup01
+2026-01-05T15:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-05T15:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-05T17:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-05T17:25:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-05T20:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-05T20:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-05T23:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-05T23:15:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-06T06:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T06:05:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-06T06:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T06:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-06T13:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T13:40:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-06T13:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-06T13:45:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-06T14:45:00: CLOSED WIN | Entry: 2026-01-05T14:30:00 @ 4425.60 | Exit: 2026-01-06T14:45:00 @ 4484.26 | P&L: $400.00 (4.17%)
+2026-01-06T15:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-06T15:20:00: LONG entry=4476.77 stop=4464.46 target=4501.39 size=16.2470 signal=ICT_Setup01
+2026-01-06T15:35:00: CLOSED LOSS | Entry: 2026-01-06T15:20:00 @ 4476.77 | Exit: 2026-01-06T15:35:00 @ 4464.46 | P&L: $-200.00 (-1.96%)
+2026-01-07T02:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-07T02:25:00: LONG entry=4473.82 stop=4459.50 target=4502.46 size=13.9665 signal=ICT_Setup01
+2026-01-07T05:30:00: CLOSED LOSS | Entry: 2026-01-07T02:25:00 @ 4473.82 | Exit: 2026-01-07T05:30:00 @ 4459.50 | P&L: $-200.00 (-1.96%)
+2026-01-07T06:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-07T06:20:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2026-01-07T15:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-07T15:45:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-07T20:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-07T20:10:00: LONG entry=4458.20 stop=4445.27 target=4484.06 size=15.4679 signal=ICT_Setup01
+2026-01-08T01:00:00: CLOSED LOSS | Entry: 2026-01-07T20:10:00 @ 4458.20 | Exit: 2026-01-08T01:00:00 @ 4445.27 | P&L: $-200.00 (-1.96%)
+2026-01-08T14:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-08T14:25:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2026-01-08T15:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-08T15:25:00: LONG entry=4447.65 stop=4418.98 target=4504.99 size=6.9759 signal=ICT_Setup01
+2026-01-08T17:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-08T17:15:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-09T07:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-09T07:00:00: LONG entry=4474.65 stop=4458.22 target=4507.51 size=12.1729 signal=ICT_Setup01
+2026-01-09T07:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-09T07:15:00: LONG entry=4472.55 stop=4458.22 target=4501.21 size=13.9567 signal=ICT_Setup01
+2026-01-09T11:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-09T11:30:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-09T11:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-09T11:45:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-09T13:30:00: CLOSED LOSS | Entry: 2026-01-09T07:00:00 @ 4474.65 | Exit: 2026-01-09T13:30:00 @ 4458.22 | P&L: $-200.00 (-1.96%)
+2026-01-09T13:30:00: CLOSED LOSS | Entry: 2026-01-09T07:15:00 @ 4472.55 | Exit: 2026-01-09T13:30:00 @ 4458.22 | P&L: $-200.00 (-1.96%)
+2026-01-09T15:20:00: CLOSED WIN | Entry: 2026-01-08T15:25:00 @ 4447.65 | Exit: 2026-01-09T15:20:00 @ 4504.99 | P&L: $400.00 (4.17%)
+2026-01-09T18:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-09T18:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-09T18:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-09T18:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-09T19:05:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-09T19:05:00: LONG entry=4494.36 stop=4481.98 target=4519.12 size=16.1551 signal=ICT_Setup01
+2026-01-11T23:00:00: CLOSED WIN | Entry: 2026-01-09T19:05:00 @ 4494.36 | Exit: 2026-01-11T23:00:00 @ 4519.12 | P&L: $400.00 (4.17%)
+2026-01-12T05:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-12T05:55:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-12T10:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-12T10:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-12T15:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-12T15:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-12T19:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-12T19:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-12T19:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-12T19:40:00: LONG entry=4616.44 stop=4600.52 target=4648.28 size=12.5628 signal=ICT_Setup01
+2026-01-12T20:05:00: CLOSED LOSS | Entry: 2026-01-12T19:40:00 @ 4616.44 | Exit: 2026-01-12T20:05:00 @ 4600.52 | P&L: $-200.00 (-1.96%)
+2026-01-12T20:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-12T20:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-13T01:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-13T01:40:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-13T08:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-13T08:45:00: LONG entry=4593.87 stop=4577.40 target=4626.81 size=12.1433 signal=ICT_Setup01
+2026-01-13T14:45:00: CLOSED WIN | Entry: 2026-01-13T08:45:00 @ 4593.87 | Exit: 2026-01-13T14:45:00 @ 4626.81 | P&L: $400.00 (4.17%)
+2026-01-13T18:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-13T18:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-13T19:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-13T19:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-13T20:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-13T20:55:00: LONG entry=4585.92 stop=4563.26 target=4631.24 size=8.8261 signal=ICT_Setup01
+2026-01-14T05:00:00: CLOSED WIN | Entry: 2026-01-13T20:55:00 @ 4585.92 | Exit: 2026-01-14T05:00:00 @ 4631.24 | P&L: $400.00 (4.17%)
+2026-01-14T08:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-14T08:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-14T10:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-14T10:05:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-14T12:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-14T12:45:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-14T13:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-14T13:00:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-15T01:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-15T01:55:00: SHORT entry=4600.07 stop=4618.10 target=4564.01 size=11.0926 signal=ICT_Setup01
+2026-01-15T08:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-15T08:20:00: SHORT entry=4603.32 stop=4613.63 target=4582.70 size=19.3986 signal=ICT_Setup01
+2026-01-15T10:05:00: CLOSED LOSS | Entry: 2026-01-15T08:20:00 @ 4603.32 | Exit: 2026-01-15T10:05:00 @ 4613.63 | P&L: $-200.00 (-1.96%)
+2026-01-15T10:35:00: CLOSED LOSS | Entry: 2026-01-15T01:55:00 @ 4600.07 | Exit: 2026-01-15T10:35:00 @ 4618.10 | P&L: $-200.00 (-1.96%)
+2026-01-15T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-15T12:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-15T14:45:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-15T14:45:00: LONG entry=4609.36 stop=4582.48 target=4663.12 size=7.4405 signal=ICT_Setup01
+2026-01-15T20:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-15T20:35:00: SHORT entry=4606.99 stop=4621.54 target=4577.89 size=13.7457 signal=ICT_Setup01
+2026-01-15T21:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-15T21:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-16T06:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-16T06:55:00: SHORT trigger rejected: Time Filter (ICT session not active)
+2026-01-16T07:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-16T07:30:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-16T12:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-16T12:25:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-16T13:25:00: CLOSED LOSS | Entry: 2026-01-15T14:45:00 @ 4609.36 | Exit: 2026-01-16T13:25:00 @ 4582.48 | P&L: $-200.00 (-1.96%)
+2026-01-16T15:25:00: CLOSED WIN | Entry: 2026-01-15T20:35:00 @ 4606.99 | Exit: 2026-01-16T15:25:00 @ 4577.89 | P&L: $400.00 (4.17%)
+2026-01-16T17:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-16T17:20:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-19T04:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-19T04:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-19T05:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-19T05:00:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-19T08:10:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-19T08:10:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-19T08:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-19T08:35:00: LONG entry=4668.84 stop=4661.87 target=4682.78 size=28.6944 signal=ICT_Setup01
+2026-01-19T08:55:00: CLOSED LOSS | Entry: 2026-01-19T08:35:00 @ 4668.84 | Exit: 2026-01-19T08:55:00 @ 4661.87 | P&L: $-200.00 (-1.96%)
+2026-01-19T19:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-19T19:00:00: LONG entry=4674.80 stop=4669.13 target=4686.14 size=35.2734 signal=ICT_Setup01
+2026-01-19T19:20:00: CLOSED LOSS | Entry: 2026-01-19T19:00:00 @ 4674.80 | Exit: 2026-01-19T19:20:00 @ 4669.13 | P&L: $-200.00 (-1.96%)
+2026-01-20T03:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-20T03:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-20T05:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-20T05:30:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-20T08:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-20T08:30:00: LONG entry=4720.88 stop=4714.71 target=4733.22 size=32.4149 signal=ICT_Setup01
+2026-01-20T08:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-20T08:35:00: LONG entry=4719.81 stop=4714.71 target=4730.01 size=39.2157 signal=ICT_Setup01
+2026-01-20T08:55:00: CLOSED WIN | Entry: 2026-01-20T08:35:00 @ 4719.81 | Exit: 2026-01-20T08:55:00 @ 4730.01 | P&L: $400.00 (4.17%)
+2026-01-20T09:25:00: CLOSED WIN | Entry: 2026-01-20T08:30:00 @ 4720.88 | Exit: 2026-01-20T09:25:00 @ 4733.22 | P&L: $400.00 (4.17%)
+2026-01-20T13:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-20T13:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-20T16:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-20T16:25:00: LONG entry=4741.28 stop=4722.52 target=4778.80 size=10.6610 signal=ICT_Setup01
+2026-01-20T18:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-20T18:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-20T23:45:00: CLOSED WIN | Entry: 2026-01-20T16:25:00 @ 4741.28 | Exit: 2026-01-20T23:45:00 @ 4778.80 | P&L: $400.00 (4.17%)
+2026-01-21T02:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-21T02:50:00: LONG entry=4829.96 stop=4817.30 target=4855.28 size=15.7978 signal=ICT_Setup01
+2026-01-21T04:30:00: CLOSED WIN | Entry: 2026-01-21T02:50:00 @ 4829.96 | Exit: 2026-01-21T04:30:00 @ 4855.28 | P&L: $400.00 (4.17%)
+2026-01-21T07:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T07:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T07:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T09:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-21T09:40:00: LONG entry=4866.39 stop=4851.50 target=4896.17 size=13.4318 signal=ICT_Setup01
+2026-01-21T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-21T12:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T13:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-21T13:50:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-21T14:05:00: CLOSED LOSS | Entry: 2026-01-21T09:40:00 @ 4866.39 | Exit: 2026-01-21T14:05:00 @ 4851.50 | P&L: $-200.00 (-1.96%)
+2026-01-21T15:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T15:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T15:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T15:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T16:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T16:05:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T20:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T20:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T20:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-21T20:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-21T21:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-21T21:55:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-22T02:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-22T02:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-22T09:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-22T09:25:00: LONG entry=4829.55 stop=4822.15 target=4844.35 size=27.0270 signal=ICT_Setup01
+2026-01-22T09:30:00: CLOSED LOSS | Entry: 2026-01-22T09:25:00 @ 4829.55 | Exit: 2026-01-22T09:30:00 @ 4822.15 | P&L: $-200.00 (-1.96%)
+2026-01-23T00:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T00:30:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-23T00:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T00:40:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-23T02:40:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T02:40:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T05:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T05:00:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-23T07:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T07:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T11:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T11:25:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T11:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T11:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T11:50:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T14:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-23T14:00:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-23T14:30:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-23T14:30:00: LONG entry=4942.80 stop=4923.51 target=4981.38 size=10.3681 signal=ICT_Setup01
+2026-01-23T16:20:00: CLOSED WIN | Entry: 2026-01-23T14:30:00 @ 4942.80 | Exit: 2026-01-23T16:20:00 @ 4981.38 | P&L: $400.00 (4.17%)
+2026-01-23T18:05:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-23T18:05:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T18:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T18:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-23T20:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-23T20:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-26T01:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T01:00:00: LONG entry=5043.14 stop=4978.09 target=5173.24 size=3.0746 signal=ICT_Setup01
+2026-01-26T01:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T01:50:00: LONG entry=5078.00 stop=5028.91 target=5176.18 size=4.0741 signal=ICT_Setup01
+2026-01-26T02:35:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T02:35:00: LONG entry=5085.12 stop=5066.80 target=5121.76 size=10.9170 signal=ICT_Setup01
+2026-01-26T03:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T03:00:00: LONG entry=5081.76 stop=5066.80 target=5111.68 size=13.3690 signal=ICT_Setup01
+2026-01-26T04:30:00: CLOSED LOSS | Entry: 2026-01-26T02:35:00 @ 5085.12 | Exit: 2026-01-26T04:30:00 @ 5066.80 | P&L: $-200.00 (-1.96%)
+2026-01-26T04:30:00: CLOSED LOSS | Entry: 2026-01-26T03:00:00 @ 5081.76 | Exit: 2026-01-26T04:30:00 @ 5066.80 | P&L: $-200.00 (-1.96%)
+2026-01-26T05:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-26T05:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-26T06:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-26T06:15:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-26T09:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-26T09:40:00: LONG entry=5091.50 stop=5080.12 target=5114.26 size=17.5747 signal=ICT_Setup01
+2026-01-26T09:50:00: CLOSED LOSS | Entry: 2026-01-26T09:40:00 @ 5091.50 | Exit: 2026-01-26T09:50:00 @ 5080.12 | P&L: $-200.00 (-1.96%)
+2026-01-26T19:20:00: CLOSED LOSS | Entry: 2026-01-26T01:50:00 @ 5078.00 | Exit: 2026-01-26T19:20:00 @ 5028.91 | P&L: $-200.00 (-1.96%)
+2026-01-27T00:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T00:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-27T01:40:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-27T01:40:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-27T03:50:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-27T03:50:00: LONG entry=5074.66 stop=5060.38 target=5103.22 size=14.0056 signal=ICT_Setup01
+2026-01-27T05:00:00: CLOSED LOSS | Entry: 2026-01-27T03:50:00 @ 5074.66 | Exit: 2026-01-27T05:00:00 @ 5060.38 | P&L: $-200.00 (-1.96%)
+2026-01-27T05:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T05:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-27T10:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T10:10:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-27T12:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T12:00:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-27T12:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T12:55:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-27T13:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-27T13:10:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-27T14:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-27T14:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-27T14:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-27T14:35:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-27T20:50:00: CLOSED WIN | Entry: 2026-01-26T01:00:00 @ 5043.14 | Exit: 2026-01-27T20:50:00 @ 5173.24 | P&L: $400.00 (4.17%)
+2026-01-27T23:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-27T23:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-28T02:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-28T02:00:00: LONG entry=5207.46 stop=5157.15 target=5308.08 size=3.9754 signal=ICT_Setup01
+2026-01-28T02:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-28T02:10:00: LONG entry=5209.99 stop=5157.15 target=5315.67 size=3.7850 signal=ICT_Setup01
+2026-01-28T08:30:00: CLOSED WIN | Entry: 2026-01-28T02:00:00 @ 5207.46 | Exit: 2026-01-28T08:30:00 @ 5308.08 | P&L: $400.00 (4.17%)
+2026-01-28T11:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T11:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-28T11:30:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T11:30:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-28T11:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T11:50:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-28T14:20:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-28T14:20:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-28T18:20:00: CLOSED WIN | Entry: 2026-01-28T02:10:00 @ 5209.99 | Exit: 2026-01-28T18:20:00 @ 5315.67 | P&L: $400.00 (4.17%)
+2026-01-28T19:15:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-28T19:15:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-28T20:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-28T20:15:00: LONG entry=5338.69 stop=5268.67 target=5478.73 size=2.8563 signal=ICT_Setup01
+2026-01-28T23:15:00: CLOSED WIN | Entry: 2026-01-28T20:15:00 @ 5338.69 | Exit: 2026-01-28T23:15:00 @ 5478.73 | P&L: $400.00 (4.17%)
+2026-01-29T12:00:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T12:00:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-29T13:25:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T13:25:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-29T14:20:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T14:20:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-29T18:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T18:25:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-29T21:10:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-29T21:10:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-29T23:55:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=PASS HTF_POI=PASS
+2026-01-29T23:55:00: LONG trigger rejected: Time Filter (ICT session not active)
+2026-01-30T00:55:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-30T00:55:00: SHORT trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-30T02:35:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T02:35:00: SHORT entry=5211.72 stop=5450.96 target=4733.24 size=0.8360 signal=SB_FVG_Retrace
+2026-01-30T04:25:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-30T04:25:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-30T07:45:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T07:45:00: SHORT entry=5151.21 stop=5186.33 target=5080.97 size=5.6948 signal=ICT_Setup01
+2026-01-30T08:30:00: CLOSED WIN | Entry: 2026-01-30T07:45:00 @ 5151.21 | Exit: 2026-01-30T08:30:00 @ 5080.97 | P&L: $400.00 (4.17%)
+2026-01-30T08:50:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T08:50:00: SHORT entry=5110.54 stop=5184.97 target=4961.68 size=2.6871 signal=ICT_Setup01
+2026-01-30T09:00:00: SHORT filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=PASS HTF_POI=PASS
+2026-01-30T09:00:00: SHORT entry=5115.04 stop=5184.97 target=4975.18 size=2.8600 signal=ICT_Setup01
+2026-01-30T09:45:00: CLOSED WIN | Entry: 2026-01-30T08:50:00 @ 5110.54 | Exit: 2026-01-30T09:45:00 @ 4961.68 | P&L: $400.00 (4.17%)
+2026-01-30T09:45:00: CLOSED WIN | Entry: 2026-01-30T09:00:00 @ 5115.04 | Exit: 2026-01-30T09:45:00 @ 4975.18 | P&L: $400.00 (4.17%)
+2026-01-30T14:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=FAIL Trend=FAIL HTF_POI=PASS
+2026-01-30T14:15:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+2026-01-30T18:20:00: CLOSED WIN | Entry: 2026-01-30T02:35:00 @ 5211.72 | Exit: 2026-01-30T18:20:00 @ 4733.24 | P&L: $400.00 (4.17%)
+2026-01-30T19:15:00: LONG filter sequence: HTF POI -> Trend -> Time | Time=PASS Trend=FAIL HTF_POI=PASS
+2026-01-30T19:15:00: LONG trigger rejected: Trend Filter (15M/1H bias not aligned)
+
+====================================================================================================
+DETAILED TRADE REPORT - Silver Bullet XAUUSD Backtest
+====================================================================================================
+
+                                       TRADE-BY-TRADE DETAILS                                       
+----------------------------------------------------------------------------------------------------
+#    Dir    Entry Time           Entry      Stop       Target     P&L          Result Signal                   
+----------------------------------------------------------------------------------------------------
+1    SHORT  2025-11-27T01:35:00  4153.42    4168.08    4124.10    $-200.00     LOSS   ICT_Setup01              
+2    LONG   2025-12-01T09:40:00  4247.63    4238.39    4266.11    $-200.00     LOSS   ICT_Setup01              
+3    SHORT  2025-12-01T20:05:00  4235.75    4243.77    4219.71    $400.00      WIN    ICT_Setup01              
+4    SHORT  2025-12-02T02:10:00  4219.09    4229.74    4197.79    $400.00      WIN    ICT_Setup01              
+6    LONG   2025-12-03T02:25:00  4223.26    4213.14    4243.50    $-200.00     LOSS   ICT_Setup01              
+5    SHORT  2025-12-02T16:20:00  4176.44    4230.55    4068.22    $-200.00     LOSS   ICT_Setup01              
+7    SHORT  2025-12-03T18:30:00  4205.69    4215.41    4186.25    $-200.00     LOSS   ICT_Setup01              
+8    SHORT  2025-12-04T02:15:00  4203.36    4216.81    4176.46    $400.00      WIN    ICT_Setup01              
+9    SHORT  2025-12-04T02:30:00  4202.28    4216.81    4173.22    $-200.00     LOSS   ICT_Setup01              
+10   SHORT  2025-12-05T02:30:00  4198.43    4204.65    4185.99    $-200.00     LOSS   ICT_Setup01              
+11   SHORT  2025-12-05T02:35:00  4198.74    4204.65    4186.92    $-200.00     LOSS   ICT_Setup01              
+12   LONG   2025-12-05T09:55:00  4223.45    4215.70    4238.95    $400.00      WIN    ICT_Setup01              
+13   LONG   2025-12-05T14:35:00  4232.83    4221.31    4255.87    $400.00      WIN    ICT_Setup01              
+16   SHORT  2025-12-08T19:35:00  4187.57    4192.04    4178.63    $-200.00     LOSS   ICT_Setup01              
+14   SHORT  2025-12-08T15:25:00  4191.89    4211.56    4152.55    $-200.00     LOSS   ICT_Setup01              
+15   SHORT  2025-12-08T15:30:00  4189.29    4211.56    4144.75    $-200.00     LOSS   ICT_Setup01              
+17   LONG   2025-12-09T20:25:00  4210.67    4207.10    4217.81    $-200.00     LOSS   ICT_Setup01              
+18   SHORT  2025-12-10T07:05:00  4207.50    4214.34    4193.82    $400.00      WIN    ICT_Setup01              
+20   LONG   2025-12-12T01:55:00  4270.90    4264.48    4283.74    $400.00      WIN    ICT_Setup01              
+19   LONG   2025-12-11T20:50:00  4274.18    4264.43    4293.68    $400.00      WIN    ICT_Setup01              
+21   LONG   2025-12-12T07:40:00  4287.56    4266.15    4330.38    $400.00      WIN    ICT_Setup01              
+22   LONG   2025-12-15T19:15:00  4314.21    4299.87    4342.89    $-200.00     LOSS   ICT_Setup01              
+23   SHORT  2025-12-16T02:05:00  4310.31    4317.81    4295.31    $400.00      WIN    ICT_Setup01              
+28   LONG   2025-12-18T02:15:00  4334.08    4324.56    4353.12    $-200.00     LOSS   ICT_Setup01              
+27   LONG   2025-12-17T16:55:00  4333.59    4320.50    4359.77    $-200.00     LOSS   ICT_Setup01              
+31   LONG   2025-12-18T20:45:00  4335.72    4322.81    4361.54    $-200.00     LOSS   ICT_Setup01              
+30   SHORT  2025-12-18T19:30:00  4331.50    4341.33    4311.84    $400.00      WIN    ICT_Setup01              
+33   SHORT  2025-12-19T03:30:00  4321.44    4328.03    4308.26    $-200.00     LOSS   ICT_Setup01              
+34   SHORT  2025-12-19T08:20:00  4323.53    4329.70    4311.19    $-200.00     LOSS   ICT_Setup01              
+35   LONG   2025-12-19T09:55:00  4329.57    4324.37    4339.97    $-200.00     LOSS   ICT_Setup01              
+32   SHORT  2025-12-19T01:55:00  4323.30    4336.92    4296.06    $-200.00     LOSS   ICT_Setup01              
+36   LONG   2025-12-22T04:00:00  4394.89    4378.43    4427.81    $400.00      WIN    ICT_Setup01              
+25   LONG   2025-12-16T14:40:00  4326.32    4273.74    4431.48    $400.00      WIN    ICT_Setup01              
+24   LONG   2025-12-16T14:35:00  4328.77    4273.74    4438.83    $400.00      WIN    ICT_Setup01              
+26   LONG   2025-12-16T15:00:00  4329.61    4273.74    4441.35    $400.00      WIN    ICT_Setup01              
+29   LONG   2025-12-18T16:55:00  4360.41    4308.51    4464.21    $400.00      WIN    ICT_Setup01              
+37   LONG   2025-12-23T02:50:00  4490.56    4481.15    4509.38    $-200.00     LOSS   ICT_Setup01              
+38   LONG   2025-12-24T01:35:00  4522.08    4506.86    4552.52    $-200.00     LOSS   ICT_Setup01              
+39   LONG   2025-12-24T07:05:00  4492.04    4485.28    4505.56    $-200.00     LOSS   ICT_Setup01              
+40   LONG   2025-12-24T07:10:00  4493.47    4485.28    4509.85    $-200.00     LOSS   ICT_Setup01              
+41   LONG   2025-12-24T07:30:00  4491.84    4485.28    4504.96    $-200.00     LOSS   ICT_Setup01              
+42   LONG   2025-12-26T16:10:00  4538.85    4513.11    4590.33    $-200.00     LOSS   ICT_Setup01              
+44   SHORT  2025-12-29T09:15:00  4465.92    4488.62    4420.52    $400.00      WIN    ICT_Setup01              
+43   SHORT  2025-12-29T07:20:00  4475.97    4519.36    4389.19    $400.00      WIN    ICT_Setup01              
+45   SHORT  2025-12-30T19:45:00  4349.91    4378.74    4292.25    $400.00      WIN    ICT_Setup01              
+46   LONG   2026-01-02T03:55:00  4375.20    4344.97    4435.66    $-200.00     LOSS   ICT_Setup01              
+47   LONG   2026-01-05T02:45:00  4403.32    4388.47    4433.02    $400.00      WIN    ICT_Setup01              
+48   LONG   2026-01-05T09:10:00  4430.38    4419.43    4452.28    $-200.00     LOSS   ICT_Setup01              
+49   LONG   2026-01-05T14:30:00  4425.60    4396.27    4484.26    $400.00      WIN    ICT_Setup01              
+50   LONG   2026-01-06T15:20:00  4476.77    4464.46    4501.39    $-200.00     LOSS   ICT_Setup01              
+51   LONG   2026-01-07T02:25:00  4473.82    4459.50    4502.46    $-200.00     LOSS   ICT_Setup01              
+52   LONG   2026-01-07T20:10:00  4458.20    4445.27    4484.06    $-200.00     LOSS   ICT_Setup01              
+54   LONG   2026-01-09T07:00:00  4474.65    4458.22    4507.51    $-200.00     LOSS   ICT_Setup01              
+55   LONG   2026-01-09T07:15:00  4472.55    4458.22    4501.21    $-200.00     LOSS   ICT_Setup01              
+53   LONG   2026-01-08T15:25:00  4447.65    4418.98    4504.99    $400.00      WIN    ICT_Setup01              
+56   LONG   2026-01-09T19:05:00  4494.36    4481.98    4519.12    $400.00      WIN    ICT_Setup01              
+57   LONG   2026-01-12T19:40:00  4616.44    4600.52    4648.28    $-200.00     LOSS   ICT_Setup01              
+58   LONG   2026-01-13T08:45:00  4593.87    4577.40    4626.81    $400.00      WIN    ICT_Setup01              
+59   LONG   2026-01-13T20:55:00  4585.92    4563.26    4631.24    $400.00      WIN    ICT_Setup01              
+61   SHORT  2026-01-15T08:20:00  4603.32    4613.63    4582.70    $-200.00     LOSS   ICT_Setup01              
+60   SHORT  2026-01-15T01:55:00  4600.07    4618.10    4564.01    $-200.00     LOSS   ICT_Setup01              
+62   LONG   2026-01-15T14:45:00  4609.36    4582.48    4663.12    $-200.00     LOSS   ICT_Setup01              
+63   SHORT  2026-01-15T20:35:00  4606.99    4621.54    4577.89    $400.00      WIN    ICT_Setup01              
+64   LONG   2026-01-19T08:35:00  4668.84    4661.87    4682.78    $-200.00     LOSS   ICT_Setup01              
+65   LONG   2026-01-19T19:00:00  4674.80    4669.13    4686.14    $-200.00     LOSS   ICT_Setup01              
+67   LONG   2026-01-20T08:35:00  4719.81    4714.71    4730.01    $400.00      WIN    ICT_Setup01              
+66   LONG   2026-01-20T08:30:00  4720.88    4714.71    4733.22    $400.00      WIN    ICT_Setup01              
+68   LONG   2026-01-20T16:25:00  4741.28    4722.52    4778.80    $400.00      WIN    ICT_Setup01              
+69   LONG   2026-01-21T02:50:00  4829.96    4817.30    4855.28    $400.00      WIN    ICT_Setup01              
+70   LONG   2026-01-21T09:40:00  4866.39    4851.50    4896.17    $-200.00     LOSS   ICT_Setup01              
+71   LONG   2026-01-22T09:25:00  4829.55    4822.15    4844.35    $-200.00     LOSS   ICT_Setup01              
+72   LONG   2026-01-23T14:30:00  4942.80    4923.51    4981.38    $400.00      WIN    ICT_Setup01              
+75   LONG   2026-01-26T02:35:00  5085.12    5066.80    5121.76    $-200.00     LOSS   ICT_Setup01              
+76   LONG   2026-01-26T03:00:00  5081.76    5066.80    5111.68    $-200.00     LOSS   ICT_Setup01              
+77   LONG   2026-01-26T09:40:00  5091.50    5080.12    5114.26    $-200.00     LOSS   ICT_Setup01              
+74   LONG   2026-01-26T01:50:00  5078.00    5028.91    5176.18    $-200.00     LOSS   ICT_Setup01              
+78   LONG   2026-01-27T03:50:00  5074.66    5060.38    5103.22    $-200.00     LOSS   ICT_Setup01              
+73   LONG   2026-01-26T01:00:00  5043.14    4978.09    5173.24    $400.00      WIN    ICT_Setup01              
+79   LONG   2026-01-28T02:00:00  5207.46    5157.15    5308.08    $400.00      WIN    ICT_Setup01              
+80   LONG   2026-01-28T02:10:00  5209.99    5157.15    5315.67    $400.00      WIN    ICT_Setup01              
+81   LONG   2026-01-28T20:15:00  5338.69    5268.67    5478.73    $400.00      WIN    ICT_Setup01              
+83   SHORT  2026-01-30T07:45:00  5151.21    5186.33    5080.97    $400.00      WIN    ICT_Setup01              
+84   SHORT  2026-01-30T08:50:00  5110.54    5184.97    4961.68    $400.00      WIN    ICT_Setup01              
+85   SHORT  2026-01-30T09:00:00  5115.04    5184.97    4975.18    $400.00      WIN    ICT_Setup01              
+82   SHORT  2026-01-30T02:35:00  5211.72    5450.96    4733.24    $400.00      WIN    SB_FVG_Retrace           
+----------------------------------------------------------------------------------------------------
+
+                                         SUMMARY STATISTICS                                         
+----------------------------------------------------------------------------------------------------
+Total Trades:     85
+Wins:             39
+Losses:           46
+Win Rate:         45.88%
+Total P&L:        $6400.00
+Average P&L:      $75.29
+
+                                     PERFORMANCE BY SIGNAL TYPE                                     
+----------------------------------------------------------------------------------------------------
+Signal Type                    Wins       Losses     Win Rate     Total P&L      
+----------------------------------------------------------------------------------------------------
+ICT_Setup01                    38         46         45.24       % $6000.00       
+SB_FVG_Retrace                 1          0          100.00      % $400.00        
+====================================================================================================
+
+====================================================================================================
+                                         FILTER STATISTICS                                          
+====================================================================================================
+
+--- Entry Triggers Detected ---
+  LONG triggers:  167
+  SHORT triggers: 142
+
+--- Trigger Breakdown ---
+  SB FVG Retrace:  LONG=0 SHORT=7
+  ICT Setup 01:    LONG=164 SHORT=135
+  Fibonacci OTE:   LONG=3 SHORT=2
+
+--- Filter Rejections ---
+  Time Filter (ICT Session):
+    LONG rejected:  60
+    SHORT rejected: 29
+  Trend Filter (15M/1H Bias):
+    LONG rejected:  50
+    SHORT rejected: 85
+  Structure Filter (MSS+FVG):
+    LONG rejected:  0
+    SHORT rejected: 0
+
+--- Risk Management Rejections ---
+  Invalid Stop (LONG):   0
+  Invalid Stop (SHORT):  0
+  Invalid Target (LONG): 0
+  Invalid Target (SHORT):0
+
+--- Orders Placed ---
+  Total orders: 85
+====================================================================================================
+
+================================================================================
+Final Portfolio Value: $10000.00
+Closed Trades: 0 | Wins: 0 | Losses: 0
+================================================================================
