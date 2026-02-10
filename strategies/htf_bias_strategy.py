@@ -186,6 +186,8 @@ class SilverBulletStrategy(bt.Strategy):
             "entry_setup01_bear": 0,
             "entry_ote_bull": 0,
             "entry_ote_bear": 0,
+            "entry_ifvg_bull": 0,
+            "entry_ifvg_bear": 0,
             # Filter rejection counts
             "filter_time_rejected_bull": 0,
             "filter_time_rejected_bear": 0,
@@ -204,6 +206,7 @@ class SilverBulletStrategy(bt.Strategy):
         # Track active trades with manual stop/target management
         self.active_trades = []  # List of {direction, entry_price, stop, target, size, entry_time, signal_type, order}
         self.completed_trades = []
+        self.rejected_triggers = []
         self.trade_counter = 0
 
     def log(self, message: str) -> None:
@@ -246,6 +249,8 @@ class SilverBulletStrategy(bt.Strategy):
                 signals.append("ICT_Setup01")
             if int(self.data.entry_ote_bull[0]) == 1:
                 signals.append("Fib_OTE")
+            if int(self.data.entry_ifvg_bull[0]) == 1:
+                signals.append("IFVG_Realtime")
         else:
             if int(self.data.entry_sb_bear[0]) == 1:
                 signals.append("SB_FVG_Retrace")
@@ -253,6 +258,8 @@ class SilverBulletStrategy(bt.Strategy):
                 signals.append("ICT_Setup01")
             if int(self.data.entry_ote_bear[0]) == 1:
                 signals.append("Fib_OTE")
+            if int(self.data.entry_ifvg_bear[0]) == 1:
+                signals.append("IFVG_Realtime")
         return " + ".join(signals) if signals else "Unknown"
 
     def notify_order(self, order: bt.Order) -> None:
@@ -356,6 +363,10 @@ class SilverBulletStrategy(bt.Strategy):
             self.signal_stats["entry_ote_bull"] += 1
         if int(self.data.entry_ote_bear[0]) == 1:
             self.signal_stats["entry_ote_bear"] += 1
+        if int(self.data.entry_ifvg_bull[0]) == 1:
+            self.signal_stats["entry_ifvg_bull"] += 1
+        if int(self.data.entry_ifvg_bear[0]) == 1:
+            self.signal_stats["entry_ifvg_bear"] += 1
 
     def _check_filters(self, is_long: bool) -> tuple[bool, str]:
         """
@@ -405,6 +416,21 @@ class SilverBulletStrategy(bt.Strategy):
             "htf_poi": htf_poi_ok,
         }
 
+    def _record_rejected_trigger(self, *, is_long: bool, rejection_reason: str) -> None:
+        direction = "LONG" if is_long else "SHORT"
+        states = self._filter_states(is_long)
+        self.rejected_triggers.append(
+            {
+                "time": self.data.datetime.datetime(0).isoformat(),
+                "direction": direction,
+                "signal_type": self._get_entry_signal_type(is_long=is_long),
+                "rejection_reason": rejection_reason,
+                "filter_htf_poi": states["htf_poi"],
+                "filter_trend": states["trend"],
+                "filter_time": states["time"],
+            }
+        )
+
     def _log_filter_sequence(self, is_long: bool) -> None:
         direction = "LONG" if is_long else "SHORT"
         states = self._filter_states(is_long)
@@ -439,6 +465,7 @@ class SilverBulletStrategy(bt.Strategy):
             self._log_filter_sequence(is_long=True)
             filters_passed, rejection_reason = self._check_filters(is_long=True)
             if not filters_passed:
+                self._record_rejected_trigger(is_long=True, rejection_reason=rejection_reason)
                 if self.params.debug_signals:
                     self.log(f"LONG trigger rejected: {rejection_reason}")
                 if "Time" in rejection_reason:
@@ -454,6 +481,7 @@ class SilverBulletStrategy(bt.Strategy):
             self._log_filter_sequence(is_long=False)
             filters_passed, rejection_reason = self._check_filters(is_long=False)
             if not filters_passed:
+                self._record_rejected_trigger(is_long=False, rejection_reason=rejection_reason)
                 if self.params.debug_signals:
                     self.log(f"SHORT trigger rejected: {rejection_reason}")
                 if "Time" in rejection_reason:
@@ -577,6 +605,7 @@ class SilverBulletStrategy(bt.Strategy):
         print(f"  SB FVG Retrace:  LONG={self.signal_stats['entry_sb_bull']} SHORT={self.signal_stats['entry_sb_bear']}")
         print(f"  ICT Setup 01:    LONG={self.signal_stats['entry_setup01_bull']} SHORT={self.signal_stats['entry_setup01_bear']}")
         print(f"  Fibonacci OTE:   LONG={self.signal_stats['entry_ote_bull']} SHORT={self.signal_stats['entry_ote_bear']}")
+        print(f"  IFVG Realtime:   LONG={self.signal_stats['entry_ifvg_bull']} SHORT={self.signal_stats['entry_ifvg_bear']}")
 
         print("\n--- Filter Rejections ---")
         print(f"  Time Filter (ICT Session):")
@@ -615,7 +644,7 @@ class SilverBulletStrategy(bt.Strategy):
         print("\n{:^100}".format("TRADE-BY-TRADE DETAILS"))
         print("-" * 100)
         print(
-            "{:<4} {:<6} {:<20} {:<10} {:<10} {:<10} {:<12} {:<6} {:<25}".format(
+            "{:<4} {:<6} {:<20} {:<10} {:<10} {:<10} {:<12} {:<6} {:<40}".format(
                 "#", "Dir", "Entry Time", "Entry", "Stop", "Target", "P&L", "Result", "Signal"
             )
         )
@@ -628,7 +657,7 @@ class SilverBulletStrategy(bt.Strategy):
 
         for trade in self.completed_trades:
             print(
-                "{:<4} {:<6} {:<20} {:<10.2f} {:<10.2f} {:<10.2f} ${:<11.2f} {:<6} {:<25}".format(
+                "{:<4} {:<6} {:<20} {:<10.2f} {:<10.2f} {:<10.2f} ${:<11.2f} {:<6} {:<40}".format(
                     trade["trade_num"],
                     trade["direction"],
                     trade["entry_time"][:19],
@@ -637,7 +666,7 @@ class SilverBulletStrategy(bt.Strategy):
                     trade["target_price"],
                     trade["pnl"],
                     trade["result"],
-                    trade["signal_type"][:25],
+                    trade["signal_type"],
                 )
             )
 
