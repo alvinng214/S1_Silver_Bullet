@@ -173,12 +173,6 @@ def _not_current_timeframe_equal_enabled_tfs(current_tf: str, s: Settings) -> bo
     }.get(current_tf, True)
 
 
-def _tf_rule(tf: str) -> str:
-    if tf in {"5", "10", "15", "30", "60", "240", "480", "720"}:
-        return f"{tf}min"
-    return {"D": "1D", "W": "1W", "M": "1ME"}[tf]
-
-
 def _period_start_index(idx: pd.DatetimeIndex, period: str) -> pd.Series:
     if period in {"5", "10", "15", "30", "60", "240", "480", "720"}:
         minutes = int(period)
