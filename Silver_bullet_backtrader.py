@@ -27,6 +27,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "strategies"))
 
 from htf_bias_strategy import HTFBiasStrategy, SilverBulletStrategy
 from ICT_Silver_Bullet_with_signals import detect_silver_bullet_signals
+from IFVG_Realtime import compute_ifvg_realtime
 from Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_ import calculate_smc_tradingfinder
 from Smart_Money_Zones__FVG___OB____MTF_Trend_Panel import calculate_smart_money_zones
 
@@ -132,6 +133,8 @@ class PandasDataBias(bt.feeds.PandasData):
         "entry_setup01_bear",
         "entry_ote_bull",
         "entry_ote_bear",
+        "entry_ifvg_bull",
+        "entry_ifvg_bear",
         "entry_trigger_bull",
         "entry_trigger_bear",
         "filter_session_active",
@@ -167,6 +170,8 @@ class PandasDataBias(bt.feeds.PandasData):
         ("entry_setup01_bear", "entry_setup01_bear"),
         ("entry_ote_bull", "entry_ote_bull"),
         ("entry_ote_bear", "entry_ote_bear"),
+        ("entry_ifvg_bull", "entry_ifvg_bull"),
+        ("entry_ifvg_bear", "entry_ifvg_bear"),
         ("entry_trigger_bull", "entry_trigger_bull"),
         ("entry_trigger_bear", "entry_trigger_bear"),
         ("filter_session_active", "filter_session_active"),
@@ -434,12 +439,32 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
             elif state.pos < 0:
                 ote_bear.iloc[idx] = 1
 
+    ifvg_signals, _ = compute_ifvg_realtime(
+        df,
+        mintick=0.01,
+        pip_size_multiplier=1.0,
+        ifvg_gap_bars=15,
+        min_fvg_pips=0.0,
+        fvg_eps_points=0.0,
+        show_zones=False,
+        ma_period=21,
+        ma_kind="EMA",
+    )
+    ifvg_bull = ifvg_signals["buy_signal"].fillna(False).astype(int)
+    ifvg_bear = ifvg_signals["sell_signal"].fillna(False).astype(int)
+
     # Raw entry triggers (unfiltered) - checked FIRST in strategy
     entry_trigger_bull = (
-        sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
+        sb_entry_bull.astype(bool)
+        | setup01_bull.astype(bool)
+        | ote_bull.astype(bool)
+        | ifvg_bull.astype(bool)
     ).astype(int)
     entry_trigger_bear = (
-        sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
+        sb_entry_bear.astype(bool)
+        | setup01_bear.astype(bool)
+        | ote_bear.astype(bool)
+        | ifvg_bear.astype(bool)
     ).astype(int)
 
     # Filter 1: HTF POI Filter (disabled)
@@ -498,6 +523,8 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     df["entry_setup01_bear"] = setup01_bear
     df["entry_ote_bull"] = ote_bull
     df["entry_ote_bear"] = ote_bear
+    df["entry_ifvg_bull"] = ifvg_bull
+    df["entry_ifvg_bear"] = ifvg_bear
     # Raw combined triggers (unfiltered)
     df["entry_trigger_bull"] = entry_trigger_bull
     df["entry_trigger_bear"] = entry_trigger_bear
