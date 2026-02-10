@@ -18,6 +18,7 @@ import os
 import sys
 import warnings
 from typing import Dict
+from zoneinfo import ZoneInfo
 
 import backtrader as bt
 import pandas as pd
@@ -27,6 +28,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "strategies"))
 
 from htf_bias_strategy import HTFBiasStrategy, SilverBulletStrategy
 from ICT_Silver_Bullet_with_signals import detect_silver_bullet_signals
+from IFVG_Realtime import compute_ifvg_realtime
 from Smart_Money_Concept__TradingFinder__Major_Minor_OB___FVG__SMC_ import calculate_smc_tradingfinder
 from Smart_Money_Zones__FVG___OB____MTF_Trend_Panel import calculate_smart_money_zones
 
@@ -132,6 +134,8 @@ class PandasDataBias(bt.feeds.PandasData):
         "entry_setup01_bear",
         "entry_ote_bull",
         "entry_ote_bear",
+        "entry_ifvg_bull",
+        "entry_ifvg_bear",
         "entry_trigger_bull",
         "entry_trigger_bear",
         "filter_session_active",
@@ -167,6 +171,8 @@ class PandasDataBias(bt.feeds.PandasData):
         ("entry_setup01_bear", "entry_setup01_bear"),
         ("entry_ote_bull", "entry_ote_bull"),
         ("entry_ote_bear", "entry_ote_bear"),
+        ("entry_ifvg_bull", "entry_ifvg_bull"),
+        ("entry_ifvg_bear", "entry_ifvg_bear"),
         ("entry_trigger_bull", "entry_trigger_bull"),
         ("entry_trigger_bear", "entry_trigger_bear"),
         ("filter_session_active", "filter_session_active"),
@@ -434,12 +440,32 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
             elif state.pos < 0:
                 ote_bear.iloc[idx] = 1
 
+    ifvg_signals, _ = compute_ifvg_realtime(
+        df,
+        mintick=0.01,
+        pip_size_multiplier=1.0,
+        ifvg_gap_bars=15,
+        min_fvg_pips=0.0,
+        fvg_eps_points=0.0,
+        show_zones=False,
+        ma_period=21,
+        ma_kind="EMA",
+    )
+    ifvg_bull = ifvg_signals["buy_signal"].fillna(False).astype(int)
+    ifvg_bear = ifvg_signals["sell_signal"].fillna(False).astype(int)
+
     # Raw entry triggers (unfiltered) - checked FIRST in strategy
     entry_trigger_bull = (
-        sb_entry_bull.astype(bool) | setup01_bull.astype(bool) | ote_bull.astype(bool)
+        sb_entry_bull.astype(bool)
+        | setup01_bull.astype(bool)
+        | ote_bull.astype(bool)
+        | ifvg_bull.astype(bool)
     ).astype(int)
     entry_trigger_bear = (
-        sb_entry_bear.astype(bool) | setup01_bear.astype(bool) | ote_bear.astype(bool)
+        sb_entry_bear.astype(bool)
+        | setup01_bear.astype(bool)
+        | ote_bear.astype(bool)
+        | ifvg_bear.astype(bool)
     ).astype(int)
 
     # Filter 1: HTF POI Filter (disabled)
@@ -498,6 +524,8 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     df["entry_setup01_bear"] = setup01_bear
     df["entry_ote_bull"] = ote_bull
     df["entry_ote_bear"] = ote_bear
+    df["entry_ifvg_bull"] = ifvg_bull
+    df["entry_ifvg_bear"] = ifvg_bear
     # Raw combined triggers (unfiltered)
     df["entry_trigger_bull"] = entry_trigger_bull
     df["entry_trigger_bear"] = entry_trigger_bear
@@ -520,6 +548,39 @@ def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
         .dropna()
     )
 
+
+
+
+def _export_rejected_triggers_report(rejected_triggers: list[dict], output_csv: str = "backtest_rejected_triggers.csv") -> None:
+    if not rejected_triggers:
+        print("No rejected entry triggers found.")
+        return
+
+    rejected_df = pd.DataFrame(rejected_triggers).copy()
+    rejected_df["time_utc"] = pd.to_datetime(rejected_df["time"], utc=True)
+    rejected_df["time_hk"] = rejected_df["time_utc"].dt.tz_convert(ZoneInfo("Asia/Hong_Kong"))
+    rejected_df["time_hk"] = rejected_df["time_hk"].dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+    rejected_df = rejected_df[[
+        "time_utc",
+        "time_hk",
+        "direction",
+        "signal_type",
+        "rejection_reason",
+        "filter_htf_poi",
+        "filter_trend",
+        "filter_time",
+    ]]
+    rejected_df.to_csv(output_csv, index=False)
+
+    summary = rejected_df.groupby(["direction", "rejection_reason"]).size().sort_values(ascending=False)
+    print("\n" + "=" * 80)
+    print("REJECTED ENTRY TRIGGERS (ALL)")
+    print("=" * 80)
+    print(f"Total rejected triggers: {len(rejected_df)}")
+    print("\nBy direction + filter reason:")
+    for (direction, reason), count in summary.items():
+        print(f"- {direction} | {reason}: {count}")
+    print(f"\nDetailed rejected trigger CSV exported: {output_csv}")
 
 def run_backtest(
     csv_file: str,
@@ -577,7 +638,10 @@ def run_backtest(
     print("=" * 80 + "\n")
 
     results = cerebro.run()
-    analyzer = results[0].analyzers.trade_analyzer.get_analysis()
+    strategy = results[0]
+    _export_rejected_triggers_report(getattr(strategy, "rejected_triggers", []))
+
+    analyzer = strategy.analyzers.trade_analyzer.get_analysis()
     total_trades = analyzer.get("total", {}).get("closed", 0)
     total_won = analyzer.get("won", {}).get("total", 0)
     total_lost = analyzer.get("lost", {}).get("total", 0)
