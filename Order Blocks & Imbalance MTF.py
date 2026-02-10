@@ -48,13 +48,19 @@ class OBSettings:
     visible_limit: int = 10
     extend_active: bool = True
 
+    def __post_init__(self) -> None:
+        # Pine input.int enforces [1, 20] for visibleLimit.
+        self.visible_limit = max(1, min(20, int(self.visible_limit)))
+        # Pine input.string constrains mitigationType to ["Close", "Wick"].
+        if self.mitigation_type not in {"Wick", "Close"}:
+            self.mitigation_type = "Wick"
+
 
 def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
-    return (
-        df.resample(rule)
-        .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
-        .dropna()
-    )
+    aggregations = {"open": "first", "high": "max", "low": "min", "close": "last"}
+    if "volume" in df.columns:
+        aggregations["volume"] = "sum"
+    return df.resample(rule).agg(aggregations).dropna()
 
 
 def _resolve_timeframe_rule(df: pd.DataFrame, timeframe: str) -> Optional[str]:
@@ -135,7 +141,7 @@ def build_order_blocks(df: pd.DataFrame, settings: OBSettings) -> List[OBZone]:
     """Return the list of OB zones after processing the full OHLCV series.
 
     The input dataframe must be indexed by timestamps and include columns:
-    open, high, low, close, volume.
+    open, high, low, close (volume optional).
     """
 
     rule = _resolve_timeframe_rule(df, settings.timeframe)
