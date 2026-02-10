@@ -37,19 +37,7 @@ LIQUIDITY_PATH = os.path.join(
 liquidity_module = SourceFileLoader("liquidity_inducements", LIQUIDITY_PATH).load_module()
 calculate_liquidity_inducements = liquidity_module.calculate_liquidity_inducements
 
-LUXALGO_SB_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "ICT_Silver_Bullet__LuxAlgo___shorttitle__LuxAlgo_-_ICT_Silver_Bullet.py",
-)
-luxalgo_module = SourceFileLoader("luxalgo_silver_bullet", LUXALGO_SB_PATH).load_module()
-calculate_luxalgo_silver_bullet = luxalgo_module.calculate_luxalgo_silver_bullet
 
-TRADINGFINDER_SB_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "Silver_Bullet_ICT_Strategy__TradingFinder__10-11_AM_NY_Time__FVG_TFlab_Silver_Bullet.py",
-)
-tradingfinder_module = SourceFileLoader("tradingfinder_silver_bullet", TRADINGFINDER_SB_PATH).load_module()
-calculate_tradingfinder_silver_bullet = tradingfinder_module.calculate_tradingfinder_silver_bullet
 
 SETUP01_PATH = os.path.join(
     os.path.dirname(__file__),
@@ -138,11 +126,6 @@ class PandasDataBias(bt.feeds.PandasData):
         "sb_sig_ln",
         "sb_sig_am",
         "sb_sig_pm",
-        "sb_lux_ln",
-        "sb_lux_am",
-        "sb_lux_pm",
-        "sb_or_range",
-        "sb_trading_range",
         "entry_sb_bull",
         "entry_sb_bear",
         "entry_setup01_bull",
@@ -178,11 +161,6 @@ class PandasDataBias(bt.feeds.PandasData):
         ("sb_sig_ln", "sb_sig_ln"),
         ("sb_sig_am", "sb_sig_am"),
         ("sb_sig_pm", "sb_sig_pm"),
-        ("sb_lux_ln", "sb_lux_ln"),
-        ("sb_lux_am", "sb_lux_am"),
-        ("sb_lux_pm", "sb_lux_pm"),
-        ("sb_or_range", "sb_or_range"),
-        ("sb_trading_range", "sb_trading_range"),
         ("entry_sb_bull", "entry_sb_bull"),
         ("entry_sb_bear", "entry_sb_bear"),
         ("entry_setup01_bull", "entry_setup01_bull"),
@@ -301,35 +279,10 @@ def add_killzone_windows(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataF
         elif session.name == "PM":
             sb_sig_pm.iloc[session.start_idx : session.end_idx + 1] = 1
 
-    lux = calculate_luxalgo_silver_bullet(hk_aligned)
-    sb_lux_ln = pd.Series(0, index=df.index, dtype=int)
-    sb_lux_am = pd.Series(0, index=df.index, dtype=int)
-    sb_lux_pm = pd.Series(0, index=df.index, dtype=int)
-    for state in lux["bar_states"]:
-        idx = state.index
-        if state.in_ln:
-            sb_lux_ln.iloc[idx] = 1
-        if state.in_am:
-            sb_lux_am.iloc[idx] = 1
-        if state.in_pm:
-            sb_lux_pm.iloc[idx] = 1
-
-    tradingfinder = calculate_tradingfinder_silver_bullet(hk_aligned)
-    session_levels = tradingfinder["session_levels"]
-    sb_or_range = pd.Series(session_levels.or_range.to_numpy(), index=df.index).fillna(0).astype(int)
-    sb_trading_range = (
-        pd.Series(session_levels.trading_range.to_numpy(), index=df.index).fillna(0).astype(int)
-    )
-
     df = df.copy()
     df["sb_sig_ln"] = sb_sig_ln
     df["sb_sig_am"] = sb_sig_am
     df["sb_sig_pm"] = sb_sig_pm
-    df["sb_lux_ln"] = sb_lux_ln
-    df["sb_lux_am"] = sb_lux_am
-    df["sb_lux_pm"] = sb_lux_pm
-    df["sb_or_range"] = sb_or_range
-    df["sb_trading_range"] = sb_trading_range
     return df
 
 
