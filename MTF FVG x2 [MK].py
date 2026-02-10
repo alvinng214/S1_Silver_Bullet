@@ -198,6 +198,10 @@ def _mitigation_mode(mode: str) -> int:
 
 
 def _prepare_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    # Backtrader/pandas feeds sometimes use capitalized OHLCV headers.
+    colmap = {c: c.lower() for c in df.columns if isinstance(c, str)}
+    df = df.rename(columns=colmap)
+
     required = {"open", "high", "low", "close", "volume"}
     missing = required.difference(df.columns)
     if missing:
@@ -217,7 +221,7 @@ def compute_mtf_fvg_x2(
     current_timeframe: Optional[str] = None,
     timeframe_minutes: Optional[int] = None,
     is_dwm: bool = False,
-) -> Dict[str, List]:
+) -> Dict[str, object]:
     """Compute MTF FVG x2 outputs with Pine-like bar-by-bar ordering."""
     if mtf_settings is None:
         mtf_settings = MTFSettings()
@@ -300,7 +304,8 @@ def compute_mtf_fvg_x2(
         for tf, enabled in tf_flags:
             if enabled and _display_enabled(tf):
                 enabled_tfs.append(tf)
-        if _current_tf_enabled() and current_timeframe is not None and _display_enabled(current_timeframe):
+        # Pine does not apply display-range filters to the optional chart timeframe toggle.
+        if _current_tf_enabled() and current_timeframe is not None:
             enabled_tfs.append(current_timeframe)
 
     tf_data: Dict[str, Dict[str, pd.Series]] = {}
