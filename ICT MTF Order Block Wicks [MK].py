@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -236,6 +236,8 @@ def _isfvgbull(display: bool, fvgmethod: bool, open1: float, close1: float, op: 
         return open1 > close1 and op < cl and cl > high1
     return op < high1
 
+    t = ts.time()
+    return s.session_start <= t <= s.session_end
 
 def _isfvgbear(display: bool, fvgmethod: bool, open1: float, close1: float, op: float, cl: float, low1: float) -> bool:
     if not display:
@@ -244,6 +246,15 @@ def _isfvgbear(display: bool, fvgmethod: bool, open1: float, close1: float, op: 
         return open1 < close1 and op > cl and cl < low1
     return op < low1
 
+def _resolve_session_timezone(df: pd.DataFrame, s: Settings) -> Optional[str]:
+    if s.session_timezone:
+        return s.session_timezone
+    tz_from_attrs = df.attrs.get("timezone")
+    if isinstance(tz_from_attrs, str) and tz_from_attrs:
+        return tz_from_attrs
+    if df.index.tz is not None:
+        return str(df.index.tz)
+    return None
 
 def _duplicate_box(boxes: List[OBBox], top: float) -> bool:
     # Pine only compares top, bottom commented out.
@@ -278,6 +289,10 @@ def _security_context_with_policy(df: pd.DataFrame, period: str, policy: str) ->
         raise ValueError("Unsupported security_merge_policy. Use 'tv_like_developing'.")
     return _security_context(df, period)
 
+def _security_context_with_policy(df: pd.DataFrame, period: str, policy: str) -> pd.DataFrame:
+    if policy != "tv_like_developing":
+        raise ValueError("Unsupported security_merge_policy. Use 'tv_like_developing'.")
+    return _security_context(df, period)
 
 def run_mtf_order_block_wicks(
     df: pd.DataFrame,

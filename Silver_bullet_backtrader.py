@@ -18,6 +18,7 @@ import os
 import sys
 import warnings
 from typing import Dict
+from zoneinfo import ZoneInfo
 
 import backtrader as bt
 import pandas as pd
@@ -548,6 +549,39 @@ def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     )
 
 
+
+
+def _export_rejected_triggers_report(rejected_triggers: list[dict], output_csv: str = "backtest_rejected_triggers.csv") -> None:
+    if not rejected_triggers:
+        print("No rejected entry triggers found.")
+        return
+
+    rejected_df = pd.DataFrame(rejected_triggers).copy()
+    rejected_df["time_utc"] = pd.to_datetime(rejected_df["time"], utc=True)
+    rejected_df["time_hk"] = rejected_df["time_utc"].dt.tz_convert(ZoneInfo("Asia/Hong_Kong"))
+    rejected_df["time_hk"] = rejected_df["time_hk"].dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+    rejected_df = rejected_df[[
+        "time_utc",
+        "time_hk",
+        "direction",
+        "signal_type",
+        "rejection_reason",
+        "filter_htf_poi",
+        "filter_trend",
+        "filter_time",
+    ]]
+    rejected_df.to_csv(output_csv, index=False)
+
+    summary = rejected_df.groupby(["direction", "rejection_reason"]).size().sort_values(ascending=False)
+    print("\n" + "=" * 80)
+    print("REJECTED ENTRY TRIGGERS (ALL)")
+    print("=" * 80)
+    print(f"Total rejected triggers: {len(rejected_df)}")
+    print("\nBy direction + filter reason:")
+    for (direction, reason), count in summary.items():
+        print(f"- {direction} | {reason}: {count}")
+    print(f"\nDetailed rejected trigger CSV exported: {output_csv}")
+
 def run_backtest(
     csv_file: str,
     max_bars: int | None = None,
@@ -604,7 +638,10 @@ def run_backtest(
     print("=" * 80 + "\n")
 
     results = cerebro.run()
-    analyzer = results[0].analyzers.trade_analyzer.get_analysis()
+    strategy = results[0]
+    _export_rejected_triggers_report(getattr(strategy, "rejected_triggers", []))
+
+    analyzer = strategy.analyzers.trade_analyzer.get_analysis()
     total_trades = analyzer.get("total", {}).get("closed", 0)
     total_won = analyzer.get("won", {}).get("total", 0)
     total_lost = analyzer.get("lost", {}).get("total", 0)
