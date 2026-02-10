@@ -57,6 +57,7 @@ class SessionBox:
     end: pd.Timestamp
     high: float
     low: float
+    show_box: bool = True
 
 
 @dataclass
@@ -195,6 +196,8 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
         "sb_ln": _session_mask(df.index, "0300-0400", tz),
         "sb_ny": _session_mask(df.index, "1000-1100", tz),
         "sb_pm": _session_mask(df.index, "1400-1500", tz),
+        "txt_sess_2": _session_mask(df.index, "1201-1330", tz),
+        "txt_sess_3": _session_mask(df.index, "1331-1600", tz),
     }
 
     state = {
@@ -308,11 +311,11 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                     in_kz = True
                     kz_color = "sess_1"
                     kz_text = config.txt_sess_1
-                elif config.show_sess_2 and _session_mask(pd.DatetimeIndex([dt]), "1201-1330", tz).iloc[0]:
+                elif config.show_sess_2 and in_session("txt_sess_2"):
                     in_kz = True
                     kz_color = "sess_2"
                     kz_text = config.txt_sess_2
-                elif config.show_sess_3 and _session_mask(pd.DatetimeIndex([dt]), "1331-1600", tz).iloc[0]:
+                elif config.show_sess_3 and in_session("txt_sess_3"):
                     in_kz = True
                     kz_color = "sess_3"
                     kz_text = config.txt_sess_3
@@ -350,7 +353,9 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                             start_line.end = bar_end
                             start_line.price = box.top
                 if prev_in_kz and not in_kz:
-                    output.text_box_lines.append(TextBoxLine(name="kz_end", start=dt, end=bar_end, price=high))
+                    box = state["text"]["box"]
+                    end_price = box.top if box is not None else high
+                    output.text_box_lines.append(TextBoxLine(name="kz_end", start=dt, end=bar_end, price=end_price))
 
             prev_in_kz = in_kz
 
@@ -368,7 +373,14 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
             state_key = session_key
 
             if new_bar(mask_name):
-                box = SessionBox(name=label_text, start=dt, end=bar_end, high=high, low=low)
+                box = SessionBox(
+                    name=label_text,
+                    start=dt,
+                    end=bar_end,
+                    high=high,
+                    low=low,
+                    show_box=config.show_box_session,
+                )
                 output.session_boxes.setdefault(label_text, []).append(box)
                 state[state_key]["box"] = box
                 if config.show_only_today and len(output.session_boxes[label_text]) > 1:
@@ -424,9 +436,9 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                     if high_line is not None:
                         stop_dt = dt.normalize() + timedelta(hours=stop_time.hour, minutes=stop_time.minute)
                         if high_or_break:
-                            should_stop = dt >= stop_dt or high > high_line.price
+                            should_stop = dt > stop_dt or high > high_line.price
                         else:
-                            should_stop = dt >= stop_dt and high > high_line.price
+                            should_stop = dt > stop_dt and high > high_line.price
                         if should_stop:
                             state[state_key]["can_high"] = False
                             high_line.active = False
@@ -439,7 +451,7 @@ def compute_indicator(df: pd.DataFrame, config: IndicatorConfig | None = None) -
                 if state[state_key]["can_low"]:
                     low_line = state[state_key]["low"]
                     if low_line is not None:
-                        if dt >= dt.normalize() + timedelta(hours=stop_time.hour, minutes=stop_time.minute) and low < low_line.price:
+                        if dt > dt.normalize() + timedelta(hours=stop_time.hour, minutes=stop_time.minute) and low < low_line.price:
                             state[state_key]["can_low"] = False
                             low_line.active = False
                             if config.show_text_lines:
