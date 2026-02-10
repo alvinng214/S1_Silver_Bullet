@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -284,6 +284,14 @@ def _security_context_with_policy(df: pd.DataFrame, period: str, policy: str) ->
         raise ValueError("Unsupported security_merge_policy. Use 'tv_like_developing'.")
     return _security_context(df, period)
 
+def _security_like(df: pd.DataFrame, tf: str) -> pd.DataFrame:
+    rule = _tf_rule(tf)
+    htf = (
+        df.resample(rule)
+        .agg(open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"))
+        .dropna()
+    )
+    return htf.reindex(df.index, method="ffill")
 
 def run_mtf_order_block_wicks(
     df: pd.DataFrame,
