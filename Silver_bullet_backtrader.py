@@ -396,7 +396,15 @@ def _zones_to_in_zone_series(df: pd.DataFrame, zones_by_ts: Dict[pd.Timestamp, l
 
 
 def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
-    def _compute_in_unmitigated_ob_series(data: pd.DataFrame, timeframe: str) -> tuple[pd.Series, pd.Series]:
+    """Build HTF POI filters from 1H/4H order blocks.
+
+    A side's filter is true when at least one of the *previous* 10 bars
+    traded inside a same-side 1H or 4H order block.
+
+    All detected blocks are considered for this filter (mitigated or not).
+    """
+
+    def _compute_in_ob_series(data: pd.DataFrame, timeframe: str) -> tuple[pd.Series, pd.Series]:
         settings = OBImbalanceSettings(timeframe=timeframe, mitigation_type="Wick")
         rule = ob_imbalance_module._resolve_timeframe_rule(data, settings.timeframe)
         if rule is None:
@@ -438,7 +446,6 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
                             "top": float(htf_row["high_shift2"]),
                             "bottom": float(htf_row["low_shift2"]),
                             "is_bullish": True,
-                            "mitigated": False,
                         }
                     )
                     last_created_time = htf_time
@@ -448,16 +455,16 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
                             "top": float(htf_row["high_shift2"]),
                             "bottom": float(htf_row["low_shift2"]),
                             "is_bullish": False,
-                            "mitigated": False,
                         }
                     )
                     last_created_time = htf_time
 
+            if len(zones) > 450:
+                zones.pop(0)
+
             low = float(row["low"])
             high = float(row["high"])
             for zone in zones:
-                if zone["mitigated"]:
-                    continue
                 in_zone = low <= zone["top"] and high >= zone["bottom"]
                 if not in_zone:
                     continue
@@ -466,40 +473,23 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
                 else:
                     in_bear.iat[i] = True
 
-            if zones:
-                remove_indices: list[int] = []
-                for idx in range(len(zones) - 1, -1, -1):
-                    zone = zones[idx]
-                    if zone["is_bullish"]:
-                        if row["close"] < zone["bottom"]:
-                            remove_indices.append(idx)
-                        elif row["low"] <= zone["top"] and not zone["mitigated"]:
-                            zone["mitigated"] = True
-                    else:
-                        if row["close"] > zone["top"]:
-                            remove_indices.append(idx)
-                        elif row["high"] >= zone["bottom"] and not zone["mitigated"]:
-                            zone["mitigated"] = True
-
-                for idx in remove_indices:
-                    zones.pop(idx)
 
         return in_bull, in_bear
 
     df = df.copy()
-    in_bull_1h, in_bear_1h = _compute_in_unmitigated_ob_series(df, timeframe="1H")
-    in_bull_4h, in_bear_4h = _compute_in_unmitigated_ob_series(df, timeframe="4H")
+    in_bull_1h, in_bear_1h = _compute_in_ob_series(df, timeframe="1H")
+    in_bull_4h, in_bear_4h = _compute_in_ob_series(df, timeframe="4H")
 
     lookback_bars = 10
-    recent_unmitigated_bull = (
+    recent_ob_bull = (
         (in_bull_1h | in_bull_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
     )
-    recent_unmitigated_bear = (
+    recent_ob_bear = (
         (in_bear_1h | in_bear_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
     )
 
-    df["filter_htf_poi_bull"] = recent_unmitigated_bull.astype(int)
-    df["filter_htf_poi_bear"] = recent_unmitigated_bear.astype(int)
+    df["filter_htf_poi_bull"] = recent_ob_bull.astype(int)
+    df["filter_htf_poi_bear"] = recent_ob_bear.astype(int)
     return df
 
 
@@ -613,13 +603,17 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     session_active = df.get("ict_session_active", pd.Series(1, index=df.index)).astype(int)
 
     # Legacy combined entry signals (for backward compatibility)
+    # Note: HTF POI is now enforced here as well so these columns mirror
+    # the strategy's trigger->filter flow.
     entry_fvg_bull = (
         entry_trigger_bull.astype(bool)
+        & htf_poi_bull.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bull.astype(bool)
     ).astype(int)
     entry_fvg_bear = (
         entry_trigger_bear.astype(bool)
+        & htf_poi_bear.astype(bool)
         & session_active.astype(bool)
         & htf_bias_bear.astype(bool)
     ).astype(int)
