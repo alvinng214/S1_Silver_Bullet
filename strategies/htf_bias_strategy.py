@@ -374,7 +374,7 @@ class SilverBulletStrategy(bt.Strategy):
         Returns (passed, rejection_reason).
 
         Filter sequence:
-        1. HTF POI Filter: price must have been in a 1H/4H Order Block within the last 20 bars
+        1. HTF POI Filter: one of the previous 10 bars must be in any same-side 1H/4H order block
         2. Trend Filter: 15M and 1H SMZ trends must agree with trade direction
         3. Time Filter: ICT session must be active
         """
@@ -384,7 +384,7 @@ class SilverBulletStrategy(bt.Strategy):
         else:
             htf_poi_ok = int(self.data.filter_htf_poi_bear[0]) == 1
         if not htf_poi_ok:
-            return False, "HTF POI Filter (1H/4H OB not aligned)"
+            return False, "HTF POI Filter (no prior-10-bar touch of any 1H/4H OB)"
 
         # Filter 2: Trend Filter - HTF bias must align with trade direction
         if is_long:
