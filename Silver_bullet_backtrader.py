@@ -547,18 +547,21 @@ def add_htf_fvg_filter(df: pd.DataFrame) -> pd.DataFrame:
         if "volume" not in data_with_vol.columns:
             data_with_vol["volume"] = 0
         htf = mtf_fvg_module._resample_ohlc(data_with_vol, rule)
-        aligned = htf.reindex(data.index, method="ffill")
 
         in_bull = pd.Series(False, index=data.index)
         in_bear = pd.Series(False, index=data.index)
-        if aligned.empty:
+        if htf.empty:
             return in_bull, in_bear
 
-        # Shifted series matching Pine logic in compute_mtf_fvg_x2
-        h_shift1 = aligned["high"].shift(1)
-        h_shift3 = aligned["high"].shift(3)
-        l_shift1 = aligned["low"].shift(1)
-        l_shift3 = aligned["low"].shift(3)
+        # Shift on the HTF series BEFORE ffill-alignment to base timeframe.
+        # Pine's request.security(sym, tf, high[1]) returns the previous
+        # completed HTF bar's high — that is a 1-HTF-bar shift, not a
+        # 1-base-bar shift.  Shifting on the aligned series would only move
+        # by 5 minutes (1 base bar) and almost never produce a gap.
+        h_shift1 = htf["high"].shift(1).reindex(data.index, method="ffill")
+        h_shift3 = htf["high"].shift(3).reindex(data.index, method="ffill")
+        l_shift1 = htf["low"].shift(1).reindex(data.index, method="ffill")
+        l_shift3 = htf["low"].shift(3).reindex(data.index, method="ffill")
 
         zones: list[dict] = []
 
