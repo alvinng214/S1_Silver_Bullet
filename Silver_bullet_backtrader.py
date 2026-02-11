@@ -86,6 +86,13 @@ OB_IMBALANCE_PATH = os.path.join(
 ob_imbalance_module = SourceFileLoader("order_blocks_imbalance_mtf", OB_IMBALANCE_PATH).load_module()
 OBImbalanceSettings = ob_imbalance_module.OBSettings
 
+MTF_FVG_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "MTF FVG x2 [MK].py",
+)
+mtf_fvg_module = SourceFileLoader("mtf_fvg_x2_mk", MTF_FVG_PATH).load_module()
+MTFSettings = mtf_fvg_module.MTFSettings
+
 
 # =============================================================================
 # INDICATOR CACHE - Stores expensive calculations to avoid redundant computation
@@ -508,8 +515,136 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
         (in_bear_1h | in_bear_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
     )
 
+    df["filter_htf_ob_bull"] = recent_ob_bull.astype(int)
+    df["filter_htf_ob_bear"] = recent_ob_bear.astype(int)
     df["filter_htf_poi_bull"] = recent_ob_bull.astype(int)
     df["filter_htf_poi_bear"] = recent_ob_bear.astype(int)
+    return df
+
+
+def add_htf_fvg_filter(df: pd.DataFrame) -> pd.DataFrame:
+    """Build HTF FVG filter from 1H/4H uninvalidated Fair Value Gaps.
+
+    Uses MTF FVG x2 [MK] detection logic.  A side's filter is true when at
+    least one of the *previous* 10 bars traded inside a same-side 1H or 4H
+    FVG that has not been invalidated.
+
+    Invalidation (Normal mode, wicks — matching the reference module):
+    - Bullish FVG is **removed** when low < zone bottom.
+    - Bearish FVG is **removed** when high > zone top.
+
+    The result is OR-combined with the existing OB-based HTF POI filter so
+    that ``filter_htf_poi_bull/bear`` passes if *either* an OB or an FVG
+    was touched in the lookback window.
+    """
+
+    def _compute_in_fvg_series(data: pd.DataFrame, timeframe: str) -> tuple[pd.Series, pd.Series]:
+        import math
+
+        rule = mtf_fvg_module._tf_to_rule(timeframe)
+        # _resample_ohlc requires a volume column
+        data_with_vol = data.copy()
+        if "volume" not in data_with_vol.columns:
+            data_with_vol["volume"] = 0
+        htf = mtf_fvg_module._resample_ohlc(data_with_vol, rule)
+        aligned = htf.reindex(data.index, method="ffill")
+
+        in_bull = pd.Series(False, index=data.index)
+        in_bear = pd.Series(False, index=data.index)
+        if aligned.empty:
+            return in_bull, in_bear
+
+        # Shifted series matching Pine logic in compute_mtf_fvg_x2
+        h_shift1 = aligned["high"].shift(1)
+        h_shift3 = aligned["high"].shift(3)
+        l_shift1 = aligned["low"].shift(1)
+        l_shift3 = aligned["low"].shift(3)
+
+        zones: list[dict] = []
+
+        for i in range(len(data)):
+            low_now = float(data["low"].iloc[i])
+            high_now = float(data["high"].iloc[i])
+
+            # --- FVG detection (requires >= 3 prior aligned bars) ---
+            if i >= 3:
+                h2 = float(h_shift3.iloc[i])
+                l_ = float(l_shift1.iloc[i])
+                l2 = float(l_shift3.iloc[i])
+                h_ = float(h_shift1.iloc[i])
+
+                prev_h2 = float(h_shift3.iloc[i - 1])
+                prev_l = float(l_shift1.iloc[i - 1])
+                prev_l2 = float(l_shift3.iloc[i - 1])
+                prev_h = float(h_shift1.iloc[i - 1])
+
+                vals_ok = not any(math.isnan(x) for x in (h_, h2, l_, l2))
+                if vals_ok:
+                    # Bull FVG: gap between 3-bars-ago high and 1-bar-ago low
+                    new_bull = h2 < l_
+                    if new_bull:
+                        prev_ok = not (math.isnan(prev_h2) or math.isnan(prev_l))
+                        changed = prev_ok and (h2 != prev_h2 or l_ != prev_l)
+                        if changed:
+                            zones.append({"top": l_, "bottom": h2, "is_bullish": True})
+
+                    # Bear FVG: gap between 3-bars-ago low and 1-bar-ago high
+                    new_bear = l2 > h_
+                    if new_bear:
+                        prev_ok = not (math.isnan(prev_l2) or math.isnan(prev_h))
+                        changed = prev_ok and (l2 != prev_l2 or h_ != prev_h)
+                        if changed:
+                            zones.append({"top": l2, "bottom": h_, "is_bullish": False})
+
+            # --- Invalidation (Normal mode, wicks) ---
+            remove_indices: list[int] = []
+            for idx in range(len(zones) - 1, -1, -1):
+                zone = zones[idx]
+                if zone["is_bullish"]:
+                    if low_now < zone["bottom"]:
+                        remove_indices.append(idx)
+                else:
+                    if high_now > zone["top"]:
+                        remove_indices.append(idx)
+
+            for idx in remove_indices:
+                zones.pop(idx)
+
+            if len(zones) > 450:
+                zones.pop(0)
+
+            # --- In-zone check (all surviving / uninvalidated zones) ---
+            for zone in zones:
+                in_zone = low_now <= zone["top"] and high_now >= zone["bottom"]
+                if not in_zone:
+                    continue
+                if zone["is_bullish"]:
+                    in_bull.iat[i] = True
+                else:
+                    in_bear.iat[i] = True
+
+        return in_bull, in_bear
+
+    df = df.copy()
+    in_bull_1h, in_bear_1h = _compute_in_fvg_series(df, timeframe="60")
+    in_bull_4h, in_bear_4h = _compute_in_fvg_series(df, timeframe="240")
+
+    lookback_bars = 10
+    recent_fvg_bull = (
+        (in_bull_1h | in_bull_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
+    )
+    recent_fvg_bear = (
+        (in_bear_1h | in_bear_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
+    )
+
+    df["filter_htf_fvg_bull"] = recent_fvg_bull.astype(int)
+    df["filter_htf_fvg_bear"] = recent_fvg_bear.astype(int)
+
+    # Combine with existing OB filter: POI passes if EITHER OB or FVG touched
+    ob_bull = df.get("filter_htf_ob_bull", pd.Series(0, index=df.index)).astype(bool)
+    ob_bear = df.get("filter_htf_ob_bear", pd.Series(0, index=df.index)).astype(bool)
+    df["filter_htf_poi_bull"] = (ob_bull | recent_fvg_bull).astype(int)
+    df["filter_htf_poi_bear"] = (ob_bear | recent_fvg_bear).astype(int)
     return df
 
 
@@ -730,6 +865,7 @@ def run_backtest(
     data_df = add_killzone_windows(data_df, hk_aligned)
     data_df = add_ict_session_filter(data_df)
     data_df = add_htf_ob_filter(data_df)
+    data_df = add_htf_fvg_filter(data_df)
     data_df = add_entry_signals(data_df, hk_aligned)
     if export_csv:
         data_df.to_csv(export_csv)
