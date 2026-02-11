@@ -70,13 +70,15 @@ def _resolve_timeframe_rule(df: pd.DataFrame, timeframe: str) -> Optional[str]:
     if normalized.isdigit():
         return f"{normalized}min"
     if normalized in {"1H", "H"}:
-        return "1H"
+        return "1h"
+    if normalized in {"4H"}:
+        return "4h"
     if normalized in {"1D", "D"}:
         return "1D"
     if normalized in {"1W", "W"}:
         return "1W"
     if normalized in {"1M", "M"}:
-        return "1M"
+        return "1ME"
     return normalized
 
 
