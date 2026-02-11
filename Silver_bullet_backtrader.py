@@ -79,6 +79,13 @@ mtf_ob_module = SourceFileLoader("mtf_order_block_finder", MTF_OB_FINDER_PATH).l
 compute_mtf_order_block_finder = mtf_ob_module.compute_mtf_order_block_finder
 OBSettings = mtf_ob_module.OBSettings
 
+OB_IMBALANCE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "Order Blocks & Imbalance MTF.py",
+)
+ob_imbalance_module = SourceFileLoader("order_blocks_imbalance_mtf", OB_IMBALANCE_PATH).load_module()
+OBImbalanceSettings = ob_imbalance_module.OBSettings
+
 
 # =============================================================================
 # INDICATOR CACHE - Stores expensive calculations to avoid redundant computation
@@ -389,9 +396,110 @@ def _zones_to_in_zone_series(df: pd.DataFrame, zones_by_ts: Dict[pd.Timestamp, l
 
 
 def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
+    def _compute_in_unmitigated_ob_series(data: pd.DataFrame, timeframe: str) -> tuple[pd.Series, pd.Series]:
+        settings = OBImbalanceSettings(timeframe=timeframe, mitigation_type="Wick")
+        rule = ob_imbalance_module._resolve_timeframe_rule(data, settings.timeframe)
+        if rule is None:
+            return pd.Series(False, index=data.index), pd.Series(False, index=data.index)
+        htf = (
+            data.resample(rule)
+            .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+            .dropna()
+        )
+
+        in_bull = pd.Series(False, index=data.index)
+        in_bear = pd.Series(False, index=data.index)
+        if htf.empty:
+            return in_bull, in_bear
+
+        atr = ob_imbalance_module._atr(htf, 14)
+        htf_calc = pd.DataFrame(
+            {
+                "is_bull": (htf["low"] - htf["high"].shift(2)) > (atr.shift(1) * settings.fvg_threshold),
+                "is_bear": (htf["low"].shift(2) - htf["high"]) > (atr.shift(1) * settings.fvg_threshold),
+                "high_shift2": htf["high"].shift(2),
+                "low_shift2": htf["low"].shift(2),
+                "time_shift2": htf.index.to_series().shift(2),
+            }
+        )
+        htf_aligned = htf_calc.reindex(data.index, method="ffill")
+
+        zones: list[dict] = []
+        last_created_time: pd.Timestamp | None = None
+
+        for i, (ts, row) in enumerate(data.iterrows()):
+            htf_row = htf_aligned.iloc[i]
+            htf_time = htf_row["time_shift2"]
+
+            if pd.notna(htf_time) and htf_time != last_created_time:
+                if bool(htf_row["is_bull"]):
+                    zones.append(
+                        {
+                            "top": float(htf_row["high_shift2"]),
+                            "bottom": float(htf_row["low_shift2"]),
+                            "is_bullish": True,
+                            "mitigated": False,
+                        }
+                    )
+                    last_created_time = htf_time
+                elif bool(htf_row["is_bear"]):
+                    zones.append(
+                        {
+                            "top": float(htf_row["high_shift2"]),
+                            "bottom": float(htf_row["low_shift2"]),
+                            "is_bullish": False,
+                            "mitigated": False,
+                        }
+                    )
+                    last_created_time = htf_time
+
+            low = float(row["low"])
+            high = float(row["high"])
+            for zone in zones:
+                if zone["mitigated"]:
+                    continue
+                in_zone = low <= zone["top"] and high >= zone["bottom"]
+                if not in_zone:
+                    continue
+                if zone["is_bullish"]:
+                    in_bull.iat[i] = True
+                else:
+                    in_bear.iat[i] = True
+
+            if zones:
+                remove_indices: list[int] = []
+                for idx in range(len(zones) - 1, -1, -1):
+                    zone = zones[idx]
+                    if zone["is_bullish"]:
+                        if row["close"] < zone["bottom"]:
+                            remove_indices.append(idx)
+                        elif row["low"] <= zone["top"] and not zone["mitigated"]:
+                            zone["mitigated"] = True
+                    else:
+                        if row["close"] > zone["top"]:
+                            remove_indices.append(idx)
+                        elif row["high"] >= zone["bottom"] and not zone["mitigated"]:
+                            zone["mitigated"] = True
+
+                for idx in remove_indices:
+                    zones.pop(idx)
+
+        return in_bull, in_bear
+
     df = df.copy()
-    df["filter_htf_poi_bull"] = 1
-    df["filter_htf_poi_bear"] = 1
+    in_bull_1h, in_bear_1h = _compute_in_unmitigated_ob_series(df, timeframe="1H")
+    in_bull_4h, in_bear_4h = _compute_in_unmitigated_ob_series(df, timeframe="4H")
+
+    lookback_bars = 10
+    recent_unmitigated_bull = (
+        (in_bull_1h | in_bull_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
+    )
+    recent_unmitigated_bear = (
+        (in_bear_1h | in_bear_4h).shift(1).fillna(False).rolling(lookback_bars, min_periods=1).max() > 0
+    )
+
+    df["filter_htf_poi_bull"] = recent_unmitigated_bull.astype(int)
+    df["filter_htf_poi_bear"] = recent_unmitigated_bear.astype(int)
     return df
 
 
@@ -468,7 +576,7 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
         | ifvg_bear.astype(bool)
     ).astype(int)
 
-    # Filter 1: HTF POI Filter (disabled)
+    # Filter 1: HTF POI Filter (1H/4H unmitigated order block lookback)
     htf_poi_bull = df.get("filter_htf_poi_bull", pd.Series(1, index=df.index)).astype(int)
     htf_poi_bear = df.get("filter_htf_poi_bear", pd.Series(1, index=df.index)).astype(int)
 
