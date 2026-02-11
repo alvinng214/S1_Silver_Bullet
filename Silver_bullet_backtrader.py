@@ -396,12 +396,19 @@ def _zones_to_in_zone_series(df: pd.DataFrame, zones_by_ts: Dict[pd.Timestamp, l
 
 
 def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
-    """Build HTF POI filters from 1H/4H order blocks.
+    """Build HTF POI filters from 1H/4H *unmitigated* order blocks.
 
     A side's filter is true when at least one of the *previous* 10 bars
-    traded inside a same-side 1H or 4H order block.
+    traded inside a same-side 1H or 4H order block that has **not yet been
+    mitigated**.
 
-    All detected blocks are considered for this filter (mitigated or not).
+    Mitigation rules (mirroring ``Order Blocks & Imbalance MTF.py``):
+    - Bullish OB is **removed** when close < zone bottom.
+    - Bearish OB is **removed** when close > zone top.
+    - Bullish OB is **mitigated** when wick (low) touches into the zone.
+    - Bearish OB is **mitigated** when wick (high) touches into the zone.
+
+    Only unmitigated zones count for the in-zone check.
     """
 
     def _compute_in_ob_series(data: pd.DataFrame, timeframe: str) -> tuple[pd.Series, pd.Series]:
@@ -433,46 +440,77 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
         htf_aligned = htf_calc.reindex(data.index, method="ffill")
 
         zones: list[dict] = []
-        last_created_time: pd.Timestamp | None = None
+        last_bull_created_time: pd.Timestamp | None = None
+        last_bear_created_time: pd.Timestamp | None = None
 
         for i, (ts, row) in enumerate(data.iterrows()):
-            htf_row = htf_aligned.iloc[i]
+            htf_row = htf_aligned.loc[ts]
             htf_time = htf_row["time_shift2"]
 
-            if pd.notna(htf_time) and htf_time != last_created_time:
-                if bool(htf_row["is_bull"]):
+            # --- Zone creation (bull and bear checked independently) ---
+            if pd.notna(htf_time):
+                if bool(htf_row["is_bull"]) and htf_time != last_bull_created_time:
                     zones.append(
                         {
                             "top": float(htf_row["high_shift2"]),
                             "bottom": float(htf_row["low_shift2"]),
                             "is_bullish": True,
+                            "mitigated": False,
                         }
                     )
-                    last_created_time = htf_time
-                elif bool(htf_row["is_bear"]):
+                    last_bull_created_time = htf_time
+                if bool(htf_row["is_bear"]) and htf_time != last_bear_created_time:
                     zones.append(
                         {
                             "top": float(htf_row["high_shift2"]),
                             "bottom": float(htf_row["low_shift2"]),
                             "is_bullish": False,
+                            "mitigated": False,
                         }
                     )
-                    last_created_time = htf_time
+                    last_bear_created_time = htf_time
+
+            # --- Zone invalidation & mitigation (mirrors reference module) ---
+            close_price = float(row["close"])
+            low_price = float(row["low"])
+            high_price = float(row["high"])
+            remove_indices: list[int] = []
+            for idx in range(len(zones) - 1, -1, -1):
+                zone = zones[idx]
+                if zone["is_bullish"]:
+                    if close_price < zone["bottom"]:
+                        # Close broke below bull OB → invalidate / remove
+                        remove_indices.append(idx)
+                    else:
+                        touch = low_price if settings.mitigation_type == "Wick" else close_price
+                        if touch <= zone["top"] and not zone["mitigated"]:
+                            zone["mitigated"] = True
+                else:
+                    if close_price > zone["top"]:
+                        # Close broke above bear OB → invalidate / remove
+                        remove_indices.append(idx)
+                    else:
+                        touch = high_price if settings.mitigation_type == "Wick" else close_price
+                        if touch >= zone["bottom"] and not zone["mitigated"]:
+                            zone["mitigated"] = True
+
+            for idx in remove_indices:
+                zones.pop(idx)
 
             if len(zones) > 450:
                 zones.pop(0)
 
-            low = float(row["low"])
-            high = float(row["high"])
+            # --- In-zone check (only unmitigated zones count) ---
             for zone in zones:
-                in_zone = low <= zone["top"] and high >= zone["bottom"]
+                if zone["mitigated"]:
+                    continue
+                in_zone = low_price <= zone["top"] and high_price >= zone["bottom"]
                 if not in_zone:
                     continue
                 if zone["is_bullish"]:
                     in_bull.iat[i] = True
                 else:
                     in_bear.iat[i] = True
-
 
         return in_bull, in_bear
 
