@@ -396,19 +396,15 @@ def _zones_to_in_zone_series(df: pd.DataFrame, zones_by_ts: Dict[pd.Timestamp, l
 
 
 def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
-    """Build HTF POI filters from 1H/4H *unmitigated* order blocks.
+    """Build HTF POI filters from 1H/4H order blocks (mitigated or not).
 
     A side's filter is true when at least one of the *previous* 10 bars
-    traded inside a same-side 1H or 4H order block that has **not yet been
-    mitigated**.
+    traded inside a same-side 1H or 4H order block.  All detected blocks
+    are considered — mitigation status is not required.
 
-    Mitigation rules (mirroring ``Order Blocks & Imbalance MTF.py``):
-    - Bullish OB is **removed** when close < zone bottom.
-    - Bearish OB is **removed** when close > zone top.
-    - Bullish OB is **mitigated** when wick (low) touches into the zone.
-    - Bearish OB is **mitigated** when wick (high) touches into the zone.
-
-    Only unmitigated zones count for the in-zone check.
+    Zones are still **removed** when price structurally breaks through them
+    (bullish OB: close < zone bottom; bearish OB: close > zone top), since
+    those zones are invalidated and no longer meaningful.
     """
 
     def _compute_in_ob_series(data: pd.DataFrame, timeframe: str) -> tuple[pd.Series, pd.Series]:
@@ -455,7 +451,6 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
                             "top": float(htf_row["high_shift2"]),
                             "bottom": float(htf_row["low_shift2"]),
                             "is_bullish": True,
-                            "mitigated": False,
                         }
                     )
                     last_bull_created_time = htf_time
@@ -465,12 +460,11 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
                             "top": float(htf_row["high_shift2"]),
                             "bottom": float(htf_row["low_shift2"]),
                             "is_bullish": False,
-                            "mitigated": False,
                         }
                     )
                     last_bear_created_time = htf_time
 
-            # --- Zone invalidation & mitigation (mirrors reference module) ---
+            # --- Zone invalidation (remove structurally broken zones) ---
             close_price = float(row["close"])
             low_price = float(row["low"])
             high_price = float(row["high"])
@@ -479,20 +473,10 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
                 zone = zones[idx]
                 if zone["is_bullish"]:
                     if close_price < zone["bottom"]:
-                        # Close broke below bull OB → invalidate / remove
                         remove_indices.append(idx)
-                    else:
-                        touch = low_price if settings.mitigation_type == "Wick" else close_price
-                        if touch <= zone["top"] and not zone["mitigated"]:
-                            zone["mitigated"] = True
                 else:
                     if close_price > zone["top"]:
-                        # Close broke above bear OB → invalidate / remove
                         remove_indices.append(idx)
-                    else:
-                        touch = high_price if settings.mitigation_type == "Wick" else close_price
-                        if touch >= zone["bottom"] and not zone["mitigated"]:
-                            zone["mitigated"] = True
 
             for idx in remove_indices:
                 zones.pop(idx)
@@ -500,10 +484,8 @@ def add_htf_ob_filter(df: pd.DataFrame) -> pd.DataFrame:
             if len(zones) > 450:
                 zones.pop(0)
 
-            # --- In-zone check (only unmitigated zones count) ---
+            # --- In-zone check (all surviving zones count) ---
             for zone in zones:
-                if zone["mitigated"]:
-                    continue
                 in_zone = low_price <= zone["top"] and high_price >= zone["bottom"]
                 if not in_zone:
                     continue
