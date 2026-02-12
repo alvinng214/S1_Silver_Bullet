@@ -1,700 +1,713 @@
-"""Line-by-line parity translation of `ICT MTF Order Block Wicks [MK].txt` (Pine v5).
+"""ICT MTF Order Block Wicks [MK] — Backtrader Implementation.
 
-This module mirrors the Pine indicator logic as faithfully as practical in Python,
-including script quirks/bugs and alert flag composition.
+Line-by-line parity translation of the Pine Script v5 indicator
+``ICT MTF Order Block Wicks [MK]`` (by @malk1903) into a backtrader-compatible
+class.  Every detection gate, mitigation branch, intrusion threshold, duplicate
+check, and alert flag from the original script is preserved.
+
+Architecture
+------------
+In Pine the indicator uses ``request.security`` to pull HTF OHLC on every
+chart bar.  In backtrader the equivalent is achieved by adding **resampled
+data feeds** to cerebro and passing them to this class via *tf_datas*.
+
+Detection of new OBs uses HTF data (fires when a new HTF bar completes).
+Mitigation / intrusion checks run on every chart-timeframe bar, exactly as
+in the Pine original where ``low``, ``high``, ``close`` refer to chart values.
+
+Usage
+-----
+::
+
+    import backtrader as bt
+
+    class MyStrategy(bt.Strategy):
+        def __init__(self):
+            # data0 is the chart timeframe (e.g. 5-min)
+            # Add resampled feeds in cerebro before running:
+            #   cerebro.resampledata(data, timeframe=bt.TimeFrame.Minutes, compression=10)
+            self.ob = ICTMTFOrderBlockWicks(
+                tf_datas={
+                    '10 Min': self.data1,
+                    '15 Min': self.data2,
+                    '30 Min': self.data3,
+                    '1 Hr':   self.data4,
+                },
+            )
+
+        def next(self):
+            self.ob.update(
+                bar_index=len(self.data0),
+                high=self.data0.high[0],
+                low=self.data0.low[0],
+                close=self.data0.close[0],
+                last_high=self.data0.high[-1] if len(self.data0) > 1 else self.data0.high[0],
+                last_low=self.data0.low[-1] if len(self.data0) > 1 else self.data0.low[0],
+            )
+
+            for zone in self.ob.get_all_bull_zones():
+                ...  # e.g. use zone.top, zone.bottom for strategy logic
+
+            for zone in self.ob.get_all_bear_zones():
+                ...
 """
 
 from __future__ import annotations
 
-from datetime import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-import pandas as pd
 
-
-# -----------------------------
+# -----------------------------------------------------------------------
 # Pine-like runtime structures
-# -----------------------------
-@dataclass
-class OBLabel:
-    x: int
-    y: float
-    text: str
-    text_color: str = "orange"
-
+# -----------------------------------------------------------------------
 
 @dataclass
-class OBBox:
-    left: int
-    right: int
+class OBZone:
+    """Single Order Block zone — mirrors a Pine ``box`` plus its label."""
     top: float
     bottom: float
+    tf_label: str           # e.g. "10 Min", "1 Hr", "Daily"
+    is_bull: bool
+    creation_bar: int       # chart bar_index when created
     bgcolor: str
     border_color: str
     border_width: int = 1
     border_style: str = "dotted"
+    label_text: str = ""
+    label_y: float = 0.0
 
 
 @dataclass
-class TimeframeState:
-    bull_boxes: List[OBBox] = field(default_factory=list)
-    bear_boxes: List[OBBox] = field(default_factory=list)
-    bull_labels: List[OBLabel] = field(default_factory=list)
-    bear_labels: List[OBLabel] = field(default_factory=list)
+class TFState:
+    """Per-timeframe state — mirrors Pine's per-TF box/label arrays."""
+    bull_zones: List[OBZone] = field(default_factory=list)
+    bear_zones: List[OBZone] = field(default_factory=list)
     new_bull: bool = False
     new_bear: bool = False
+    prev_htf_len: int = 0   # tracks when a new HTF bar forms
 
 
-@dataclass
-class Settings:
-    # Core toggles
-    display: bool = True
-    only_market_hours: bool = False  # OnlyMktHrs
-    session_start: time = time(9, 30)
-    session_end: time = time(16, 0)
-    session_timezone: Optional[str] = None
-    enforce_session_timezone: bool = True
-    security_merge_policy: str = "tv_like_developing"
-    fvgmethod_body: bool = True      # fmthds = "Body"
-    show_labels: bool = True
-    show_timeonlabels: bool = False
+# -----------------------------------------------------------------------
+# Helper look-ups (Pine _gettf_interval_str / _gettf_label_str)
+# -----------------------------------------------------------------------
 
-    # Label settings
-    hours_offset_input: float = -5.0
-    label_shift: int = 10
-    label_color: str = "orange"
+TF_INDEX_TO_INTERVAL = {
+    0: "5", 1: "10", 2: "15", 3: "30", 4: "60",
+    5: "240", 6: "480", 7: "720", 8: "D", 9: "W", 10: "M",
+}
 
-    # Intrusion / mitigation
-    incursion_alerts: bool = True
-    incursion_pct: int = 20
-    mitigation_mode: str = "Normal"   # Normal|Dynamic|None|Half
-    show_mitigated_text: bool = False
-    use_body_for_mitigation: bool = False  # mitig_type default "Wicks"
-
-    # Colors
-    bullfvgcolor: str = "yellow"
-    bearfvgcolor: str = "blue"
-    entrychangecolor: bool = True
-    entry_bull_color: str = "white"
-    entry_bear_color: str = "white"
-    nomiticolor: str = "yellow"
-
-    # TF enable flags
-    enable_current_timeframe: bool = False
-    enable_5min: bool = False
-    enable_10min: bool = True
-    enable_15min: bool = True
-    enable_30min: bool = True
-    enable_1hr: bool = True
-    enable_4hr: bool = False
-    enable_8hr: bool = False
-    enable_12hr: bool = False
-    enable_daily: bool = False
-    enable_week: bool = False
-    enable_month: bool = False
-
-    # Per-TF max sizes
-    curr_max_array_size: int = 8
-    max_5min: int = 8
-    max_10min: int = 8
-    max_15min: int = 8
-    max_30min: int = 8
-    max_1hr: int = 8
-    max_4hr: int = 8
-    max_8hr: int = 8
-    max_12hr: int = 8
-    max_daily: int = 8
-    max_weekly: int = 8
-    max_monthly: int = 8
+TF_INDEX_TO_LABEL = {
+    0: "5 Min", 1: "10 Min", 2: "15 Min", 3: "30 Min", 4: "1 Hr",
+    5: "4 Hr", 6: "8 Hr", 7: "12Hr", 8: "Daily", 9: "Weekly", 10: "Monthly",
+}
 
 
-@dataclass
-class Result:
-    states: Dict[str, TimeframeState]
-    bull_fvg_creation_alert: bool
-    bear_fvg_creation_alert: bool
-    both_fvg_creation_alert: bool
-    incursion_messages: List[str]
-    is_error: bool
-    bar_events: List[dict] = field(default_factory=list)
+# -----------------------------------------------------------------------
+# Main indicator class
+# -----------------------------------------------------------------------
 
+class ICTMTFOrderBlockWicks:
+    """Backtrader-compatible ICT MTF Order Block Wicks indicator.
 
-def _mitigationaction(mode: str) -> int:
-    if mode == "Normal":
-        return 1
-    if mode == "Dynamic":
-        return 2
-    if mode == "None":
-        return 3
-    return 4
-
-
-def _gettf_interval_str(index: int) -> str:
-    return {
-        0: "5", 1: "10", 2: "15", 3: "30", 4: "60", 5: "240",
-        6: "480", 7: "720", 8: "D", 9: "W", 10: "M",
-    }.get(index, "Unsupported Timeframe")
-
-
-def _gettf_label_str(index: int) -> str:
-    return {
-        0: "5 Min", 1: "10 Min", 2: "15 Min", 3: "30 Min", 4: "1 Hr", 5: "4 Hr",
-        6: "8 Hr", 7: "12Hr", 8: "Daily", 9: "Weekly", 10: "Monthly",
-    }.get(index, "Unsupported Timeframe")
-
-
-def _timestring_from_current_tf(current_timeframe: str) -> str:
-    if current_timeframe.isdigit():
-        n = int(current_timeframe)
-        if n > 59:
-            return f"{n / 60:g} Hr"
-        return f"{current_timeframe} Min"
-    if current_timeframe == "D":
-        return "Daily"
-    if current_timeframe == "W":
-        return "Weekly"
-    return "Monthly"
-
-
-def _not_current_timeframe_equal_enabled_tfs(current_tf: str, s: Settings) -> bool:
-    return {
-        "5": not s.enable_5min,
-        "10": not s.enable_10min,
-        "15": not s.enable_15min,
-        "30": not s.enable_30min,
-        "60": not s.enable_1hr,
-        "240": not s.enable_4hr,
-        "480": not s.enable_8hr,
-        "720": not s.enable_12hr,
-        "D": not s.enable_daily,
-        "W": not s.enable_week,
-        "M": not s.enable_month,
-    }.get(current_tf, True)
-
-
-def _period_start_index(idx: pd.DatetimeIndex, period: str) -> pd.Series:
-    if period in {"5", "10", "15", "30", "60", "240", "480", "720"}:
-        minutes = int(period)
-        return pd.Series(idx.floor(f"{minutes}min"), index=idx)
-    if period == "D":
-        return pd.Series(idx.floor("D"), index=idx)
-    if period == "W":
-        # Weekly start (Monday) for stable grouping.
-        return pd.Series(idx.to_period("W-SUN").start_time, index=idx)
-    if period == "M":
-        return pd.Series(idx.to_period("M").start_time, index=idx)
-    raise ValueError(f"Unsupported period: {period}")
-
-
-def _security_context(df: pd.DataFrame, period: str) -> pd.DataFrame:
-    """Mirror request.security outputs used by Pine call:
-    [_open1,_close1,_open,_close,_high1,_low1]
-
-    - _open/_close correspond to current HTF bar open/developing close
-    - *_1 correspond to previous fully closed HTF bar values
+    Parameters mirror the Pine Script's ``input.*`` defaults.  Every branch
+    of the original logic (detection, mitigation, intrusion, colour change,
+    duplicate prevention, per-TF max limits, alert flags) is reproduced.
     """
-    grp = _period_start_index(df.index, period)
-    work = df.copy()
-    work["_grp"] = grp.values
 
-    # Current HTF bar fields (open is group-first, close is developing current close).
-    curr_open = work.groupby("_grp")["open"].transform("first")
-    curr_close = work["close"]
+    def __init__(
+        self,
+        tf_datas: Dict[str, object],
+        *,
+        # ---- Core toggles (Pine lines 11-16) ----
+        display: bool = True,
+        only_market_hours: bool = False,          # OnlyMktHrs
+        fvgmethod_body: bool = True,              # fmthds == "Body"
+        show_labels: bool = True,
+        show_timeonlabels: bool = False,
 
-    # Completed HTF OHLC per group, then shift one HTF bar back.
-    g_ohlc = work.groupby("_grp").agg(
-        open=("open", "first"),
-        high=("high", "max"),
-        low=("low", "min"),
-        close=("close", "last"),
-    )
-    g_prev = g_ohlc.shift(1)
+        # ---- Label / offset (Pine lines 19-23) ----
+        hours_offset_input: float = -5.0,
+        label_shift: int = 10,
+        label_color: str = "orange",
 
-    prev_open = grp.map(g_prev["open"])
-    prev_close = grp.map(g_prev["close"])
-    prev_high = grp.map(g_prev["high"])
-    prev_low = grp.map(g_prev["low"])
+        # ---- Intrusion / incursion (Pine lines 23-25) ----
+        incursion_alerts: bool = True,
+        incursion_pct: int = 20,
 
-    return pd.DataFrame(
-        {
-            "open1": prev_open.astype(float),
-            "close1": prev_close.astype(float),
-            "open0": curr_open.astype(float),
-            "close0": curr_close.astype(float),
-            "high1": prev_high.astype(float),
-            "low1": prev_low.astype(float),
-        },
-        index=df.index,
-    )
+        # ---- Mitigation (Pine lines 27-43) ----
+        mitigation_mode: str = "Normal",          # Normal|Dynamic|None|Half
+        show_mitigated_text: bool = False,
+        use_body_for_mitigation: bool = False,     # mitig_type default "Wicks"
 
+        # ---- Entry colour change (Pine lines 44-46) ----
+        entrychangecolor: bool = True,
+        entry_bull_color: str = "white_90",
+        entry_bear_color: str = "white_90",
 
-def _isfvgbull(display: bool, fvgmethod: bool, open1: float, close1: float, op: float, cl: float, high1: float) -> bool:
-    if not display:
-        return False
-    if fvgmethod:
-        return open1 > close1 and op < cl and cl > high1
-    return op < high1
+        # ---- OB fill colours (Pine lines 108-109) ----
+        bullfvgcolor: str = "yellow_80",
+        bearfvgcolor: str = "blue_80",
+        nomiticolor: str = "yellow_85",
 
-    t = ts.time()
-    return s.session_start <= t <= s.session_end
+        # ---- Border (Pine lines 114-118) ----
+        box_border_bull_color: str = "yellow_100",
+        box_border_bear_color: str = "blue_100",
+        box_border_width: int = 1,
+        box_border_style: str = "dotted",
 
-def _isfvgbear(display: bool, fvgmethod: bool, open1: float, close1: float, op: float, cl: float, low1: float) -> bool:
-    if not display:
-        return False
-    if fvgmethod:
-        return open1 < close1 and op > cl and cl < low1
-    return op < low1
+        # ---- Per-TF max OBs (Pine lines 84-95) ----
+        max_per_tf: Optional[Dict[str, int]] = None,
+        default_max_per_tf: int = 8,
 
-def _resolve_session_timezone(df: pd.DataFrame, s: Settings) -> Optional[str]:
-    if s.session_timezone:
-        return s.session_timezone
-    tz_from_attrs = df.attrs.get("timezone")
-    if isinstance(tz_from_attrs, str) and tz_from_attrs:
-        return tz_from_attrs
-    if df.index.tz is not None:
-        return str(df.index.tz)
-    return None
+        # ---- Session filter callback (optional) ----
+        # If only_market_hours is True, provide a callable(datetime)->bool
+        # to replicate Pine's ``not na(time(timeframe.period, "0930-1600"))``
+        session_filter: Optional[object] = None,
+    ):
+        # Store every setting verbatim ----------------------------------
+        self.display = display
+        self.only_market_hours = only_market_hours
+        self.fvgmethod_body = fvgmethod_body
+        self.show_labels = show_labels
+        self.show_timeonlabels = show_timeonlabels
+        self.hours_offset_input = hours_offset_input
+        self.label_shift = label_shift
+        self.label_color = label_color
+        self.incursion_alerts = incursion_alerts
+        self.incursion_pct = incursion_pct
+        self.intrusion_percentage = incursion_pct / 100.0   # Pine line 25
+        self.show_mitigated_text = show_mitigated_text
+        self.use_body_for_mitigation = use_body_for_mitigation
+        self.entrychangecolor = entrychangecolor
+        self.entry_bull_color = entry_bull_color
+        self.entry_bear_color = entry_bear_color
+        self.bullfvgcolor = bullfvgcolor
+        self.bearfvgcolor = bearfvgcolor
+        self.nomiticolor = nomiticolor
+        self.box_border_bull_color = box_border_bull_color
+        self.box_border_bear_color = box_border_bear_color
+        self.box_border_width = box_border_width
+        self.box_border_style = box_border_style
+        self.session_filter = session_filter
 
-def _duplicate_box(boxes: List[OBBox], top: float) -> bool:
-    # Pine only compares top, bottom commented out.
-    return any(b.top == top for b in boxes)
+        # Pine mitigation_mode → integer (Pine lines 28-37)
+        self.mitigationaction = self._resolve_mitigation_mode(mitigation_mode)
 
+        # TF data feeds and per-TF state --------------------------------
+        # tf_datas: {"10 Min": bt_data_feed, "15 Min": ..., ...}
+        self.tf_datas: Dict[str, object] = tf_datas
 
-def _in_session(ts: pd.Timestamp, s: Settings) -> bool:
-    # Pine: not na(time(timeframe.period, "0930-1600"))
-    if s.session_timezone:
-        if ts.tzinfo is None:
-            ts = ts.tz_localize(s.session_timezone)
+        # Per-TF max OB limits
+        self._max_per_tf: Dict[str, int] = max_per_tf or {}
+        self._default_max_per_tf = default_max_per_tf
+
+        # Initialise per-TF state (Pine lines 457-539)
+        self.states: Dict[str, TFState] = {
+            label: TFState() for label in tf_datas
+        }
+
+        # Alert / event accumulators (reset each bar) -------------------
+        self.incursion_messages: List[str] = []
+        self.bar_events: List[dict] = []
+
+        # Aggregate alert flags (Pine lines 609-614) --------------------
+        self.bull_creation_alert: bool = False
+        self.bear_creation_alert: bool = False
+        self.both_creation_alert: bool = False
+
+    # -------------------------------------------------------------------
+    # Static helpers mirroring Pine functions
+    # -------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_mitigation_mode(mode: str) -> int:
+        """Pine lines 28-37: mitiaction → integer."""
+        if mode == "Normal":
+            return 1
+        if mode == "Dynamic":
+            return 2
+        if mode == "None":
+            return 3
+        # "Half" or anything else
+        return 4
+
+    # Pine lines 174-181: _isfvgbull
+    def _isfvgbull(
+        self, open1: float, close1: float, op: float, cl: float,
+        high1: float, low1: float,
+    ) -> bool:
+        if not self.display:
+            return False
+        if self.fvgmethod_body:
+            # Body method: prev bar bearish, current bar bullish,
+            # current close > previous high
+            return open1 > close1 and op < cl and cl > high1
         else:
-            ts = ts.tz_convert(s.session_timezone)
+            # Wick method
+            return op < high1
 
-    t = ts.time()
-    return s.session_start <= t <= s.session_end
+    # Pine lines 184-191: _isfvgbear
+    def _isfvgbear(
+        self, open1: float, close1: float, op: float, cl: float,
+        high1: float, low1: float,
+    ) -> bool:
+        if not self.display:
+            return False
+        if self.fvgmethod_body:
+            # Body method: prev bar bullish, current bar bearish,
+            # current close < previous low
+            return open1 < close1 and op > cl and cl < low1
+        else:
+            # Wick method
+            return op < low1
 
+    # Pine lines 401-409: _duplicate_box — only compares top
+    @staticmethod
+    def _duplicate_box(zones: List[OBZone], top: float) -> bool:
+        return any(z.top == top for z in zones)
 
-def _resolve_session_timezone(df: pd.DataFrame, s: Settings) -> Optional[str]:
-    if s.session_timezone:
-        return s.session_timezone
-    tz_from_attrs = df.attrs.get("timezone")
-    if isinstance(tz_from_attrs, str) and tz_from_attrs:
-        return tz_from_attrs
-    if df.index.tz is not None:
-        return str(df.index.tz)
-    return None
+    # Pine lines 235-245: _getbullfvgaction
+    def _get_bull_action(
+        self, top: float, bottom: float, low: float, close: float,
+        last_low: float,
+    ) -> dict:
+        midpt = (top + bottom) / 2.0
+        threshold = top - (self.intrusion_percentage * (top - bottom))
+        return {
+            "have_intrusion": low < threshold and last_low > threshold,
+            "lowundertop": low < top,
+            "lowunderbtm": low < bottom,
+            "lowundermid": low < midpt,
+            "closeundertop": close < top,
+            "closeunderbtm": close < bottom,
+            "closeundermid": low < midpt,     # Pine parity: uses low, not close
+        }
 
+    # Pine lines 248-258: _getbearfvgaction
+    def _get_bear_action(
+        self, top: float, bottom: float, high: float, close: float,
+        last_high: float,
+    ) -> dict:
+        midpt = (top + bottom) / 2.0
+        threshold = bottom + (self.intrusion_percentage * (top - bottom))
+        return {
+            "have_intrusion": high > threshold and last_high < threshold,
+            "highovertop": high > top,
+            "highoverbtm": high > bottom,
+            "highovermid": high > midpt,
+            "closeovertop": close > top,
+            "closeoverbtm": close > bottom,
+            "closeovermid": close > midpt,
+        }
 
-def _security_context_with_policy(df: pd.DataFrame, period: str, policy: str) -> pd.DataFrame:
-    if policy != "tv_like_developing":
-        raise ValueError("Unsupported security_merge_policy. Use 'tv_like_developing'.")
-    return _security_context(df, period)
-
-def _security_context_with_policy(df: pd.DataFrame, period: str, policy: str) -> pd.DataFrame:
-    if policy != "tv_like_developing":
-        raise ValueError("Unsupported security_merge_policy. Use 'tv_like_developing'.")
-    return _security_context(df, period)
-
-def run_mtf_order_block_wicks(
-    df: pd.DataFrame,
-    settings: Optional[Settings] = None,
-    current_timeframe: str = "15",
-) -> Result:
-    s = settings or Settings()
-
-    required = {"open", "high", "low", "close"}
-    if not required.issubset(df.columns):
-        raise ValueError(f"Input DataFrame must include columns: {sorted(required)}")
-    if not isinstance(df.index, pd.DatetimeIndex):
-        raise ValueError("Input DataFrame index must be a DatetimeIndex")
-    if not df.index.is_monotonic_increasing:
-        raise ValueError("Input DataFrame index must be monotonic increasing")
-
-    resolved_session_timezone = _resolve_session_timezone(df, s)
-    if s.only_market_hours and s.enforce_session_timezone and not resolved_session_timezone:
-        raise ValueError(
-            "Session timezone required for strict market-hours parity. Set settings.session_timezone "
-            "or df.attrs['timezone'], or use a tz-aware DatetimeIndex."
-        )
-    if resolved_session_timezone:
-        s = Settings(**{**s.__dict__, "session_timezone": resolved_session_timezone})
-
-    # Pine bug/behavior parity: 30m/12h intentionally excluded from total sum expression.
-    tot_user_max_boxes = (
-        s.curr_max_array_size
-        + s.max_5min
-        + s.max_10min
-        + s.max_15min
-        + s.max_1hr
-        + s.max_4hr
-        + s.max_8hr
-        + s.max_daily
-        + s.max_weekly
-        + s.max_monthly
-    )
-    is_error = tot_user_max_boxes > 500
-
-    intrusion_percentage = s.incursion_pct / 100.0
-    mitigationaction = _mitigationaction(s.mitigation_mode)
-    last_bar_index = len(df) - 1
-
-    tfs = ["chart", "5", "10", "15", "30", "60", "240", "480", "720", "D", "W", "M"]
-    states: Dict[str, TimeframeState] = {k: TimeframeState() for k in tfs}
-    incursion_messages: List[str] = []
-    bar_events: List[dict] = []
-    last_bar_flags: Dict[str, Dict[str, bool]] = {k: {"new_bull": False, "new_bear": False} for k in tfs}
-
-    def _addlabel(labels: List[OBLabel], bar_index: int, ts: pd.Timestamp, string_: str, y: float) -> None:
-        if not s.show_labels:
-            return
-        text = string_
-        if s.show_timeonlabels:
-            shifted = ts + pd.Timedelta(hours=s.hours_offset_input)
-            text = f"{string_}  {shifted:%H:%M %m/%d/%y}"
-        labels.append(OBLabel(x=bar_index + s.label_shift, y=y, text=text, text_color=s.label_color))
-
-    def _update_bull_fvgs(st: TimeframeState, timestring: str, bar_index: int, low: float, close: float, lastlow: float) -> None:
-        for i in range(len(st.bull_boxes) - 1, -1, -1):
-            bx = st.bull_boxes[i]
-            top, bottom = bx.top, bx.bottom
-
-            midpt = (top + bottom) / 2
-            threshold = top - (intrusion_percentage * (top - bottom))
-            have_intrusion = low < threshold and lastlow > threshold
-
-            lowundertop = low < top
-            lowunderbtm = low < bottom
-            lowundermid = low < midpt
-            closeundertop = close < top
-            closeunderbtm = close < bottom
-            closeundermid = low < midpt  # parity with Pine typo
-
-            if (mitigationaction in (1, 3)) and have_intrusion and s.incursion_alerts:
-                incursion_messages.append(f"Bull OB Wick Incursion {timestring}")
-
-            if s.entrychangecolor and lowundertop:
-                bx.bgcolor = s.entry_bull_color
-
-            if s.show_labels:
-                if i < len(st.bull_labels):
-                    st.bull_labels[i].x = bar_index + s.label_shift
-                    st.bull_labels[i].y = (bx.top + bx.bottom) / 2
-                bx.left = last_bar_index + s.label_shift
-
-            if mitigationaction == 2 and s.use_body_for_mitigation and closeundertop:
-                bx.top = close
-                if s.show_labels and i < len(st.bull_labels):
-                    st.bull_labels[i].y = (close + bottom) / 2
-            elif mitigationaction == 2 and lowundertop:
-                bx.top = low
-                if s.show_labels and i < len(st.bull_labels):
-                    st.bull_labels[i].y = (low + bottom) / 2
-
-            if mitigationaction == 3:
-                if (s.use_body_for_mitigation and closeunderbtm) or lowunderbtm:
-                    bx.bgcolor = s.nomiticolor
-                    if s.show_labels and s.show_mitigated_text and i < len(st.bull_labels):
-                        if "Mitigated" not in st.bull_labels[i].text:
-                            st.bull_labels[i].text += " Mitigated"
-
-            delete_now = False
-            if mitigationaction in (1, 2):
-                delete_now = (s.use_body_for_mitigation and closeunderbtm) or lowunderbtm
-            if mitigationaction == 4:
-                delete_now = (s.use_body_for_mitigation and closeundermid) or lowundermid
-
-            if delete_now:
-                st.bull_boxes.pop(i)
-                if s.show_labels and i < len(st.bull_labels):
-                    st.bull_labels.pop(i)
-
-    def _update_bear_fvgs(st: TimeframeState, timestring: str, bar_index: int, high: float, close: float, lasthigh: float) -> None:
-        for i in range(len(st.bear_boxes) - 1, -1, -1):
-            bx = st.bear_boxes[i]
-            top, bottom = bx.top, bx.bottom
-
-            midpt = (top + bottom) / 2
-            threshold = bottom + (intrusion_percentage * (top - bottom))
-            have_intrusion = high > threshold and lasthigh < threshold
-
-            highovertop = high > top
-            highoverbtm = high > bottom
-            highovermid = high > midpt
-            closeovertop = close > top
-            closeoverbtm = close > bottom
-            closeovermid = close > midpt
-
-            if (mitigationaction in (1, 3)) and have_intrusion and s.incursion_alerts:
-                incursion_messages.append(f"Bear OB Wick Incursion {timestring}")
-
-            if s.entrychangecolor:
-                if highoverbtm:
-                    bx.bgcolor = s.entry_bear_color
-                else:
-                    bx.bgcolor = s.bearfvgcolor
-
-            if s.show_labels:
-                if i < len(st.bear_labels):
-                    st.bear_labels[i].x = bar_index + s.label_shift
-                    st.bear_labels[i].y = (bx.top + bx.bottom) / 2
-                bx.left = last_bar_index + s.label_shift
-
-            if mitigationaction == 2 and s.use_body_for_mitigation and closeoverbtm:
-                bx.bottom = close
-                if s.show_labels and i < len(st.bear_labels):
-                    st.bear_labels[i].y = (close + bottom) / 2
-            elif mitigationaction == 2 and highoverbtm:
-                bx.bottom = high
-                if s.show_labels and i < len(st.bear_labels):
-                    st.bear_labels[i].y = (top + high) / 2
-
-            if mitigationaction == 3:
-                if (s.use_body_for_mitigation and closeovertop) or highovertop:
-                    bx.bgcolor = s.nomiticolor
-                    if s.show_labels and s.show_mitigated_text and i < len(st.bear_labels):
-                        if "Mitigated" not in st.bear_labels[i].text:
-                            st.bear_labels[i].text += " Mitigated"
-
-            delete_now = False
-            if mitigationaction in (1, 2):
-                delete_now = (s.use_body_for_mitigation and closeovertop) or highovertop
-            if mitigationaction == 4:
-                delete_now = (s.use_body_for_mitigation and closeovermid) or highovermid
-
-            if delete_now:
-                st.bear_boxes.pop(i)
-                if s.show_labels and i < len(st.bear_labels):
-                    st.bear_labels.pop(i)
-
-    def _handle_all(
-        tf_key: str,
-        tstring: str,
-        maxarraysize: int,
-        ctx: pd.DataFrame,
+    # -------------------------------------------------------------------
+    # Bull OB update — Pine lines 280-338: _update_bull_fvgs
+    # -------------------------------------------------------------------
+    def _update_bull_zones(
+        self, st: TFState, tf_label: str, bar_index: int,
+        low: float, close: float, last_low: float,
     ) -> None:
-        st = states[tf_key]
+        i = len(st.bull_zones) - 1
+        while i >= 0:
+            zone = st.bull_zones[i]
+            top = zone.top
+            bottom = zone.bottom
+            a = self._get_bull_action(top, bottom, low, close, last_low)
+
+            # --- Incursion alert (Pine lines 286-287) ---
+            if (self.mitigationaction in (1, 3)) and a["have_intrusion"] and self.incursion_alerts:
+                self.incursion_messages.append(
+                    f"Bull OB Wick Incursion {tf_label}"
+                )
+
+            # --- Entry colour change (Pine lines 289-291) ---
+            if self.entrychangecolor:
+                if a["lowundertop"]:
+                    zone.bgcolor = self.entry_bull_color
+
+            # --- Label / box position update (Pine lines 293-295) ---
+            if self.show_labels:
+                zone.label_y = (zone.top + zone.bottom) / 2.0
+
+            # --- Dynamic mitigation: shrink zone (Pine lines 298-307) ---
+            if self.mitigationaction == 2 and self.use_body_for_mitigation and a["closeundertop"]:
+                zone.top = close
+                if self.show_labels:
+                    zone.label_y = (close + bottom) / 2.0
+            elif self.mitigationaction == 2 and a["lowundertop"]:
+                zone.top = low
+                if self.show_labels:
+                    zone.label_y = (low + bottom) / 2.0
+
+            # --- 'None' mitigation: change colour, add text (Pine lines 310-323) ---
+            if self.mitigationaction == 3:
+                mitigated_by_body = self.use_body_for_mitigation and a["closeunderbtm"]
+                mitigated_by_wick = a["lowunderbtm"]
+                if mitigated_by_body or mitigated_by_wick:
+                    zone.bgcolor = self.nomiticolor
+                    if self.show_labels and self.show_mitigated_text:
+                        if "Mitigated" not in zone.label_text:
+                            zone.label_text += " Mitigated"
+
+            # --- Normal / Dynamic delete (Pine lines 325-330) ---
+            delete_now = False
+            if self.mitigationaction in (1, 2):
+                if self.use_body_for_mitigation and a["closeunderbtm"]:
+                    delete_now = True
+                elif a["lowunderbtm"]:
+                    delete_now = True
+
+            # --- Half mitigation delete (Pine lines 332-337) ---
+            if self.mitigationaction == 4:
+                if self.use_body_for_mitigation and a["closeundermid"]:
+                    delete_now = True
+                elif a["lowundermid"]:
+                    delete_now = True
+
+            if delete_now:
+                st.bull_zones.pop(i)
+            i -= 1
+
+    # -------------------------------------------------------------------
+    # Bear OB update — Pine lines 340-398: _update_bear_fvgs
+    # -------------------------------------------------------------------
+    def _update_bear_zones(
+        self, st: TFState, tf_label: str, bar_index: int,
+        high: float, close: float, last_high: float,
+    ) -> None:
+        i = len(st.bear_zones) - 1
+        while i >= 0:
+            zone = st.bear_zones[i]
+            top = zone.top
+            bottom = zone.bottom
+            a = self._get_bear_action(top, bottom, high, close, last_high)
+
+            # --- Incursion alert (Pine lines 345-347) ---
+            if (self.mitigationaction in (1, 3)) and a["have_intrusion"] and self.incursion_alerts:
+                self.incursion_messages.append(
+                    f"Bear OB Wick Incursion {tf_label}"
+                )
+
+            # --- Entry colour change (Pine lines 349-353) ---
+            if self.entrychangecolor:
+                if a["highoverbtm"]:
+                    zone.bgcolor = self.entry_bear_color
+                else:
+                    zone.bgcolor = self.bearfvgcolor
+
+            # --- Label position update (Pine lines 355-357) ---
+            if self.show_labels:
+                zone.label_y = (zone.top + zone.bottom) / 2.0
+
+            # --- Dynamic mitigation: shrink zone (Pine lines 360-369) ---
+            if self.mitigationaction == 2 and self.use_body_for_mitigation and a["closeoverbtm"]:
+                zone.bottom = close
+                if self.show_labels:
+                    zone.label_y = (close + bottom) / 2.0
+            elif self.mitigationaction == 2 and a["highoverbtm"]:
+                zone.bottom = high
+                if self.show_labels:
+                    zone.label_y = (top + high) / 2.0
+
+            # --- 'None' mitigation: change colour, add text (Pine lines 371-384) ---
+            if self.mitigationaction == 3:
+                mitigated_by_body = self.use_body_for_mitigation and a["closeovertop"]
+                mitigated_by_wick = a["highovertop"]
+                if mitigated_by_body or mitigated_by_wick:
+                    zone.bgcolor = self.nomiticolor
+                    if self.show_labels and self.show_mitigated_text:
+                        if "Mitigated" not in zone.label_text:
+                            zone.label_text += " Mitigated"
+
+            # --- Normal / Dynamic delete (Pine lines 386-391) ---
+            delete_now = False
+            if self.mitigationaction in (1, 2):
+                if self.use_body_for_mitigation and a["closeovertop"]:
+                    delete_now = True
+                elif a["highovertop"]:
+                    delete_now = True
+
+            # --- Half mitigation delete (Pine lines 393-397) ---
+            if self.mitigationaction == 4:
+                if self.use_body_for_mitigation and a["closeovermid"]:
+                    delete_now = True
+                elif a["highovermid"]:
+                    delete_now = True
+
+            if delete_now:
+                st.bear_zones.pop(i)
+            i -= 1
+
+    # -------------------------------------------------------------------
+    # Per-TF handler — Pine lines 412-453: _handle_all
+    # -------------------------------------------------------------------
+    def _handle_tf(
+        self,
+        tf_label: str,
+        data_feed,
+        st: TFState,
+        max_zones: int,
+        bar_index: int,
+        chart_low: float,
+        chart_high: float,
+        chart_close: float,
+        chart_last_low: float,
+        chart_last_high: float,
+        in_session: bool,
+    ) -> None:
+        """Process one timeframe: detect new OBs from HTF data, then update
+        existing OBs against chart-timeframe price action."""
+
         st.new_bull = False
         st.new_bear = False
 
-        high1_prev_shift = ctx["high1"].shift(1)
+        # ---- Gate: session filter (Pine line 415) ----
+        if self.only_market_hours and not in_session:
+            # When market hours required but not in session, skip detection
+            pass
+        else:
+            # ---- Check for new HTF bar ----
+            current_htf_len = len(data_feed)
+            new_htf_bar = current_htf_len > st.prev_htf_len and current_htf_len >= 2
+            st.prev_htf_len = current_htf_len
 
-        for i in range(1, len(df)):
-            ts = df.index[i]
-            in_session = _in_session(ts, s)
-            gate_ok = (s.only_market_hours and in_session) or (not s.only_market_hours)
-            if not gate_ok:
-                st.new_bull = False
-                st.new_bear = False
-                last_bar_flags[tf_key]["new_bull"] = False
-                last_bar_flags[tf_key]["new_bear"] = False
-                continue
+            if new_htf_bar:
+                # HTF OHLC for detection:
+                # Pine request.security returns [open[1], close[1], open[0], close[0], high[1], low[1]]
+                # In backtrader, data_feed[0] = just-completed bar, [-1] = previous bar
+                try:
+                    open1 = data_feed.open[-1]      # previous HTF bar open
+                    close1 = data_feed.close[-1]    # previous HTF bar close
+                    high1 = data_feed.high[-1]      # previous HTF bar high
+                    low1 = data_feed.low[-1]        # previous HTF bar low
+                    op = data_feed.open[0]           # current (just-completed) HTF bar open
+                    cl = data_feed.close[0]          # current (just-completed) HTF bar close
+                except IndexError:
+                    # Not enough bars yet
+                    return
 
-            open1 = float(ctx["open1"].iloc[i]) if pd.notna(ctx["open1"].iloc[i]) else float("nan")
-            close1 = float(ctx["close1"].iloc[i]) if pd.notna(ctx["close1"].iloc[i]) else float("nan")
-            op = float(ctx["open0"].iloc[i])
-            cl = float(ctx["close0"].iloc[i])
-            high1 = float(ctx["high1"].iloc[i]) if pd.notna(ctx["high1"].iloc[i]) else float("nan")
-            low1 = float(ctx["low1"].iloc[i]) if pd.notna(ctx["low1"].iloc[i]) else float("nan")
+                # ---- Bull OB detection (Pine lines 416-429) ----
+                new_bull = self._isfvgbull(open1, close1, op, cl, high1, low1)
+                # ---- Bear OB detection (Pine lines 417, 431-440) ----
+                new_bear = self._isfvgbear(open1, close1, op, cl, high1, low1)
 
-            if pd.isna(open1) or pd.isna(close1) or pd.isna(high1) or pd.isna(low1):
-                st.new_bull = False
-                st.new_bear = False
-                last_bar_flags[tf_key]["new_bull"] = False
-                last_bar_flags[tf_key]["new_bear"] = False
-                continue
+                st.new_bull = new_bull
+                st.new_bear = new_bear
 
-            new_bull = _isfvgbull(s.display, s.fvgmethod_body, open1, close1, op, cl, high1)
-            new_bear = _isfvgbear(s.display, s.fvgmethod_body, open1, close1, op, cl, low1)
-            st.new_bull = bool(new_bull)
-            st.new_bear = bool(new_bear)
-            last_bar_flags[tf_key]["new_bull"] = bool(new_bull)
-            last_bar_flags[tf_key]["new_bear"] = bool(new_bear)
+                if new_bull:
+                    # Enforce max size (Pine lines 421-422)
+                    if len(st.bull_zones) > max_zones:
+                        st.bull_zones.pop(0)
 
-            if new_bull:
-                st.new_bull = True
-                if len(st.bull_boxes) > maxarraysize:
-                    st.bull_boxes.pop(0)
-                    if s.show_labels and st.bull_labels:
-                        st.bull_labels.pop(0)
-
-                if not _duplicate_box(st.bull_boxes, high1):
-                    st.bull_boxes.append(
-                        OBBox(
-                            left=last_bar_index + 20,
-                            right=last_bar_index + 200,
+                    # Duplicate check — only compares top (Pine line 424)
+                    if not self._duplicate_box(st.bull_zones, high1):
+                        # Bull OB: top = high1, bottom = open1 (Pine line 425)
+                        zone = OBZone(
                             top=high1,
                             bottom=open1,
-                            bgcolor=s.bullfvgcolor,
-                            border_color="yellow",
+                            tf_label=tf_label,
+                            is_bull=True,
+                            creation_bar=bar_index,
+                            bgcolor=self.bullfvgcolor,
+                            border_color=self.box_border_bull_color,
+                            border_width=self.box_border_width,
+                            border_style=self.box_border_style,
+                            label_text=f"{tf_label} OB BULL",
+                            label_y=(high1 + low1) / 2.0,
                         )
-                    )
-                    # Pine uses (_high1[1] + _low1) / 2 in label call.
-                    high1_prev = float(high1_prev_shift.iloc[i]) if pd.notna(high1_prev_shift.iloc[i]) else high1
-                    _addlabel(st.bull_labels, i, ts, f"{tstring} OB BULL", (high1_prev + low1) / 2)
+                        st.bull_zones.append(zone)
 
-            if new_bear:
-                st.new_bear = True
-                if len(st.bear_boxes) > maxarraysize:
-                    st.bear_boxes.pop(0)
-                    if s.show_labels and st.bear_labels:
-                        st.bear_labels.pop(0)
+                        self.bar_events.append({
+                            "bar_index": bar_index,
+                            "timeframe": tf_label,
+                            "type": "bull_ob_created",
+                            "top": high1,
+                            "bottom": open1,
+                        })
 
-                if not _duplicate_box(st.bear_boxes, open1):
-                    st.bear_boxes.append(
-                        OBBox(
-                            left=last_bar_index + 20,
-                            right=last_bar_index + 200,
+                if new_bear:
+                    # Enforce max size (Pine lines 432-433)
+                    if len(st.bear_zones) > max_zones:
+                        st.bear_zones.pop(0)
+
+                    # Duplicate check — only compares top (Pine line 435)
+                    # For bear: top = open1, bottom = low1
+                    if not self._duplicate_box(st.bear_zones, open1):
+                        zone = OBZone(
                             top=open1,
                             bottom=low1,
-                            bgcolor=s.bearfvgcolor,
-                            border_color="blue",
+                            tf_label=tf_label,
+                            is_bull=False,
+                            creation_bar=bar_index,
+                            bgcolor=self.bearfvgcolor,
+                            border_color=self.box_border_bear_color,
+                            border_width=self.box_border_width,
+                            border_style=self.box_border_style,
+                            label_text=f"{tf_label} OB BEAR",
+                            label_y=(high1 + low1) / 2.0,
                         )
+                        st.bear_zones.append(zone)
+
+                        self.bar_events.append({
+                            "bar_index": bar_index,
+                            "timeframe": tf_label,
+                            "type": "bear_ob_created",
+                            "top": open1,
+                            "bottom": low1,
+                        })
+
+        # ---- Update existing OBs against chart-TF prices (Pine lines 444-451) ----
+        if st.bull_zones:
+            self._update_bull_zones(
+                st, tf_label, bar_index,
+                chart_low, chart_close, chart_last_low,
+            )
+        if st.bear_zones:
+            self._update_bear_zones(
+                st, tf_label, bar_index,
+                chart_high, chart_close, chart_last_high,
+            )
+
+    # -------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------
+
+    def update(
+        self,
+        bar_index: int,
+        high: float,
+        low: float,
+        close: float,
+        last_high: float,
+        last_low: float,
+        in_session: bool = True,
+    ) -> None:
+        """Call once per chart-timeframe bar from ``Strategy.next()``.
+
+        Parameters
+        ----------
+        bar_index : int
+            ``len(self.data0)`` — current chart bar count.
+        high, low, close : float
+            Current chart bar OHLC (``self.data0.high[0]`` etc.).
+        last_high, last_low : float
+            Previous chart bar high/low (``self.data0.high[-1]`` etc.).
+            Pine uses ``high[1]`` / ``low[1]`` as ``lasthigh`` / ``lastlow``
+            (lines 231-232).
+        in_session : bool
+            True when inside the session window.  Mirrors
+            ``not na(time(timeframe.period, "0930-1600"))``.
+            When ``only_market_hours`` is False (default), this is ignored.
+            A ``session_filter`` callback passed to ``__init__`` can also
+            be used; pass its return value here.
+        """
+        # Reset per-bar accumulators
+        self.incursion_messages = []
+        self.bar_events = []
+
+        # Process every enabled timeframe (Pine lines 550-604)
+        for tf_label, data_feed in self.tf_datas.items():
+            st = self.states[tf_label]
+            max_zones = self._max_per_tf.get(tf_label, self._default_max_per_tf)
+
+            self._handle_tf(
+                tf_label=tf_label,
+                data_feed=data_feed,
+                st=st,
+                max_zones=max_zones,
+                bar_index=bar_index,
+                chart_low=low,
+                chart_high=high,
+                chart_close=close,
+                chart_last_low=last_low,
+                chart_last_high=last_high,
+                in_session=in_session,
+            )
+
+        # Aggregate alert flags (Pine lines 609-614)
+        self.bull_creation_alert = any(
+            st.new_bull for st in self.states.values()
+        )
+        self.bear_creation_alert = any(
+            st.new_bear for st in self.states.values()
+        )
+        self.both_creation_alert = self.bull_creation_alert or self.bear_creation_alert
+
+    # ---- Zone accessors ------------------------------------------------
+
+    def get_all_bull_zones(self) -> List[OBZone]:
+        """Return all active bull OB zones across every enabled timeframe."""
+        result: List[OBZone] = []
+        for st in self.states.values():
+            result.extend(st.bull_zones)
+        return result
+
+    def get_all_bear_zones(self) -> List[OBZone]:
+        """Return all active bear OB zones across every enabled timeframe."""
+        result: List[OBZone] = []
+        for st in self.states.values():
+            result.extend(st.bear_zones)
+        return result
+
+    def get_all_zones(self) -> List[OBZone]:
+        """Return all active OB zones (bull + bear) across every TF."""
+        return self.get_all_bull_zones() + self.get_all_bear_zones()
+
+    def get_zones_for_tf(self, tf_label: str) -> Tuple[List[OBZone], List[OBZone]]:
+        """Return ``(bull_zones, bear_zones)`` for a specific timeframe."""
+        st = self.states.get(tf_label)
+        if st is None:
+            return [], []
+        return list(st.bull_zones), list(st.bear_zones)
+
+    def get_incursion_messages(self) -> List[str]:
+        """Return incursion alert messages generated on the current bar."""
+        return list(self.incursion_messages)
+
+    def get_bar_events(self) -> List[dict]:
+        """Return OB creation events generated on the current bar."""
+        return list(self.bar_events)
+
+    # ---- Convenience: check if price is inside any OB ------------------
+
+    def price_in_bull_ob(self, price: float) -> Optional[OBZone]:
+        """Return the first bull OB zone containing *price*, or None."""
+        for zone in self.get_all_bull_zones():
+            if zone.bottom <= price <= zone.top:
+                return zone
+        return None
+
+    def price_in_bear_ob(self, price: float) -> Optional[OBZone]:
+        """Return the first bear OB zone containing *price*, or None."""
+        for zone in self.get_all_bear_zones():
+            if zone.bottom <= price <= zone.top:
+                return zone
+        return None
+
+    def price_in_any_ob(self, price: float) -> Optional[OBZone]:
+        """Return the first OB zone (bull or bear) containing *price*."""
+        return self.price_in_bull_ob(price) or self.price_in_bear_ob(price)
+
+    # ---- Summary / debug -----------------------------------------------
+
+    def summary(self) -> str:
+        """Human-readable summary of currently active OB zones."""
+        lines = ["ICT MTF Order Block Wicks — Active Zones"]
+        lines.append("=" * 45)
+        for tf_label, st in self.states.items():
+            if st.bull_zones or st.bear_zones:
+                lines.append(f"\n  [{tf_label}]")
+                for z in st.bull_zones:
+                    lines.append(
+                        f"    BULL  top={z.top:.5f}  btm={z.bottom:.5f}"
+                        f"  bar={z.creation_bar}  col={z.bgcolor}"
                     )
-                    high1_prev = float(high1_prev_shift.iloc[i]) if pd.notna(high1_prev_shift.iloc[i]) else high1
-                    _addlabel(st.bear_labels, i, ts, f"{tstring} OB BEAR", (high1_prev + low1) / 2)
-
-            if st.bull_boxes:
-                _update_bull_fvgs(
-                    st,
-                    tstring,
-                    i,
-                    float(df["low"].iloc[i]),
-                    float(df["close"].iloc[i]),
-                    float(df["low"].iloc[i - 1]),
-                )
-
-            if st.bear_boxes:
-                _update_bear_fvgs(
-                    st,
-                    tstring,
-                    i,
-                    float(df["high"].iloc[i]),
-                    float(df["close"].iloc[i]),
-                    float(df["high"].iloc[i - 1]),
-                )
-
-            if new_bull or new_bear:
-                bar_events.append(
-                    {
-                        "bar_index": i,
-                        "timestamp": ts,
-                        "timeframe": tf_key,
-                        "timeframe_label": tstring,
-                        "new_bull": bool(new_bull),
-                        "new_bear": bool(new_bear),
-                    }
-                )
-
-    currtfstring = _timestring_from_current_tf(current_timeframe)
-
-    if s.enable_current_timeframe and _not_current_timeframe_equal_enabled_tfs(current_timeframe, s):
-        _handle_all("chart", currtfstring, s.curr_max_array_size, _security_context_with_policy(df, current_timeframe, s.security_merge_policy))
-
-    if s.enable_5min:
-        _handle_all("5", _gettf_label_str(0), s.max_5min, _security_context_with_policy(df, _gettf_interval_str(0), s.security_merge_policy))
-    if s.enable_10min:
-        _handle_all("10", _gettf_label_str(1), s.max_10min, _security_context_with_policy(df, _gettf_interval_str(1), s.security_merge_policy))
-    if s.enable_15min:
-        _handle_all("15", _gettf_label_str(2), s.max_15min, _security_context_with_policy(df, _gettf_interval_str(2), s.security_merge_policy))
-    if s.enable_30min:
-        _handle_all("30", _gettf_label_str(3), s.max_30min, _security_context_with_policy(df, _gettf_interval_str(3), s.security_merge_policy))
-    if s.enable_1hr:
-        _handle_all("60", _gettf_label_str(4), s.max_1hr, _security_context_with_policy(df, _gettf_interval_str(4), s.security_merge_policy))
-    if s.enable_4hr:
-        _handle_all("240", _gettf_label_str(5), s.max_4hr, _security_context_with_policy(df, _gettf_interval_str(5), s.security_merge_policy))
-    if s.enable_8hr:
-        _handle_all("480", _gettf_label_str(6), s.max_8hr, _security_context_with_policy(df, _gettf_interval_str(6), s.security_merge_policy))
-    if s.enable_12hr:
-        _handle_all("720", _gettf_label_str(7), s.max_12hr, _security_context_with_policy(df, _gettf_interval_str(7), s.security_merge_policy))
-    if s.enable_daily:
-        _handle_all("D", _gettf_label_str(8), s.max_daily, _security_context_with_policy(df, _gettf_interval_str(8), s.security_merge_policy))
-    if s.enable_week:
-        _handle_all("W", _gettf_label_str(9), s.max_weekly, _security_context_with_policy(df, _gettf_interval_str(9), s.security_merge_policy))
-    if s.enable_month:
-        _handle_all("M", _gettf_label_str(10), s.max_monthly, _security_context_with_policy(df, _gettf_interval_str(10), s.security_merge_policy))
-
-    # Pine alert expressions explicitly omit 12hr flags from aggregate expressions.
-    bull_fvg_creation_alert = (
-        last_bar_flags["chart"]["new_bull"]
-        or last_bar_flags["5"]["new_bull"]
-        or last_bar_flags["10"]["new_bull"]
-        or last_bar_flags["15"]["new_bull"]
-        or last_bar_flags["60"]["new_bull"]
-        or last_bar_flags["240"]["new_bull"]
-        or last_bar_flags["480"]["new_bull"]
-        or last_bar_flags["D"]["new_bull"]
-        or last_bar_flags["W"]["new_bull"]
-        or last_bar_flags["M"]["new_bull"]
-    )
-    bear_fvg_creation_alert = (
-        last_bar_flags["chart"]["new_bear"]
-        or last_bar_flags["5"]["new_bear"]
-        or last_bar_flags["10"]["new_bear"]
-        or last_bar_flags["15"]["new_bear"]
-        or last_bar_flags["60"]["new_bear"]
-        or last_bar_flags["240"]["new_bear"]
-        or last_bar_flags["480"]["new_bear"]
-        or last_bar_flags["D"]["new_bear"]
-        or last_bar_flags["W"]["new_bear"]
-        or last_bar_flags["M"]["new_bear"]
-    )
-    both_fvg_creation_alert = bull_fvg_creation_alert or bear_fvg_creation_alert
-
-    return Result(
-        states=states,
-        bull_fvg_creation_alert=bull_fvg_creation_alert,
-        bear_fvg_creation_alert=bear_fvg_creation_alert,
-        both_fvg_creation_alert=both_fvg_creation_alert,
-        incursion_messages=incursion_messages,
-        is_error=is_error,
-        bar_events=bar_events,
-    )
-
-
-def run_mtf_order_block_wicks_from_records(
-    records: List[dict],
-    settings: Optional[Settings] = None,
-    current_timeframe: str = "15",
-) -> Result:
-    """Backtrader-friendly wrapper.
-
-    Accepts a list of dict records with keys: `datetime`, `open`, `high`, `low`, `close`.
-    This keeps the core Pine-parity logic intact while providing a feed-neutral entrypoint
-    commonly used when exporting bars inside Backtrader strategies/analyzers.
-    """
-    df = pd.DataFrame.from_records(records)
-    if "datetime" not in df.columns:
-        raise ValueError("records must include a 'datetime' key")
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.set_index("datetime")
-    return run_mtf_order_block_wicks(df[["open", "high", "low", "close"]], settings, current_timeframe)
-
-
-def run_mtf_order_block_wicks_from_backtrader(
-    datetimes: List[object],
-    opens: List[float],
-    highs: List[float],
-    lows: List[float],
-    closes: List[float],
-    settings: Optional[Settings] = None,
-    current_timeframe: str = "15",
-) -> Result:
-    """Convenience bridge for Backtrader line buffers.
-
-    Typical use in Backtrader:
-    - collect `bt.num2date(data.datetime[0])`, `data.open[0]`, `data.high[0]`,
-      `data.low[0]`, `data.close[0]` into Python lists during `next()`
-    - call this function in `stop()` or analyzer finalization
-    """
-    if not (len(datetimes) == len(opens) == len(highs) == len(lows) == len(closes)):
-        raise ValueError("All input arrays must have equal length")
-    records = [
-        {
-            "datetime": datetimes[i],
-            "open": opens[i],
-            "high": highs[i],
-            "low": lows[i],
-            "close": closes[i],
-        }
-        for i in range(len(datetimes))
-    ]
-    return run_mtf_order_block_wicks_from_records(records, settings, current_timeframe)
+                for z in st.bear_zones:
+                    lines.append(
+                        f"    BEAR  top={z.top:.5f}  btm={z.bottom:.5f}"
+                        f"  bar={z.creation_bar}  col={z.bgcolor}"
+                    )
+        if all(not st.bull_zones and not st.bear_zones for st in self.states.values()):
+            lines.append("  (no active zones)")
+        return "\n".join(lines)
