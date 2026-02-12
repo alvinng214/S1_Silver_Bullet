@@ -93,6 +93,13 @@ MTF_FVG_PATH = os.path.join(
 mtf_fvg_module = SourceFileLoader("mtf_fvg_x2_mk", MTF_FVG_PATH).load_module()
 MTFSettings = mtf_fvg_module.MTFSettings
 
+OB_DETECTOR_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "Order-Block Detector.py",
+)
+ob_detector_module = SourceFileLoader("order_block_detector", OB_DETECTOR_PATH).load_module()
+OrderBlockDetector = ob_detector_module.OrderBlockDetector
+
 
 # =============================================================================
 # INDICATOR CACHE - Stores expensive calculations to avoid redundant computation
@@ -108,6 +115,7 @@ class IndicatorCache:
         self._smc_tradingfinder = None
         self._smart_money_zones = None
         self._hk_aligned_df = None
+        self._ob_detector_results = None
 
     def get_silver_bullet_signals(self, hk_aligned: pd.DataFrame) -> dict:
         if self._silver_bullet_signals is None:
@@ -123,6 +131,12 @@ class IndicatorCache:
         if self._smart_money_zones is None:
             self._smart_money_zones = calculate_smart_money_zones(df, show_ob=show_ob)
         return self._smart_money_zones
+
+    def get_ob_detector_results(self, df: pd.DataFrame) -> dict:
+        if self._ob_detector_results is None:
+            detector = OrderBlockDetector()
+            self._ob_detector_results = detector.run(df)
+        return self._ob_detector_results
 
 
 # Global cache instance
@@ -157,6 +171,8 @@ class PandasDataBias(bt.feeds.PandasData):
         "filter_htf_bias_bear",
         "filter_htf_poi_bull",
         "filter_htf_poi_bear",
+        "entry_obdet_bull",
+        "entry_obdet_bear",
         "entry_fvg_bull",
         "entry_fvg_bear",
     )
@@ -194,6 +210,8 @@ class PandasDataBias(bt.feeds.PandasData):
         ("filter_htf_bias_bear", "filter_htf_bias_bear"),
         ("filter_htf_poi_bull", "filter_htf_poi_bull"),
         ("filter_htf_poi_bear", "filter_htf_poi_bear"),
+        ("entry_obdet_bull", "entry_obdet_bull"),
+        ("entry_obdet_bear", "entry_obdet_bear"),
         ("entry_fvg_bull", "entry_fvg_bull"),
         ("entry_fvg_bear", "entry_fvg_bear"),
     )
@@ -710,18 +728,30 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     ifvg_bull = ifvg_signals["buy_signal"].fillna(False).astype(int)
     ifvg_bear = ifvg_signals["sell_signal"].fillna(False).astype(int)
 
+    # Order-Block Detector (OB mitigation + FVG mitigation signals)
+    ob_det_results = _cache.get_ob_detector_results(df)
+    ob_det_signals = ob_det_results["signals"]
+    obdet_bull = (
+        (ob_det_signals["ob_signal"] == 1) | (ob_det_signals["fvg_signal"] == 1)
+    ).astype(int)
+    obdet_bear = (
+        (ob_det_signals["ob_signal"] == -1) | (ob_det_signals["fvg_signal"] == -1)
+    ).astype(int)
+
     # Raw entry triggers (unfiltered) - checked FIRST in strategy
     entry_trigger_bull = (
         sb_entry_bull.astype(bool)
         | setup01_bull.astype(bool)
         | ote_bull.astype(bool)
         | ifvg_bull.astype(bool)
+        | obdet_bull.astype(bool)
     ).astype(int)
     entry_trigger_bear = (
         sb_entry_bear.astype(bool)
         | setup01_bear.astype(bool)
         | ote_bear.astype(bool)
         | ifvg_bear.astype(bool)
+        | obdet_bear.astype(bool)
     ).astype(int)
 
     # Filter 1: HTF POI Filter (1H/4H unmitigated order block lookback)
@@ -786,6 +816,8 @@ def add_entry_signals(df: pd.DataFrame, hk_aligned: pd.DataFrame) -> pd.DataFram
     df["entry_ote_bear"] = ote_bear
     df["entry_ifvg_bull"] = ifvg_bull
     df["entry_ifvg_bear"] = ifvg_bear
+    df["entry_obdet_bull"] = obdet_bull
+    df["entry_obdet_bear"] = obdet_bear
     # Raw combined triggers (unfiltered)
     df["entry_trigger_bull"] = entry_trigger_bull
     df["entry_trigger_bear"] = entry_trigger_bear
