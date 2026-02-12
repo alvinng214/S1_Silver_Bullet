@@ -189,6 +189,8 @@ class SilverBulletStrategy(bt.Strategy):
             "entry_ote_bear": 0,
             "entry_ifvg_bull": 0,
             "entry_ifvg_bear": 0,
+            "entry_obdet_bull": 0,
+            "entry_obdet_bear": 0,
             # Filter rejection counts
             "filter_time_rejected_bull": 0,
             "filter_time_rejected_bear": 0,
@@ -252,6 +254,8 @@ class SilverBulletStrategy(bt.Strategy):
                 signals.append("Fib_OTE")
             if int(self.data.entry_ifvg_bull[0]) == 1:
                 signals.append("IFVG_Realtime")
+            if int(self.data.entry_obdet_bull[0]) == 1:
+                signals.append("OB_Detector")
         else:
             if int(self.data.entry_sb_bear[0]) == 1:
                 signals.append("SB_FVG_Retrace")
@@ -261,6 +265,8 @@ class SilverBulletStrategy(bt.Strategy):
                 signals.append("Fib_OTE")
             if int(self.data.entry_ifvg_bear[0]) == 1:
                 signals.append("IFVG_Realtime")
+            if int(self.data.entry_obdet_bear[0]) == 1:
+                signals.append("OB_Detector")
         return " + ".join(signals) if signals else "Unknown"
 
     def notify_order(self, order: bt.Order) -> None:
@@ -368,6 +374,10 @@ class SilverBulletStrategy(bt.Strategy):
             self.signal_stats["entry_ifvg_bull"] += 1
         if int(self.data.entry_ifvg_bear[0]) == 1:
             self.signal_stats["entry_ifvg_bear"] += 1
+        if int(self.data.entry_obdet_bull[0]) == 1:
+            self.signal_stats["entry_obdet_bull"] += 1
+        if int(self.data.entry_obdet_bear[0]) == 1:
+            self.signal_stats["entry_obdet_bear"] += 1
 
     def _check_filters(self, is_long: bool) -> tuple[bool, str]:
         """
@@ -619,6 +629,7 @@ class SilverBulletStrategy(bt.Strategy):
         print(f"  ICT Setup 01:    LONG={self.signal_stats['entry_setup01_bull']} SHORT={self.signal_stats['entry_setup01_bear']}")
         print(f"  Fibonacci OTE:   LONG={self.signal_stats['entry_ote_bull']} SHORT={self.signal_stats['entry_ote_bear']}")
         print(f"  IFVG Realtime:   LONG={self.signal_stats['entry_ifvg_bull']} SHORT={self.signal_stats['entry_ifvg_bear']}")
+        print(f"  OB Detector:     LONG={self.signal_stats['entry_obdet_bull']} SHORT={self.signal_stats['entry_obdet_bear']}")
 
         print("\n--- Filter Rejections ---")
         print(f"  Time Filter (ICT Session):")
