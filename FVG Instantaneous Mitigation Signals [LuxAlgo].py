@@ -95,7 +95,11 @@ class FVGInstantaneousMitigationSignalsLuxAlgo(bt.Indicator):
     )
 
     def __init__(self):
-        self._atr = bt.ind.ATR(self.data, period=200)
+        # Mirror TradingView ta library's ATR recurrence:
+        # ewma(ta.tr(true), alpha=1/length), running from the first bar.
+        self._atr_len = 200
+        self._atr_ewma: Optional[float] = None
+        self._prev_close: Optional[float] = None
         self._os = 0
         self._prev_os: Optional[int] = None
         self._bull_line: Optional[LineObj] = None
@@ -106,8 +110,29 @@ class FVGInstantaneousMitigationSignalsLuxAlgo(bt.Indicator):
         self._bear_tpsl = TpslState()
         self._ts_state = TrailingStopState()
 
-    def _tpsl(self, state: TpslState, condition: bool, opposite_condition: bool, level: float, is_long: bool, n: int) -> bool:
-        atr_i = _nz(float(self._atr[0]))
+    def prenext(self):
+        self.next()
+
+    def _pine_atr_value(self) -> float:
+        hi = float(self.data.high[0])
+        lo = float(self.data.low[0])
+
+        if self._prev_close is None:
+            tr = hi - lo
+        else:
+            tr = max(hi - lo, abs(hi - self._prev_close), abs(lo - self._prev_close))
+
+        self._prev_close = float(self.data.close[0])
+
+        alpha = 1.0 / float(self._atr_len)
+        if self._atr_ewma is None:
+            self._atr_ewma = tr
+        else:
+            self._atr_ewma = alpha * tr + (1.0 - alpha) * self._atr_ewma
+
+        return _nz(self._atr_ewma)
+
+    def _tpsl(self, state: TpslState, condition: bool, opposite_condition: bool, level: float, is_long: bool, n: int, atr_i: float) -> bool:
         if condition:
             if is_long:
                 if self.p.show_tp:
@@ -146,7 +171,7 @@ class FVGInstantaneousMitigationSignalsLuxAlgo(bt.Indicator):
 
     def next(self):
         n = len(self.data) - 1
-        atr_i = _nz(float(self._atr[0]))
+        atr_i = self._pine_atr_value()
 
         # Pine offsets
         low_1 = float(self.data.low[-1]) if len(self.data) >= 2 else np.nan
@@ -208,8 +233,8 @@ class FVGInstantaneousMitigationSignalsLuxAlgo(bt.Indicator):
 
         bull_level = (low_3 + high_1) / 2.0 if not (np.isnan(low_3) or np.isnan(high_1)) else np.nan
         bear_level = (low_1 + high_3) / 2.0 if not (np.isnan(low_1) or np.isnan(high_3)) else np.nan
-        bull_reached = self._tpsl(self._bull_tpsl, bull, bear, _nz(bull_level), True, n)
-        bear_reached = self._tpsl(self._bear_tpsl, bear, bull, _nz(bear_level), False, n)
+        bull_reached = self._tpsl(self._bull_tpsl, bull, bear, _nz(bull_level), True, n, atr_i)
+        bear_reached = self._tpsl(self._bear_tpsl, bear, bull, _nz(bear_level), False, n, atr_i)
 
         if self.p.ts_reset == "Every Signals":
             ts_trigger = bull or bear
@@ -257,7 +282,7 @@ def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
 
 
 def _pine_rma(values: pd.Series, length: int) -> pd.Series:
-    """Match Pine ta.rma/ta.atr behavior (SMA seed, then Wilder smoothing)."""
+    """Wilder-style RMA with SMA seed."""
     out = np.full(len(values), np.nan, dtype=float)
     arr = values.to_numpy(dtype=float)
 
@@ -271,6 +296,26 @@ def _pine_rma(values: pd.Series, length: int) -> pd.Series:
     alpha = 1.0 / float(length)
     for i in range(seed_idx + 1, len(arr)):
         out[i] = alpha * arr[i] + (1.0 - alpha) * out[i - 1]
+
+    return pd.Series(out, index=values.index)
+
+
+def _ewma(values: pd.Series, alpha: float) -> pd.Series:
+    """TradingView ta library EWMA recurrence: alpha*x + (1-alpha)*nz(prev, x)."""
+    out = np.full(len(values), np.nan, dtype=float)
+    arr = values.to_numpy(dtype=float)
+
+    prev = np.nan
+    for i, x in enumerate(arr):
+        if np.isnan(x):
+            out[i] = prev
+            continue
+
+        if np.isnan(prev):
+            prev = x
+        else:
+            prev = alpha * x + (1.0 - alpha) * prev
+        out[i] = prev
 
     return pd.Series(out, index=values.index)
 
@@ -322,7 +367,7 @@ def calculate_fvg_instantaneous_mitigation_signals(
 
     # Pine: atr = nz(ta.atr(200))
     tr = _true_range(high_s, low_s, close_s)
-    atr_raw = _pine_rma(tr, 200)
+    atr_raw = _ewma(tr, 1.0 / 200.0)
     atr = atr_raw.fillna(0.0).to_numpy(dtype=float)
 
     high = high_s.to_numpy(dtype=float)
