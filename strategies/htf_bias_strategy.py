@@ -170,6 +170,7 @@ class SilverBulletStrategy(bt.Strategy):
         ("pivot_strength", 15),
         ("risk_per_trade", 0.02),
         ("leverage", 100),  # Leverage ratio (e.g., 100 = 1:100 leverage)
+        ("max_concurrent_trades", 3),  # Max 3 open trades = 6% total risk (3 x 2%)
         ("print_trades", True),
         ("debug_signals", False),
     )
@@ -497,6 +498,18 @@ class SilverBulletStrategy(bt.Strategy):
         short_signal = short_trigger
 
         if not long_signal and not short_signal:
+            return
+
+        # Check max concurrent trades (6% total risk cap = 3 trades x 2% each)
+        if len(self.active_trades) >= self.params.max_concurrent_trades:
+            if long_signal:
+                self._record_rejected_trigger(is_long=True, rejection_reason="Max concurrent trades reached")
+                self.signal_stats.setdefault("max_trades_rejected_bull", 0)
+                self.signal_stats["max_trades_rejected_bull"] += 1
+            if short_signal:
+                self._record_rejected_trigger(is_long=False, rejection_reason="Max concurrent trades reached")
+                self.signal_stats.setdefault("max_trades_rejected_bear", 0)
+                self.signal_stats["max_trades_rejected_bear"] += 1
             return
 
         entry_price = float(self.data.close[0])
