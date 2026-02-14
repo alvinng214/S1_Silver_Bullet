@@ -224,6 +224,22 @@ class SilverBulletCbotPython:
             }
         )
 
+    def _log_filter_sequence(self, when: datetime, signals: SignalSnapshot, *, is_long: bool) -> None:
+        direction = "LONG" if is_long else "SHORT"
+        states = self._filter_states(signals, is_long=is_long)
+        sequence = "HTF POI -> Trend -> Time"
+        self.log(
+            when,
+            "{direction} filter sequence: {sequence} | "
+            "Time={time} Trend={trend} HTF_POI={htf_poi}".format(
+                direction=direction,
+                sequence=sequence,
+                time="PASS" if states["time"] else "FAIL",
+                trend="PASS" if states["trend"] else "FAIL",
+                htf_poi="PASS" if states["htf_poi"] else "FAIL",
+            ),
+        )
+
     def _check_stops_and_targets(self, bar: Bar) -> None:
         if not self.active_trades:
             return
@@ -290,9 +306,12 @@ class SilverBulletCbotPython:
             return
 
         if long_trigger:
+            self._log_filter_sequence(bar.time, signals, is_long=True)
             ok, reason = self._check_filters(signals, is_long=True)
             if not ok:
                 self._record_rejected_trigger(bar.time, signals, is_long=True, reason=reason)
+                if self.debug_signals:
+                    self.log(bar.time, f"LONG trigger rejected: {reason}")
                 if "Time" in reason:
                     self.signal_stats["filter_time_rejected_bull"] += 1
                 elif "Trend" in reason:
@@ -302,9 +321,12 @@ class SilverBulletCbotPython:
                 long_trigger = False
 
         if short_trigger:
+            self._log_filter_sequence(bar.time, signals, is_long=False)
             ok, reason = self._check_filters(signals, is_long=False)
             if not ok:
                 self._record_rejected_trigger(bar.time, signals, is_long=False, reason=reason)
+                if self.debug_signals:
+                    self.log(bar.time, f"SHORT trigger rejected: {reason}")
                 if "Time" in reason:
                     self.signal_stats["filter_time_rejected_bear"] += 1
                 elif "Trend" in reason:
@@ -406,3 +428,136 @@ class SilverBulletCbotPython:
             "orders_placed": self.signal_stats["orders_placed"],
             "rejected_triggers": len(self.rejected_triggers),
         }
+
+    def print_filter_statistics(self) -> None:
+        print("\n" + "=" * 100)
+        print("{:^100}".format("FILTER STATISTICS"))
+        print("=" * 100)
+
+        print("\n--- Entry Triggers Detected ---")
+        print(f"  LONG triggers:  {self.signal_stats['trigger_bull']}")
+        print(f"  SHORT triggers: {self.signal_stats['trigger_bear']}")
+
+        print("\n--- Trigger Breakdown ---")
+        print(f"  SB FVG Retrace:  LONG={self.signal_stats['entry_sb_bull']} SHORT={self.signal_stats['entry_sb_bear']}")
+        print(f"  ICT Setup 01:    LONG={self.signal_stats['entry_setup01_bull']} SHORT={self.signal_stats['entry_setup01_bear']}")
+        print(f"  Fibonacci OTE:   LONG={self.signal_stats['entry_ote_bull']} SHORT={self.signal_stats['entry_ote_bear']}")
+        print(f"  IFVG Realtime:   LONG={self.signal_stats['entry_ifvg_bull']} SHORT={self.signal_stats['entry_ifvg_bear']}")
+        print(f"  OB Detector:     LONG={self.signal_stats['entry_obdet_bull']} SHORT={self.signal_stats['entry_obdet_bear']}")
+
+        print("\n--- Filter Rejections ---")
+        print("  Time Filter (ICT Session):")
+        print(f"    LONG rejected:  {self.signal_stats['filter_time_rejected_bull']}")
+        print(f"    SHORT rejected: {self.signal_stats['filter_time_rejected_bear']}")
+        print("  Trend Filter (15M/1H Bias):")
+        print(f"    LONG rejected:  {self.signal_stats['filter_trend_rejected_bull']}")
+        print(f"    SHORT rejected: {self.signal_stats['filter_trend_rejected_bear']}")
+        print("  Structure Filter (MSS+FVG):")
+        print(f"    LONG rejected:  {self.signal_stats['filter_structure_rejected_bull']}")
+        print(f"    SHORT rejected: {self.signal_stats['filter_structure_rejected_bear']}")
+
+        print("\n--- Risk Management Rejections ---")
+        print(f"  Invalid Stop (LONG):   {self.signal_stats['stop_invalid_long']}")
+        print(f"  Invalid Stop (SHORT):  {self.signal_stats['stop_invalid_short']}")
+        print(f"  Invalid Target (LONG): {self.signal_stats['target_invalid_long']}")
+        print(f"  Invalid Target (SHORT):{self.signal_stats['target_invalid_short']}")
+
+        print("\n--- Orders Placed ---")
+        print(f"  Total orders: {self.signal_stats['orders_placed']}")
+        print("=" * 100)
+
+    def _print_detailed_report(self) -> None:
+        if not self.completed_trades:
+            print("\n" + "=" * 100)
+            print("NO TRADES COMPLETED")
+            print("=" * 100)
+            return
+
+        print("\n" + "=" * 100)
+        print("DETAILED TRADE REPORT - Silver Bullet XAUUSD Backtest")
+        print("=" * 100)
+
+        print("\n{:^100}".format("TRADE-BY-TRADE DETAILS"))
+        print("-" * 100)
+        print(
+            "{:<4} {:<6} {:<20} {:<10} {:<10} {:<10} {:<12} {:<6} {:<40}".format(
+                "#", "Dir", "Entry Time", "Entry", "Stop", "Target", "P&L", "Result", "Signal"
+            )
+        )
+        print("-" * 100)
+
+        wins = 0
+        losses = 0
+        total_pnl = 0.0
+        signal_stats: dict[str, dict[str, int | float]] = {}
+
+        for trade in self.completed_trades:
+            print(
+                "{:<4} {:<6} {:<20} {:<10.2f} {:<10.2f} {:<10.2f} ${:<11.2f} {:<6} {:<40}".format(
+                    trade["trade_num"],
+                    trade["direction"],
+                    trade["entry_time"][:19],
+                    trade["entry_price"],
+                    trade["stop_price"],
+                    trade["target_price"],
+                    trade["pnl"],
+                    trade["result"],
+                    trade["signal_type"],
+                )
+            )
+
+            if trade["result"] == "WIN":
+                wins += 1
+            else:
+                losses += 1
+            total_pnl += trade["pnl"]
+
+            sig = trade["signal_type"]
+            if sig not in signal_stats:
+                signal_stats[sig] = {"wins": 0, "losses": 0, "pnl": 0.0}
+            if trade["result"] == "WIN":
+                signal_stats[sig]["wins"] += 1
+            else:
+                signal_stats[sig]["losses"] += 1
+            signal_stats[sig]["pnl"] += trade["pnl"]
+
+        total = wins + losses
+        win_rate = (wins / total * 100) if total > 0 else 0.0
+
+        print("-" * 100)
+        print("\n{:^100}".format("SUMMARY STATISTICS"))
+        print("-" * 100)
+        print(f"Total Trades:     {total}")
+        print(f"Wins:             {wins}")
+        print(f"Losses:           {losses}")
+        print(f"Win Rate:         {win_rate:.2f}%")
+        print(f"Total P&L:        ${total_pnl:.2f}")
+        print(f"Average P&L:      ${total_pnl / total:.2f}" if total > 0 else "N/A")
+
+        print("\n{:^100}".format("PERFORMANCE BY SIGNAL TYPE"))
+        print("-" * 100)
+        print("{:<30} {:<10} {:<10} {:<12} {:<15}".format("Signal Type", "Wins", "Losses", "Win Rate", "Total P&L"))
+        print("-" * 100)
+        for sig, stats in sorted(signal_stats.items()):
+            sig_total = stats["wins"] + stats["losses"]
+            sig_win_rate = (stats["wins"] / sig_total * 100) if sig_total > 0 else 0.0
+            print(
+                "{:<30} {:<10} {:<10} {:<12.2f}% ${:<14.2f}".format(
+                    sig[:30], stats["wins"], stats["losses"], sig_win_rate, stats["pnl"]
+                )
+            )
+
+        print("=" * 100)
+
+    def print_detailed_report(self) -> None:
+        self._print_detailed_report()
+
+    def on_stop(self) -> None:
+        self._print_detailed_report()
+        if self.debug_signals:
+            self.print_filter_statistics()
+
+
+    def stop(self) -> None:
+        """Backtrader-compatible alias for end-of-run reporting."""
+        self.on_stop()
