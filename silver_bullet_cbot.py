@@ -30,7 +30,8 @@ UPSTREAM_INDICATOR_FAMILIES: tuple[tuple[str, str], ...] = (
     ("Order Blocks & Imbalance MTF", "1H/4H OB touch lookback -> filter_htf_ob_bull/bear -> filter_htf_poi_bull/bear"),
     ("MTF FVG x2 [MK]", "1H/4H FVG touch lookback -> filter_htf_fvg_bull/bear OR-combined into filter_htf_poi_bull/bear"),
     ("ICT Session filter", "ict_session_active -> filter_session_active"),
-    ("Liquidity & inducements (SMC)", "liq_buyside_target/liq_sellside_target used as SL anchors"),
+    ("Smart Money Concept [TradingFinder]", "smc liquidity highs/lows scaffold external liquidity context"),
+    ("Liquidity & inducements", "liq_buyside_target/liq_sellside_target used as SL anchors"),
 )
 
 
@@ -108,8 +109,6 @@ class SilverBulletCbotPython:
             "filter_time_rejected_bear": 0,
             "filter_trend_rejected_bull": 0,
             "filter_trend_rejected_bear": 0,
-            "filter_structure_rejected_bull": 0,
-            "filter_structure_rejected_bear": 0,
             "stop_invalid_long": 0,
             "stop_invalid_short": 0,
             "target_invalid_long": 0,
@@ -251,16 +250,13 @@ class SilverBulletCbotPython:
         direction = "LONG" if is_long else "SHORT"
         states = self._filter_states(signals, is_long=is_long)
         sequence = "HTF POI -> Trend -> Time"
+        time_state = "PASS" if states["time"] else "FAIL"
+        trend_state = "PASS" if states["trend"] else "FAIL"
+        htf_poi_state = "PASS" if states["htf_poi"] else "FAIL"
         self.log(
             when,
-            "{direction} filter sequence: {sequence} | "
-            "Time={time} Trend={trend} HTF_POI={htf_poi}".format(
-                direction=direction,
-                sequence=sequence,
-                time="PASS" if states["time"] else "FAIL",
-                trend="PASS" if states["trend"] else "FAIL",
-                htf_poi="PASS" if states["htf_poi"] else "FAIL",
-            ),
+            f"{direction} filter sequence: {sequence} | "
+            f"HTF_POI={htf_poi_state} Trend={trend_state} Time={time_state}",
         )
 
     def _check_stops_and_targets(self, bar: Bar) -> None:
@@ -339,8 +335,6 @@ class SilverBulletCbotPython:
                     self.signal_stats["filter_time_rejected_bull"] += 1
                 elif "Trend" in reason:
                     self.signal_stats["filter_trend_rejected_bull"] += 1
-                elif "Structure" in reason:
-                    self.signal_stats["filter_structure_rejected_bull"] += 1
                 long_trigger = False
 
         if short_trigger:
@@ -354,8 +348,6 @@ class SilverBulletCbotPython:
                     self.signal_stats["filter_time_rejected_bear"] += 1
                 elif "Trend" in reason:
                     self.signal_stats["filter_trend_rejected_bear"] += 1
-                elif "Structure" in reason:
-                    self.signal_stats["filter_structure_rejected_bear"] += 1
                 short_trigger = False
 
         if not long_trigger and not short_trigger:
@@ -475,10 +467,6 @@ class SilverBulletCbotPython:
         print("  Trend Filter (15M/1H Bias):")
         print(f"    LONG rejected:  {self.signal_stats['filter_trend_rejected_bull']}")
         print(f"    SHORT rejected: {self.signal_stats['filter_trend_rejected_bear']}")
-        print("  Structure Filter (MSS+FVG):")
-        print(f"    LONG rejected:  {self.signal_stats['filter_structure_rejected_bull']}")
-        print(f"    SHORT rejected: {self.signal_stats['filter_structure_rejected_bear']}")
-
         print("\n--- Risk Management Rejections ---")
         print(f"  Invalid Stop (LONG):   {self.signal_stats['stop_invalid_long']}")
         print(f"  Invalid Stop (SHORT):  {self.signal_stats['stop_invalid_short']}")
