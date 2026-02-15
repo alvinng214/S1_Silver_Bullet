@@ -1,574 +1,357 @@
 """
-Silver Bullet strategy logic ported from ``Silver_bullet_backtrader.py`` /
-``strategies/htf_bias_strategy.py`` into a cBot-style Python event model.
+Silver Bullet S1 cBot – cTrader Python cBot.
 
-IMPORTANT
----------
-- Native cTrader cBots run in C# (cAlgo API). This module focuses on faithfully
-  mirroring the *trading logic/state machine* in Python.
-- To run this against live cTrader data, wire ``on_bar_closed`` to your bridge
-  (for example Open API/websocket + external signal pipeline) and feed all
-  required signal fields.
+This cBot implements the ICT Silver Bullet strategy using the cTrader cAlgo
+Python API.  It reads signals from 12 custom cTrader indicators (installed
+separately) and executes real market orders with broker-managed SL/TP.
+
+CUSTOM INDICATORS REQUIRED (install each as a cTrader custom indicator):
+  01. SilverBulletWithSignals  – outputs: EntryTriggerBull, EntryTriggerBear,
+                                          EntrySbBull, EntrySbBear
+  02. IctSetup01               – outputs: EntrySetup01Bull, EntrySetup01Bear
+  03. FibonacciOte             – outputs: EntryOteBull, EntryOteBear
+  04. IfvgRealtime             – outputs: EntryIfvgBull, EntryIfvgBear
+  05. OrderBlockDetector       – outputs: EntryObdetBull, EntryObdetBear
+  06. SmartMoneyZones          – outputs: SmzTrend15m, SmzTrend1h
+  07. MarketStructureMtf       – outputs: MsTrend15m, MsTrend1h
+  08. OrderBlocksImbalanceMtf  – outputs: ObTouch1h, ObTouch4h
+  09. MtfFvgX2                 – outputs: FvgTouch1h, FvgTouch4h
+  10. IctSessionFilter         – outputs: SessionActive
+  11. SmartMoneyConcept        – outputs: (liquidity context, optional)
+  12. LiquidityInducements     – outputs: LiqBuysideTarget, LiqSellsideTarget
+
+cBOT PARAMETERS (set in cTrader UI):
+  - RiskPerTrade   (double, default 0.02)  – fraction of equity risked per trade
+  - MaxConcurrent  (int,    default 3)     – max simultaneous positions
+  - Quantity        (double, default 0.01)  – fallback lot size
+  - DebugSignals   (bool,   default False) – verbose signal logging
+
+ARCHITECTURE
+  on_start  → initialise all 12 custom indicators, register position events
+  on_bar    → read indicator outputs, apply filters, execute trades
+  on_stop   → print session summary
 """
 
-from __future__ import annotations
+import clr
 
-from dataclasses import dataclass
-from datetime import datetime
-from math import isnan
-from typing import Optional
+clr.AddReference("cAlgo.API")
 
+from cAlgo.API import *
 
-UPSTREAM_INDICATOR_FAMILIES: tuple[tuple[str, str], ...] = (
-    ("Silver Bullet with signals", "entry_sb_bull/entry_sb_bear, entry_trigger_bull/entry_trigger_bear"),
-    ("ICT Setup 01", "entry_setup01_bull/entry_setup01_bear"),
-    ("Fibonacci OTE", "entry_ote_bull/entry_ote_bear"),
-    ("IFVG Realtime", "entry_ifvg_bull/entry_ifvg_bear"),
-    ("Order Block Detector", "entry_obdet_bull/entry_obdet_bear"),
-    ("Smart Money Zones (SMZ)", "smz_trend_15m/smz_trend_1h -> filter_htf_bias_bull/filter_htf_bias_bear"),
-    ("Market Structure MTF Trend [Pt]", "15M/1H structure color states OR-combined with SMZ for filter_htf_bias_bull/bear"),
-    ("Order Blocks & Imbalance MTF", "1H/4H OB touch lookback -> filter_htf_ob_bull/bear -> filter_htf_poi_bull/bear"),
-    ("MTF FVG x2 [MK]", "1H/4H FVG touch lookback -> filter_htf_fvg_bull/bear OR-combined into filter_htf_poi_bull/bear"),
-    ("ICT Session filter", "ict_session_active -> filter_session_active"),
-    ("Smart Money Concept [TradingFinder]", "smc liquidity highs/lows scaffold external liquidity context"),
-    ("Liquidity & inducements", "liq_buyside_target/liq_sellside_target used as SL anchors"),
-)
+from robot_wrapper import execute_market_order, modify_position
 
 
-@dataclass
-class Bar:
-    time: datetime
-    open: float
-    high: float
-    low: float
-    close: float
+# ---------------------------------------------------------------------------
+# cBot class
+# ---------------------------------------------------------------------------
 
+class SilverBulletCBot():
+    """ICT Silver Bullet S1 – real cTrader execution."""
 
-@dataclass
-class SignalSnapshot:
-    # Entry triggers (already computed by upstream indicator stack)
-    entry_trigger_bull: int = 0
-    entry_trigger_bear: int = 0
+    Label = "SilverBullet_S1"
 
-    # Trigger attribution fields
-    entry_sb_bull: int = 0
-    entry_sb_bear: int = 0
-    entry_setup01_bull: int = 0
-    entry_setup01_bear: int = 0
-    entry_ote_bull: int = 0
-    entry_ote_bear: int = 0
-    entry_ifvg_bull: int = 0
-    entry_ifvg_bear: int = 0
-    entry_obdet_bull: int = 0
-    entry_obdet_bear: int = 0
+    # ── lifecycle ─────────────────────────────────────────────────────────
 
-    # Filters
-    filter_session_active: int = 0
-    filter_htf_bias_bull: int = 0
-    filter_htf_bias_bear: int = 0
-    filter_htf_poi_bull: int = 0
-    filter_htf_poi_bear: int = 0
+    def on_start(self):
+        """Initialise indicators and state."""
 
-    # External liquidity targets used for SL anchor
-    liq_buyside_target: Optional[float] = None
-    liq_sellside_target: Optional[float] = None
+        # ── custom indicator references ──────────────────────────────────
+        # Each line below calls the cTrader API to load a custom indicator.
+        # The indicator types (e.g. SilverBulletWithSignals) must be
+        # installed as custom cTrader Python/C# indicators beforehand.
+        #
+        # Syntax:  api.Indicators.GetIndicator[IndicatorType](params…)
+        # The output DataSeries are accessed as  indicator.OutputName.Last(n)
 
+        self.ind_sb        = api.Indicators.GetIndicator[SilverBulletWithSignals](api.Bars.ClosePrices)
+        self.ind_setup01   = api.Indicators.GetIndicator[IctSetup01](api.Bars.ClosePrices)
+        self.ind_ote       = api.Indicators.GetIndicator[FibonacciOte](api.Bars.ClosePrices)
+        self.ind_ifvg      = api.Indicators.GetIndicator[IfvgRealtime](api.Bars.ClosePrices)
+        self.ind_obdet     = api.Indicators.GetIndicator[OrderBlockDetector](api.Bars.ClosePrices)
+        self.ind_smz       = api.Indicators.GetIndicator[SmartMoneyZones](api.Bars.ClosePrices)
+        self.ind_ms_mtf    = api.Indicators.GetIndicator[MarketStructureMtf](api.Bars.ClosePrices)
+        self.ind_ob_mtf    = api.Indicators.GetIndicator[OrderBlocksImbalanceMtf](api.Bars.ClosePrices)
+        self.ind_fvg_mtf   = api.Indicators.GetIndicator[MtfFvgX2](api.Bars.ClosePrices)
+        self.ind_session   = api.Indicators.GetIndicator[IctSessionFilter](api.Bars.ClosePrices)
+        self.ind_liq       = api.Indicators.GetIndicator[LiquidityInducements](api.Bars.ClosePrices)
 
-class SilverBulletCbotPython:
-    """Python cBot-style mirror of ``SilverBulletStrategy`` trade execution logic."""
+        # ── position event tracking ──────────────────────────────────────
+        api.Positions.Opened += self.on_position_opened
+        api.Positions.Closed += self.on_position_closed
 
-    def __init__(
+        # ── session counters ─────────────────────────────────────────────
+        self.trade_counter = 0
+        self.wins = 0
+        self.losses = 0
+        self.total_pnl = 0.0
+
+        api.Print("Silver Bullet S1 cBot started.")
+
+    def on_stop(self):
+        """Print session summary on shutdown."""
+        total = self.wins + self.losses
+        wr = (self.wins / total * 100) if total > 0 else 0.0
+        api.Print(
+            f"Session ended | Trades: {total} | "
+            f"Wins: {self.wins} | Losses: {self.losses} | "
+            f"Win Rate: {wr:.1f}% | P&L: ${self.total_pnl:.2f}"
+        )
+
+    # ── position events ──────────────────────────────────────────────────
+
+    def on_position_opened(self, args):
+        pos = args.Position
+        if pos.Label != self.Label:
+            return
+        api.Print(
+            f"OPENED #{pos.Id} {pos.TradeType} {pos.SymbolName} "
+            f"@ {pos.EntryPrice:.2f}  Vol={pos.VolumeInUnits}"
+        )
+
+    def on_position_closed(self, args):
+        pos = args.Position
+        if pos.Label != self.Label:
+            return
+        pnl = pos.NetProfit
+        self.total_pnl += pnl
+        if pnl >= 0:
+            self.wins += 1
+            result = "WIN"
+        else:
+            self.losses += 1
+            result = "LOSS"
+        api.Print(
+            f"CLOSED #{pos.Id} {result} {pos.TradeType} {pos.SymbolName} "
+            f"@ {pos.EntryPrice:.2f} | P&L: ${pnl:.2f} | Reason: {args.Reason}"
+        )
+
+    # ── main bar handler ─────────────────────────────────────────────────
+
+    def on_bar(self):
+        """Called on every new bar close.  Read indicator outputs, apply
+        filters, and execute trades via the cTrader API."""
+
+        # ── 1. read entry triggers from the Silver Bullet indicator ──────
+        entry_trigger_bull = int(self.ind_sb.EntryTriggerBull.Last(1))
+        entry_trigger_bear = int(self.ind_sb.EntryTriggerBear.Last(1))
+
+        if entry_trigger_bull == 0 and entry_trigger_bear == 0:
+            return
+
+        # ── 2. read filter signals ───────────────────────────────────────
+        filter_session_active = int(self.ind_session.SessionActive.Last(1))
+        filter_htf_bias_bull  = self._resolve_htf_bias(is_long=True)
+        filter_htf_bias_bear  = self._resolve_htf_bias(is_long=False)
+        filter_htf_poi_bull   = self._resolve_htf_poi(is_long=True)
+        filter_htf_poi_bear   = self._resolve_htf_poi(is_long=False)
+
+        # ── 3. read liquidity targets for stop-loss anchors ──────────────
+        liq_sellside = self.ind_liq.LiqSellsideTarget.Last(1)
+        liq_buyside  = self.ind_liq.LiqBuysideTarget.Last(1)
+
+        # ── 4. count existing positions under our label ──────────────────
+        my_positions = [
+            p for p in api.Positions
+            if p.Label == self.Label and p.SymbolName == api.SymbolName
+        ]
+        open_count = len(my_positions)
+
+        # ── 5. attempt LONG entry ────────────────────────────────────────
+        if entry_trigger_bull == 1:
+            self._try_entry(
+                is_long=True,
+                filter_session_active=filter_session_active,
+                filter_htf_bias=filter_htf_bias_bull,
+                filter_htf_poi=filter_htf_poi_bull,
+                liq_stop=liq_sellside,
+                open_count=open_count,
+            )
+
+        # ── 6. attempt SHORT entry ───────────────────────────────────────
+        if entry_trigger_bear == 1:
+            self._try_entry(
+                is_long=False,
+                filter_session_active=filter_session_active,
+                filter_htf_bias=filter_htf_bias_bear,
+                filter_htf_poi=filter_htf_poi_bear,
+                liq_stop=liq_buyside,
+                open_count=open_count,
+            )
+
+    # ── HTF bias resolution ──────────────────────────────────────────────
+
+    def _resolve_htf_bias(self, *, is_long):
+        """Combine Smart Money Zones + Market Structure MTF into a single
+        HTF bias filter (1 = aligned, 0 = not aligned)."""
+        if is_long:
+            smz_15m = int(self.ind_smz.SmzTrend15m.Last(1))
+            smz_1h  = int(self.ind_smz.SmzTrend1h.Last(1))
+            ms_15m  = int(self.ind_ms_mtf.MsTrend15m.Last(1))
+            ms_1h   = int(self.ind_ms_mtf.MsTrend1h.Last(1))
+            smz_bull = 1 if (smz_15m == 1 or smz_1h == 1) else 0
+            ms_bull  = 1 if (ms_15m == 1 or ms_1h == 1) else 0
+            return 1 if (smz_bull == 1 or ms_bull == 1) else 0
+        else:
+            smz_15m = int(self.ind_smz.SmzTrend15m.Last(1))
+            smz_1h  = int(self.ind_smz.SmzTrend1h.Last(1))
+            ms_15m  = int(self.ind_ms_mtf.MsTrend15m.Last(1))
+            ms_1h   = int(self.ind_ms_mtf.MsTrend1h.Last(1))
+            smz_bear = 1 if (smz_15m == -1 or smz_1h == -1) else 0
+            ms_bear  = 1 if (ms_15m == -1 or ms_1h == -1) else 0
+            return 1 if (smz_bear == 1 or ms_bear == 1) else 0
+
+    def _resolve_htf_poi(self, *, is_long):
+        """Combine OB touch + FVG touch on 1H/4H into a single HTF POI
+        filter (1 = recent touch found, 0 = no touch)."""
+        if is_long:
+            ob_1h  = int(self.ind_ob_mtf.ObTouch1h.Last(1))
+            ob_4h  = int(self.ind_ob_mtf.ObTouch4h.Last(1))
+            fvg_1h = int(self.ind_fvg_mtf.FvgTouch1h.Last(1))
+            fvg_4h = int(self.ind_fvg_mtf.FvgTouch4h.Last(1))
+            return 1 if (ob_1h == 1 or ob_4h == 1 or fvg_1h == 1 or fvg_4h == 1) else 0
+        else:
+            ob_1h  = int(self.ind_ob_mtf.ObTouch1h.Last(1))
+            ob_4h  = int(self.ind_ob_mtf.ObTouch4h.Last(1))
+            fvg_1h = int(self.ind_fvg_mtf.FvgTouch1h.Last(1))
+            fvg_4h = int(self.ind_fvg_mtf.FvgTouch4h.Last(1))
+            return 1 if (ob_1h == -1 or ob_4h == -1 or fvg_1h == -1 or fvg_4h == -1) else 0
+
+    # ── entry logic ──────────────────────────────────────────────────────
+
+    def _try_entry(
         self,
         *,
-        risk_per_trade: float = 0.02,
-        leverage: float = 100.0,
-        max_concurrent_trades: int = 3,
-        debug_signals: bool = False,
-        print_trades: bool = True,
-    ) -> None:
-        self.risk_per_trade = risk_per_trade
-        self.leverage = leverage
-        self.max_concurrent_trades = max_concurrent_trades
-        self.debug_signals = debug_signals
-        self.print_trades = print_trades
+        is_long,
+        filter_session_active,
+        filter_htf_bias,
+        filter_htf_poi,
+        liq_stop,
+        open_count,
+    ):
+        """Apply all filters and, if passed, execute a market order."""
+        direction = "LONG" if is_long else "SHORT"
 
-        self.signal_stats: dict[str, int] = {
-            "trigger_bull": 0,
-            "trigger_bear": 0,
-            "entry_sb_bull": 0,
-            "entry_sb_bear": 0,
-            "entry_setup01_bull": 0,
-            "entry_setup01_bear": 0,
-            "entry_ote_bull": 0,
-            "entry_ote_bear": 0,
-            "entry_ifvg_bull": 0,
-            "entry_ifvg_bear": 0,
-            "entry_obdet_bull": 0,
-            "entry_obdet_bear": 0,
-            "filter_time_rejected_bull": 0,
-            "filter_time_rejected_bear": 0,
-            "filter_trend_rejected_bull": 0,
-            "filter_trend_rejected_bear": 0,
-            "stop_invalid_long": 0,
-            "stop_invalid_short": 0,
-            "target_invalid_long": 0,
-            "target_invalid_short": 0,
-            "orders_placed": 0,
-            "max_trades_rejected_bull": 0,
-            "max_trades_rejected_bear": 0,
-        }
-
-        self.active_trades: list[dict] = []
-        self.completed_trades: list[dict] = []
-        self.rejected_triggers: list[dict] = []
-
-        self.trade_counter = 0
-        self.equity = 0.0
-        self.cash = 0.0
-
-    def on_start(self, *, initial_equity: float, initial_cash: Optional[float] = None) -> None:
-        self.equity = float(initial_equity)
-        self.cash = float(initial_cash if initial_cash is not None else initial_equity)
-        self.log_indicator_inventory()
-
-    def log_indicator_inventory(self) -> None:
-        if not self.print_trades:
+        # ── filter: HTF POI ──────────────────────────────────────────────
+        if filter_htf_poi != 1:
+            if api.DebugSignals:
+                api.Print(f"{direction} rejected: HTF POI filter (no 1H/4H OB/FVG touch)")
             return
-        print("Indicator families expected by SilverBulletCbotPython (upstream-computed fields):")
-        for idx, (name, fields) in enumerate(UPSTREAM_INDICATOR_FAMILIES, start=1):
-            print(f"  {idx:02d}. {name}: {fields}")
 
-    def log(self, when: datetime, message: str) -> None:
-        if self.print_trades:
-            print(f"{when.isoformat()}: {message}")
+        # ── filter: HTF trend bias ───────────────────────────────────────
+        if filter_htf_bias != 1:
+            if api.DebugSignals:
+                api.Print(f"{direction} rejected: Trend filter (15M/1H bias not aligned)")
+            return
+
+        # ── filter: ICT session window ───────────────────────────────────
+        if filter_session_active != 1:
+            if api.DebugSignals:
+                api.Print(f"{direction} rejected: ICT session not active")
+            return
+
+        # ── filter: max concurrent trades ────────────────────────────────
+        if open_count >= api.MaxConcurrent:
+            if api.DebugSignals:
+                api.Print(f"{direction} rejected: max concurrent trades ({api.MaxConcurrent})")
+            return
+
+        # ── resolve SL price from liquidity target ───────────────────────
+        stop_price = self._valid_price(liq_stop)
+        if stop_price is None:
+            if api.DebugSignals:
+                api.Print(f"{direction} rejected: no valid liquidity SL anchor")
+            return
+
+        entry_price = api.Symbol.Ask if is_long else api.Symbol.Bid
+
+        # validate SL is on the correct side of entry
+        if is_long and stop_price >= entry_price:
+            if api.DebugSignals:
+                api.Print(f"LONG rejected: SL {stop_price:.2f} >= entry {entry_price:.2f}")
+            return
+        if not is_long and stop_price <= entry_price:
+            if api.DebugSignals:
+                api.Print(f"SHORT rejected: SL {stop_price:.2f} <= entry {entry_price:.2f}")
+            return
+
+        # ── calculate risk and volume ────────────────────────────────────
+        risk_distance = abs(entry_price - stop_price)
+        risk_cash = api.Account.Equity * api.RiskPerTrade
+
+        # Volume = risk$ / risk-distance  (1 unit = $1 per $1 move on XAUUSD)
+        raw_volume = risk_cash / risk_distance
+        volume = api.Symbol.NormalizeVolumeInUnits(raw_volume, RoundingMode.Down)
+
+        if volume < api.Symbol.VolumeInUnitsMin:
+            if api.DebugSignals:
+                api.Print(f"{direction} rejected: calculated volume {volume} below minimum")
+            return
+
+        # ── calculate TP price (2:1 RR) ──────────────────────────────────
+        if is_long:
+            target_price = entry_price + risk_distance * 2.0
+        else:
+            target_price = entry_price - risk_distance * 2.0
+
+        # ── build signal attribution string ──────────────────────────────
+        sig = self._get_signal_type(is_long)
+
+        # ── EXECUTE THE TRADE ────────────────────────────────────────────
+        trade_type = TradeType.Buy if is_long else TradeType.Sell
+        result = execute_market_order(trade_type, api.SymbolName, volume, self.Label)
+
+        if result.IsSuccessful:
+            # Set SL/TP at exact price levels (not pips)
+            modify_position(result.Position, stop_loss=stop_price, take_profit=target_price)
+
+            self.trade_counter += 1
+            api.Print(
+                f"#{self.trade_counter} {direction} ENTRY "
+                f"@ {result.Position.EntryPrice:.2f} | "
+                f"SL={stop_price:.2f} TP={target_price:.2f} | "
+                f"Vol={volume} | Signal={sig}"
+            )
+        else:
+            api.Print(f"{direction} order FAILED: {result.Error}")
+
+    # ── helpers ──────────────────────────────────────────────────────────
+
+    def _get_signal_type(self, is_long):
+        """Build a human-readable string of which entry sub-signals fired."""
+        parts = []
+        if is_long:
+            if int(self.ind_sb.EntrySbBull.Last(1)) == 1:
+                parts.append("SB_FVG_Retrace")
+            if int(self.ind_setup01.EntrySetup01Bull.Last(1)) == 1:
+                parts.append("ICT_Setup01")
+            if int(self.ind_ote.EntryOteBull.Last(1)) == 1:
+                parts.append("Fib_OTE")
+            if int(self.ind_ifvg.EntryIfvgBull.Last(1)) == 1:
+                parts.append("IFVG_Realtime")
+            if int(self.ind_obdet.EntryObdetBull.Last(1)) == 1:
+                parts.append("OB_Detector")
+        else:
+            if int(self.ind_sb.EntrySbBear.Last(1)) == 1:
+                parts.append("SB_FVG_Retrace")
+            if int(self.ind_setup01.EntrySetup01Bear.Last(1)) == 1:
+                parts.append("ICT_Setup01")
+            if int(self.ind_ote.EntryOteBear.Last(1)) == 1:
+                parts.append("Fib_OTE")
+            if int(self.ind_ifvg.EntryIfvgBear.Last(1)) == 1:
+                parts.append("IFVG_Realtime")
+            if int(self.ind_obdet.EntryObdetBear.Last(1)) == 1:
+                parts.append("OB_Detector")
+        return " + ".join(parts) if parts else "Unknown"
 
     @staticmethod
-    def _valid_price(value: Optional[float]) -> Optional[float]:
+    def _valid_price(value):
+        """Return the price if it is a valid positive number, else None."""
         if value is None:
             return None
-        v = float(value)
-        if isnan(v) or v <= 0:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        if v != v or v <= 0:      # NaN check + positive check
             return None
         return v
-
-    def _resolve_stop_long(self, signals: SignalSnapshot) -> Optional[float]:
-        return self._valid_price(signals.liq_sellside_target)
-
-    def _resolve_stop_short(self, signals: SignalSnapshot) -> Optional[float]:
-        return self._valid_price(signals.liq_buyside_target)
-
-    @staticmethod
-    def _resolve_target_long(entry_price: float, risk_per_unit: float) -> float:
-        return entry_price + risk_per_unit * 2.0
-
-    @staticmethod
-    def _resolve_target_short(entry_price: float, risk_per_unit: float) -> float:
-        return entry_price - risk_per_unit * 2.0
-
-    def _get_entry_signal_type(self, signals: SignalSnapshot, *, is_long: bool) -> str:
-        s: list[str] = []
-        if is_long:
-            if signals.entry_sb_bull == 1:
-                s.append("SB_FVG_Retrace")
-            if signals.entry_setup01_bull == 1:
-                s.append("ICT_Setup01")
-            if signals.entry_ote_bull == 1:
-                s.append("Fib_OTE")
-            if signals.entry_ifvg_bull == 1:
-                s.append("IFVG_Realtime")
-            if signals.entry_obdet_bull == 1:
-                s.append("OB_Detector")
-        else:
-            if signals.entry_sb_bear == 1:
-                s.append("SB_FVG_Retrace")
-            if signals.entry_setup01_bear == 1:
-                s.append("ICT_Setup01")
-            if signals.entry_ote_bear == 1:
-                s.append("Fib_OTE")
-            if signals.entry_ifvg_bear == 1:
-                s.append("IFVG_Realtime")
-            if signals.entry_obdet_bear == 1:
-                s.append("OB_Detector")
-        return " + ".join(s) if s else "Unknown"
-
-    def _track_signal_counts(self, signals: SignalSnapshot) -> None:
-        if not self.debug_signals:
-            return
-        for k in (
-            "entry_trigger_bull",
-            "entry_trigger_bear",
-            "entry_sb_bull",
-            "entry_sb_bear",
-            "entry_setup01_bull",
-            "entry_setup01_bear",
-            "entry_ote_bull",
-            "entry_ote_bear",
-            "entry_ifvg_bull",
-            "entry_ifvg_bear",
-            "entry_obdet_bull",
-            "entry_obdet_bear",
-        ):
-            if getattr(signals, k) == 1:
-                self.signal_stats[k.replace("entry_", "", 1) if k.startswith("entry_trigger") else k] += 1
-
-    def _check_filters(self, signals: SignalSnapshot, *, is_long: bool) -> tuple[bool, str]:
-        htf_poi_ok = signals.filter_htf_poi_bull == 1 if is_long else signals.filter_htf_poi_bear == 1
-        if not htf_poi_ok:
-            return False, "HTF POI Filter (no prior-10-bar touch of any 1H/4H OB)"
-
-        htf_aligned = signals.filter_htf_bias_bull == 1 if is_long else signals.filter_htf_bias_bear == 1
-        if not htf_aligned:
-            return False, "Trend Filter (15M/1H bias not aligned)"
-
-        if signals.filter_session_active != 1:
-            return False, "Time Filter (ICT session not active)"
-
-        return True, ""
-
-    def _filter_states(self, signals: SignalSnapshot, *, is_long: bool) -> dict[str, bool]:
-        return {
-            "time": signals.filter_session_active == 1,
-            "trend": signals.filter_htf_bias_bull == 1 if is_long else signals.filter_htf_bias_bear == 1,
-            "htf_poi": signals.filter_htf_poi_bull == 1 if is_long else signals.filter_htf_poi_bear == 1,
-        }
-
-    def _record_rejected_trigger(self, when: datetime, signals: SignalSnapshot, *, is_long: bool, reason: str) -> None:
-        states = self._filter_states(signals, is_long=is_long)
-        self.rejected_triggers.append(
-            {
-                "time": when.isoformat(),
-                "direction": "LONG" if is_long else "SHORT",
-                "signal_type": self._get_entry_signal_type(signals, is_long=is_long),
-                "rejection_reason": reason,
-                "filter_htf_poi": states["htf_poi"],
-                "filter_trend": states["trend"],
-                "filter_time": states["time"],
-            }
-        )
-
-    def _log_filter_sequence(self, when: datetime, signals: SignalSnapshot, *, is_long: bool) -> None:
-        direction = "LONG" if is_long else "SHORT"
-        states = self._filter_states(signals, is_long=is_long)
-        sequence = "HTF POI -> Trend -> Time"
-        time_state = "PASS" if states["time"] else "FAIL"
-        trend_state = "PASS" if states["trend"] else "FAIL"
-        htf_poi_state = "PASS" if states["htf_poi"] else "FAIL"
-        self.log(
-            when,
-            f"{direction} filter sequence: {sequence} | "
-            f"HTF_POI={htf_poi_state} Trend={trend_state} Time={time_state}",
-        )
-
-    def _check_stops_and_targets(self, bar: Bar) -> None:
-        if not self.active_trades:
-            return
-
-        trades_to_close: list[int] = []
-        for i, trade in enumerate(self.active_trades):
-            exit_price = None
-            result = None
-            if trade["direction"] == "LONG":
-                if bar.low <= trade["stop_price"]:
-                    exit_price = trade["stop_price"]
-                    result = "LOSS"
-                elif bar.high >= trade["target_price"]:
-                    exit_price = trade["target_price"]
-                    result = "WIN"
-            else:
-                if bar.high >= trade["stop_price"]:
-                    exit_price = trade["stop_price"]
-                    result = "LOSS"
-                elif bar.low <= trade["target_price"]:
-                    exit_price = trade["target_price"]
-                    result = "WIN"
-
-            if exit_price is None:
-                continue
-
-            pnl = (
-                (exit_price - trade["entry_price"]) * trade["size"]
-                if trade["direction"] == "LONG"
-                else (trade["entry_price"] - exit_price) * trade["size"]
-            )
-            prev_equity = self.equity
-            self.equity += pnl
-            self.cash += pnl
-            pnl_pct = (pnl / prev_equity) * 100 if prev_equity != 0 else 0.0
-
-            record = {
-                **trade,
-                "exit_time": bar.time.isoformat(),
-                "exit_price": exit_price,
-                "pnl": pnl,
-                "pnl_pct": pnl_pct,
-                "result": result,
-            }
-            self.completed_trades.append(record)
-            trades_to_close.append(i)
-            self.log(
-                bar.time,
-                "CLOSED {result} | Entry: {entry_time} @ {entry_price:.2f} | Exit: {exit_time} @ {exit_price:.2f} | "
-                "P&L: ${pnl:.2f} ({pnl_pct:.2f}%)".format(**record),
-            )
-
-        for i in reversed(trades_to_close):
-            del self.active_trades[i]
-
-    def on_bar_closed(self, bar: Bar, signals: SignalSnapshot) -> None:
-        """Mirror of Backtrader ``next()`` for one closed bar."""
-        self._track_signal_counts(signals)
-        self._check_stops_and_targets(bar)
-
-        long_trigger = signals.entry_trigger_bull == 1
-        short_trigger = signals.entry_trigger_bear == 1
-        if not long_trigger and not short_trigger:
-            return
-
-        if long_trigger:
-            self._log_filter_sequence(bar.time, signals, is_long=True)
-            ok, reason = self._check_filters(signals, is_long=True)
-            if not ok:
-                self._record_rejected_trigger(bar.time, signals, is_long=True, reason=reason)
-                if self.debug_signals:
-                    self.log(bar.time, f"LONG trigger rejected: {reason}")
-                if "Time" in reason:
-                    self.signal_stats["filter_time_rejected_bull"] += 1
-                elif "Trend" in reason:
-                    self.signal_stats["filter_trend_rejected_bull"] += 1
-                long_trigger = False
-
-        if short_trigger:
-            self._log_filter_sequence(bar.time, signals, is_long=False)
-            ok, reason = self._check_filters(signals, is_long=False)
-            if not ok:
-                self._record_rejected_trigger(bar.time, signals, is_long=False, reason=reason)
-                if self.debug_signals:
-                    self.log(bar.time, f"SHORT trigger rejected: {reason}")
-                if "Time" in reason:
-                    self.signal_stats["filter_time_rejected_bear"] += 1
-                elif "Trend" in reason:
-                    self.signal_stats["filter_trend_rejected_bear"] += 1
-                short_trigger = False
-
-        if not long_trigger and not short_trigger:
-            return
-
-        if len(self.active_trades) >= self.max_concurrent_trades:
-            if long_trigger:
-                self.signal_stats["max_trades_rejected_bull"] += 1
-                self._record_rejected_trigger(bar.time, signals, is_long=True, reason="Max concurrent trades reached")
-            if short_trigger:
-                self.signal_stats["max_trades_rejected_bear"] += 1
-                self._record_rejected_trigger(bar.time, signals, is_long=False, reason="Max concurrent trades reached")
-            return
-
-        entry_price = float(bar.close)
-        risk_cash = self.equity * self.risk_per_trade
-        buying_power = self.cash * self.leverage
-
-        if long_trigger:
-            stop = self._resolve_stop_long(signals)
-            if stop is None or stop >= entry_price:
-                self.signal_stats["stop_invalid_long"] += 1
-                return
-            rpu = entry_price - stop
-            size = min(risk_cash / rpu, buying_power / entry_price)
-            if size <= 0:
-                return
-            target = self._resolve_target_long(entry_price, rpu)
-            if target <= entry_price:
-                self.signal_stats["target_invalid_long"] += 1
-                return
-
-            self.trade_counter += 1
-            sig = self._get_entry_signal_type(signals, is_long=True)
-            self.active_trades.append(
-                {
-                    "trade_num": self.trade_counter,
-                    "direction": "LONG",
-                    "entry_time": bar.time.isoformat(),
-                    "entry_price": entry_price,
-                    "stop_price": stop,
-                    "target_price": target,
-                    "signal_type": sig,
-                    "size": size,
-                }
-            )
-            self.signal_stats["orders_placed"] += 1
-            self.log(bar.time, f"LONG entry={entry_price:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f} signal={sig}")
-
-        if short_trigger:
-            stop = self._resolve_stop_short(signals)
-            if stop is None or stop <= entry_price:
-                self.signal_stats["stop_invalid_short"] += 1
-                return
-            rpu = stop - entry_price
-            size = min(risk_cash / rpu, buying_power / entry_price)
-            if size <= 0:
-                return
-            target = self._resolve_target_short(entry_price, rpu)
-            if target >= entry_price:
-                self.signal_stats["target_invalid_short"] += 1
-                return
-
-            self.trade_counter += 1
-            sig = self._get_entry_signal_type(signals, is_long=False)
-            self.active_trades.append(
-                {
-                    "trade_num": self.trade_counter,
-                    "direction": "SHORT",
-                    "entry_time": bar.time.isoformat(),
-                    "entry_price": entry_price,
-                    "stop_price": stop,
-                    "target_price": target,
-                    "signal_type": sig,
-                    "size": size,
-                }
-            )
-            self.signal_stats["orders_placed"] += 1
-            self.log(bar.time, f"SHORT entry={entry_price:.2f} stop={stop:.2f} target={target:.2f} size={size:.4f} signal={sig}")
-
-    def summary(self) -> dict:
-        wins = sum(1 for t in self.completed_trades if t["result"] == "WIN")
-        losses = len(self.completed_trades) - wins
-        total_pnl = sum(t["pnl"] for t in self.completed_trades)
-        return {
-            "completed": len(self.completed_trades),
-            "wins": wins,
-            "losses": losses,
-            "win_rate_pct": (wins / len(self.completed_trades) * 100) if self.completed_trades else 0.0,
-            "total_pnl": total_pnl,
-            "equity": self.equity,
-            "open_trades": len(self.active_trades),
-            "orders_placed": self.signal_stats["orders_placed"],
-            "rejected_triggers": len(self.rejected_triggers),
-        }
-
-    def print_filter_statistics(self) -> None:
-        print("\n" + "=" * 100)
-        print("{:^100}".format("FILTER STATISTICS"))
-        print("=" * 100)
-
-        print("\n--- Entry Triggers Detected ---")
-        print(f"  LONG triggers:  {self.signal_stats['trigger_bull']}")
-        print(f"  SHORT triggers: {self.signal_stats['trigger_bear']}")
-
-        print("\n--- Trigger Breakdown ---")
-        print(f"  SB FVG Retrace:  LONG={self.signal_stats['entry_sb_bull']} SHORT={self.signal_stats['entry_sb_bear']}")
-        print(f"  ICT Setup 01:    LONG={self.signal_stats['entry_setup01_bull']} SHORT={self.signal_stats['entry_setup01_bear']}")
-        print(f"  Fibonacci OTE:   LONG={self.signal_stats['entry_ote_bull']} SHORT={self.signal_stats['entry_ote_bear']}")
-        print(f"  IFVG Realtime:   LONG={self.signal_stats['entry_ifvg_bull']} SHORT={self.signal_stats['entry_ifvg_bear']}")
-        print(f"  OB Detector:     LONG={self.signal_stats['entry_obdet_bull']} SHORT={self.signal_stats['entry_obdet_bear']}")
-
-        print("\n--- Filter Rejections ---")
-        print("  Time Filter (ICT Session):")
-        print(f"    LONG rejected:  {self.signal_stats['filter_time_rejected_bull']}")
-        print(f"    SHORT rejected: {self.signal_stats['filter_time_rejected_bear']}")
-        print("  Trend Filter (15M/1H Bias):")
-        print(f"    LONG rejected:  {self.signal_stats['filter_trend_rejected_bull']}")
-        print(f"    SHORT rejected: {self.signal_stats['filter_trend_rejected_bear']}")
-        print("\n--- Risk Management Rejections ---")
-        print(f"  Invalid Stop (LONG):   {self.signal_stats['stop_invalid_long']}")
-        print(f"  Invalid Stop (SHORT):  {self.signal_stats['stop_invalid_short']}")
-        print(f"  Invalid Target (LONG): {self.signal_stats['target_invalid_long']}")
-        print(f"  Invalid Target (SHORT):{self.signal_stats['target_invalid_short']}")
-
-        print("\n--- Orders Placed ---")
-        print(f"  Total orders: {self.signal_stats['orders_placed']}")
-        print("=" * 100)
-
-    def _print_detailed_report(self) -> None:
-        if not self.completed_trades:
-            print("\n" + "=" * 100)
-            print("NO TRADES COMPLETED")
-            print("=" * 100)
-            return
-
-        print("\n" + "=" * 100)
-        print("DETAILED TRADE REPORT - Silver Bullet XAUUSD Backtest")
-        print("=" * 100)
-
-        print("\n{:^100}".format("TRADE-BY-TRADE DETAILS"))
-        print("-" * 100)
-        print(
-            "{:<4} {:<6} {:<20} {:<10} {:<10} {:<10} {:<12} {:<6} {:<40}".format(
-                "#", "Dir", "Entry Time", "Entry", "Stop", "Target", "P&L", "Result", "Signal"
-            )
-        )
-        print("-" * 100)
-
-        wins = 0
-        losses = 0
-        total_pnl = 0.0
-        signal_stats: dict[str, dict[str, int | float]] = {}
-
-        for trade in self.completed_trades:
-            print(
-                "{:<4} {:<6} {:<20} {:<10.2f} {:<10.2f} {:<10.2f} ${:<11.2f} {:<6} {:<40}".format(
-                    trade["trade_num"],
-                    trade["direction"],
-                    trade["entry_time"][:19],
-                    trade["entry_price"],
-                    trade["stop_price"],
-                    trade["target_price"],
-                    trade["pnl"],
-                    trade["result"],
-                    trade["signal_type"],
-                )
-            )
-
-            if trade["result"] == "WIN":
-                wins += 1
-            else:
-                losses += 1
-            total_pnl += trade["pnl"]
-
-            sig = trade["signal_type"]
-            if sig not in signal_stats:
-                signal_stats[sig] = {"wins": 0, "losses": 0, "pnl": 0.0}
-            if trade["result"] == "WIN":
-                signal_stats[sig]["wins"] += 1
-            else:
-                signal_stats[sig]["losses"] += 1
-            signal_stats[sig]["pnl"] += trade["pnl"]
-
-        total = wins + losses
-        win_rate = (wins / total * 100) if total > 0 else 0.0
-
-        print("-" * 100)
-        print("\n{:^100}".format("SUMMARY STATISTICS"))
-        print("-" * 100)
-        print(f"Total Trades:     {total}")
-        print(f"Wins:             {wins}")
-        print(f"Losses:           {losses}")
-        print(f"Win Rate:         {win_rate:.2f}%")
-        print(f"Total P&L:        ${total_pnl:.2f}")
-        print(f"Average P&L:      ${total_pnl / total:.2f}" if total > 0 else "N/A")
-
-        print("\n{:^100}".format("PERFORMANCE BY SIGNAL TYPE"))
-        print("-" * 100)
-        print("{:<30} {:<10} {:<10} {:<12} {:<15}".format("Signal Type", "Wins", "Losses", "Win Rate", "Total P&L"))
-        print("-" * 100)
-        for sig, stats in sorted(signal_stats.items()):
-            sig_total = stats["wins"] + stats["losses"]
-            sig_win_rate = (stats["wins"] / sig_total * 100) if sig_total > 0 else 0.0
-            print(
-                "{:<30} {:<10} {:<10} {:<12.2f}% ${:<14.2f}".format(
-                    sig[:30], stats["wins"], stats["losses"], sig_win_rate, stats["pnl"]
-                )
-            )
-
-        print("=" * 100)
-
-    def print_detailed_report(self) -> None:
-        self._print_detailed_report()
-
-    def on_stop(self) -> None:
-        self._print_detailed_report()
-        if self.debug_signals:
-            self.print_filter_statistics()
-
-
-    def stop(self) -> None:
-        """Backtrader-compatible alias for end-of-run reporting."""
-        self.on_stop()
