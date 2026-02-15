@@ -19,6 +19,21 @@ from math import isnan
 from typing import Optional
 
 
+UPSTREAM_INDICATOR_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("Silver Bullet with signals", "entry_sb_bull/entry_sb_bear, entry_trigger_bull/entry_trigger_bear"),
+    ("ICT Setup 01", "entry_setup01_bull/entry_setup01_bear"),
+    ("Fibonacci OTE", "entry_ote_bull/entry_ote_bear"),
+    ("IFVG Realtime", "entry_ifvg_bull/entry_ifvg_bear"),
+    ("Order Block Detector", "entry_obdet_bull/entry_obdet_bear"),
+    ("Smart Money Zones (SMZ)", "smz_trend_15m/smz_trend_1h -> filter_htf_bias_bull/filter_htf_bias_bear"),
+    ("Market Structure MTF Trend [Pt]", "15M/1H structure color states OR-combined with SMZ for filter_htf_bias_bull/bear"),
+    ("Order Blocks & Imbalance MTF", "1H/4H OB touch lookback -> filter_htf_ob_bull/bear -> filter_htf_poi_bull/bear"),
+    ("MTF FVG x2 [MK]", "1H/4H FVG touch lookback -> filter_htf_fvg_bull/bear OR-combined into filter_htf_poi_bull/bear"),
+    ("ICT Session filter", "ict_session_active -> filter_session_active"),
+    ("Liquidity & inducements (SMC)", "liq_buyside_target/liq_sellside_target used as SL anchors"),
+)
+
+
 @dataclass
 class Bar:
     time: datetime
@@ -115,6 +130,14 @@ class SilverBulletCbotPython:
     def on_start(self, *, initial_equity: float, initial_cash: Optional[float] = None) -> None:
         self.equity = float(initial_equity)
         self.cash = float(initial_cash if initial_cash is not None else initial_equity)
+        self.log_indicator_inventory()
+
+    def log_indicator_inventory(self) -> None:
+        if not self.print_trades:
+            return
+        print("Indicator families expected by SilverBulletCbotPython (upstream-computed fields):")
+        for idx, (name, fields) in enumerate(UPSTREAM_INDICATOR_FAMILIES, start=1):
+            print(f"  {idx:02d}. {name}: {fields}")
 
     def log(self, when: datetime, message: str) -> None:
         if self.print_trades:
