@@ -250,16 +250,13 @@ class SilverBulletCbotPython:
         direction = "LONG" if is_long else "SHORT"
         states = self._filter_states(signals, is_long=is_long)
         sequence = "HTF POI -> Trend -> Time"
+        time_state = "PASS" if states["time"] else "FAIL"
+        trend_state = "PASS" if states["trend"] else "FAIL"
+        htf_poi_state = "PASS" if states["htf_poi"] else "FAIL"
         self.log(
             when,
-            "{direction} filter sequence: {sequence} | "
-            "Time={time} Trend={trend} HTF_POI={htf_poi}".format(
-                direction=direction,
-                sequence=sequence,
-                time="PASS" if states["time"] else "FAIL",
-                trend="PASS" if states["trend"] else "FAIL",
-                htf_poi="PASS" if states["htf_poi"] else "FAIL",
-            ),
+            f"{direction} filter sequence: {sequence} | "
+            f"HTF_POI={htf_poi_state} Trend={trend_state} Time={time_state}",
         )
 
     def _check_stops_and_targets(self, bar: Bar) -> None:
