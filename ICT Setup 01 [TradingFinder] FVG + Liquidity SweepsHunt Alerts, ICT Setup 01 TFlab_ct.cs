@@ -4,34 +4,34 @@ using cAlgo.API;
 namespace cAlgo
 {
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
-    public class ICTSetup01TradingFinderFVGAndLiquiditySweepsHuntAlertsICTSetup01TFlab_ct : Indicator
+    public class IctSetup01FvgLiquidityHuntIndicator : Indicator
     {
         [Parameter("FVG Detector Multiplier Factor", DefaultValue = 1.0, MinValue = 1.0, Group = "FVGs Setting")]
-        public double MATR { get; set; }
+        public double FvgDetectorMultiplier { get; set; }
 
         [Parameter("FVG Validity Period", DefaultValue = 15, MinValue = 2, Group = "FVGs Setting")]
-        public int ValLenFVG { get; set; }
+        public int FvgValidityPeriod { get; set; }
 
         [Parameter("Level in Low Risk Zone", DefaultValue = false, Group = "Discount & Premium")]
-        public bool DisANDPre { get; set; }
+        public bool UseDiscountAndPremium { get; set; }
 
         [Parameter("Issuing Signals Method", DefaultValue = "Hunt", Group = "Signal")]
-        public string IssSigM { get; set; }
+        public string SignalMethod { get; set; }
 
         [Parameter("The number of signals allowed from a Zone", DefaultValue = 3, MinValue = 1, Group = "Signal")]
-        public int NSA { get; set; }
+        public int SignalsAllowedPerZone { get; set; }
 
         [Parameter("Signal after Hunts/Sweeps", DefaultValue = false, Group = "Signal")]
-        public bool SaH { get; set; }
+        public bool SignalAfterHunts { get; set; }
 
         [Parameter("How Many Hunts/Sweeps?", DefaultValue = 2, MinValue = 1, Group = "Signal")]
-        public int HMH { get; set; }
+        public int RequiredHunts { get; set; }
 
         [Parameter("Show All Long Setup", DefaultValue = false, Group = "Show or Hide")]
-        public bool SALS { get; set; }
+        public bool ShowAllLongSetups { get; set; }
 
         [Parameter("Show All Short Setup", DefaultValue = false, Group = "Show or Hide")]
-        public bool SASS { get; set; }
+        public bool ShowAllShortSetups { get; set; }
 
         [Parameter("Alert", DefaultValue = "On", Group = "Alert")]
         public string AlertSetting { get; set; }
@@ -40,75 +40,81 @@ namespace cAlgo
         public string AlertName { get; set; }
 
         [Parameter("Message Frequency", DefaultValue = "Once Per Bar", Group = "Alert")]
-        public string Frequncy { get; set; }
+        public string Frequency { get; set; }
 
         [Parameter("Show Alert time by Time Zone", DefaultValue = "UTC", Group = "Alert")]
-        public string UTC { get; set; }
+        public string AlertTimeZone { get; set; }
 
         [Parameter("Long Position Message", DefaultValue = "Long Signal Position Based on ICT Setup 01 [FVG Hunts]", Group = "Alert")]
-        public string MessageBull { get; set; }
+        public string LongPositionMessage { get; set; }
 
         [Parameter("Short Position Message", DefaultValue = "Short Signal Position Based on ICT Setup 01 [FVG Hunts]", Group = "Alert")]
-        public string MessageBear { get; set; }
+        public string ShortPositionMessage { get; set; }
 
         private const int AtrLength = 55;
         private const string LongSignalColorHex = "#008304";
         private const string ShortSignalColorHex = "#d30000";
+        private const int DiscountPremiumDrawOffsetStart = 12;
+        private const int DiscountPremiumDrawOffsetLabel = 16;
+        private const int DiscountPremiumDrawOffsetEnd = 20;
 
-        private IndicatorDataSeries _tr;
-        private IndicatorDataSeries _atr;
+        private IndicatorDataSeries _trueRange;
+        private IndicatorDataSeries _averageTrueRange;
 
-        private IndicatorDataSeries _distalLvLBu;
-        private IndicatorDataSeries _proximalLvLBu;
-        private IndicatorDataSeries _distalLvLBe;
-        private IndicatorDataSeries _proximalLvLBe;
-        private IndicatorDataSeries _buPointSeries;
-        private IndicatorDataSeries _bePointSeries;
+        private IndicatorDataSeries _bullishDistalLevel;
+        private IndicatorDataSeries _bullishProximalLevel;
+        private IndicatorDataSeries _bearishDistalLevel;
+        private IndicatorDataSeries _bearishProximalLevel;
+        private IndicatorDataSeries _bullishFvgPointSeries;
+        private IndicatorDataSeries _bearishFvgPointSeries;
 
-        private double _buFVGDistal;
-        private double _buFVGProximal;
-        private int _buFVGPoint;
-        private double _buPremium;
-        private double _buDiscount;
-        private double _buEquilibrium;
+        private double _bullishFvgDistal;
+        private double _bullishFvgProximal;
+        private int _bullishFvgPoint;
+        private double _bullishPremium;
+        private double _bullishDiscount;
+        private double _bullishEquilibrium;
 
-        private double _beFVGDistal;
-        private double _beFVGProximal;
-        private int _beFVGPoint;
-        private double _bePremium;
-        private double _beDiscount;
-        private double _beEquilibrium;
+        private double _bearishFvgDistal;
+        private double _bearishFvgProximal;
+        private int _bearishFvgPoint;
+        private double _bearishPremium;
+        private double _bearishDiscount;
+        private double _bearishEquilibrium;
 
-        private bool _validityBuFVG = true;
-        private bool _validityBeFVG = true;
+        private bool _isBullishFvgValid = true;
+        private bool _isBearishFvgValid = true;
 
         private double _lowTracker;
         private double _highTracker;
 
-        private int _longCount;
-        private int _shortCount;
+        private int _longSignalCount;
+        private int _shortSignalCount;
 
-        private bool _longSignal;
-        private bool _shortSignal;
+        private bool _isLongSignal;
+        private bool _isShortSignal;
 
-        private bool _bullFVG;
-        private bool _bearFVG;
+        private bool _isBullishFvg;
+        private bool _isBearishFvg;
 
         private int _lastLongAlertBar = -1;
         private int _lastShortAlertBar = -1;
+        private DateTime _lastLiveBarOpenTime = DateTime.MinValue;
+        private bool _lastLiveLongSignal;
+        private bool _lastLiveShortSignal;
 
 
         protected override void Initialize()
         {
-            _tr = CreateDataSeries();
-            _atr = CreateDataSeries();
+            _trueRange = CreateDataSeries();
+            _averageTrueRange = CreateDataSeries();
 
-            _distalLvLBu = CreateDataSeries();
-            _proximalLvLBu = CreateDataSeries();
-            _distalLvLBe = CreateDataSeries();
-            _proximalLvLBe = CreateDataSeries();
-            _buPointSeries = CreateDataSeries();
-            _bePointSeries = CreateDataSeries();
+            _bullishDistalLevel = CreateDataSeries();
+            _bullishProximalLevel = CreateDataSeries();
+            _bearishDistalLevel = CreateDataSeries();
+            _bearishProximalLevel = CreateDataSeries();
+            _bullishFvgPointSeries = CreateDataSeries();
+            _bearishFvgPointSeries = CreateDataSeries();
         }
 
         public override void Calculate(int index)
@@ -117,26 +123,26 @@ namespace cAlgo
 
             if (index == 0)
             {
-                _distalLvLBu[index] = 0.0;
-                _proximalLvLBu[index] = 0.0;
-                _distalLvLBe[index] = 0.0;
-                _proximalLvLBe[index] = 0.0;
-                _buPointSeries[index] = 0.0;
-                _bePointSeries[index] = 0.0;
+                _bullishDistalLevel[index] = 0.0;
+                _bullishProximalLevel[index] = 0.0;
+                _bearishDistalLevel[index] = 0.0;
+                _bearishProximalLevel[index] = 0.0;
+                _bullishFvgPointSeries[index] = 0.0;
+                _bearishFvgPointSeries[index] = 0.0;
                 return;
             }
 
-            _distalLvLBu[index] = _distalLvLBu[index - 1];
-            _proximalLvLBu[index] = _proximalLvLBu[index - 1];
-            _distalLvLBe[index] = _distalLvLBe[index - 1];
-            _proximalLvLBe[index] = _proximalLvLBe[index - 1];
+            _bullishDistalLevel[index] = _bullishDistalLevel[index - 1];
+            _bullishProximalLevel[index] = _bullishProximalLevel[index - 1];
+            _bearishDistalLevel[index] = _bearishDistalLevel[index - 1];
+            _bearishProximalLevel[index] = _bearishProximalLevel[index - 1];
 
             var high = Bars.HighPrices[index];
             var low = Bars.LowPrices[index];
             var close = Bars.ClosePrices[index];
 
-            _bullFVG = false;
-            _bearFVG = false;
+            _isBullishFvg = false;
+            _isBearishFvg = false;
 
             if (index >= 2)
             {
@@ -144,210 +150,210 @@ namespace cAlgo
                 var low2 = Bars.LowPrices[index - 2];
                 var high1 = Bars.HighPrices[index - 1];
                 var low1 = Bars.LowPrices[index - 1];
-                var atrValue = _atr[index];
+                var atrValue = _averageTrueRange[index];
 
-                if ((high - low2) > (MATR * atrValue))
+                if ((high - low2) > (FvgDetectorMultiplier * atrValue))
                 {
                     if (low > high2 && low2 < low1 && high1 < high && (high + low2) / 2.0 >= high2)
                     {
-                        _buFVGDistal = high2;
-                        _buFVGProximal = low;
-                        _buFVGPoint = index;
-                        _buDiscount = low2;
-                        _buPremium = high;
-                        _buEquilibrium = (high + low2) / 2.0;
-                        _bullFVG = true;
+                        _bullishFvgDistal = high2;
+                        _bullishFvgProximal = low;
+                        _bullishFvgPoint = index;
+                        _bullishDiscount = low2;
+                        _bullishPremium = high;
+                        _bullishEquilibrium = (high + low2) / 2.0;
+                        _isBullishFvg = true;
                     }
                 }
 
-                if ((high2 - low) > (MATR * atrValue))
+                if ((high2 - low) > (FvgDetectorMultiplier * atrValue))
                 {
                     if (low2 > high && high2 > high1 && low1 > low && (low + high2) / 2.0 <= low2)
                     {
-                        _beFVGDistal = low2;
-                        _beFVGProximal = high;
-                        _beFVGPoint = index;
-                        _beDiscount = low;
-                        _bePremium = high2;
-                        _beEquilibrium = (low + high2) / 2.0;
-                        _bearFVG = true;
+                        _bearishFvgDistal = low2;
+                        _bearishFvgProximal = high;
+                        _bearishFvgPoint = index;
+                        _bearishDiscount = low;
+                        _bearishPremium = high2;
+                        _bearishEquilibrium = (low + high2) / 2.0;
+                        _isBearishFvg = true;
                     }
                 }
             }
 
-            if (DisANDPre)
+            if (UseDiscountAndPremium)
             {
-                if (_bullFVG)
+                if (_isBullishFvg)
                 {
-                    _distalLvLBu[index] = _buFVGDistal;
-                    _proximalLvLBu[index] = _buEquilibrium >= _buFVGProximal ? _buFVGProximal : _buEquilibrium;
+                    _bullishDistalLevel[index] = _bullishFvgDistal;
+                    _bullishProximalLevel[index] = _bullishEquilibrium >= _bullishFvgProximal ? _bullishFvgProximal : _bullishEquilibrium;
                 }
 
-                if (_bearFVG)
+                if (_isBearishFvg)
                 {
-                    _distalLvLBe[index] = _beFVGDistal;
-                    _proximalLvLBe[index] = _beEquilibrium <= _beFVGProximal ? _beFVGProximal : _beEquilibrium;
+                    _bearishDistalLevel[index] = _bearishFvgDistal;
+                    _bearishProximalLevel[index] = _bearishEquilibrium <= _bearishFvgProximal ? _bearishFvgProximal : _bearishEquilibrium;
                 }
             }
             else
             {
-                if (_bullFVG)
+                if (_isBullishFvg)
                 {
-                    _distalLvLBu[index] = _buFVGDistal;
-                    _proximalLvLBu[index] = _buFVGProximal;
+                    _bullishDistalLevel[index] = _bullishFvgDistal;
+                    _bullishProximalLevel[index] = _bullishFvgProximal;
                 }
 
-                if (_bearFVG)
+                if (_isBearishFvg)
                 {
-                    _distalLvLBe[index] = _beFVGDistal;
-                    _proximalLvLBe[index] = _beFVGProximal;
+                    _bearishDistalLevel[index] = _bearishFvgDistal;
+                    _bearishProximalLevel[index] = _bearishFvgProximal;
                 }
             }
 
             var body1 = Bars.ClosePrices[index - 1] - Bars.OpenPrices[index - 1];
-            var prevDistalBu = _distalLvLBu[index - 1];
-            var prevProximalBu = _proximalLvLBu[index - 1];
-            var prevDistalBe = _distalLvLBe[index - 1];
-            var prevProximalBe = _proximalLvLBe[index - 1];
+            var prevDistalBu = _bullishDistalLevel[index - 1];
+            var prevProximalBu = _bullishProximalLevel[index - 1];
+            var prevDistalBe = _bearishDistalLevel[index - 1];
+            var prevProximalBe = _bearishProximalLevel[index - 1];
 
-            if (_validityBuFVG)
+            if (_isBullishFvgValid)
             {
                 if (body1 > 0)
                 {
-                    var sweepCheck = IssSigM == "Sweeps"
+                    var sweepCheck = SignalMethod == "Sweeps"
                         ? Bars.OpenPrices[index - 1] < prevDistalBu
                         : Bars.LowPrices[index - 1] < prevDistalBu;
 
-                    if (sweepCheck || index > _buFVGPoint + ValLenFVG || (!SaH && _longCount > NSA - 1))
-                        _validityBuFVG = false;
+                    if (sweepCheck || index > _bullishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _longSignalCount > SignalsAllowedPerZone - 1))
+                        _isBullishFvgValid = false;
                     else if (Bars.OpenPrices[index - 1] < prevProximalBu && Bars.OpenPrices[index - 1] > prevDistalBu)
-                        _proximalLvLBu[index] = Bars.OpenPrices[index - 1];
+                        _bullishProximalLevel[index] = Bars.OpenPrices[index - 1];
                 }
 
                 if (body1 <= 0)
                 {
-                    var sweepCheck = IssSigM == "Sweeps"
+                    var sweepCheck = SignalMethod == "Sweeps"
                         ? Bars.ClosePrices[index - 1] < prevDistalBu
                         : Bars.LowPrices[index - 1] < prevDistalBu;
 
-                    if (sweepCheck || index > _buFVGPoint + ValLenFVG || (!SaH && _longCount > NSA - 1))
-                        _validityBuFVG = false;
+                    if (sweepCheck || index > _bullishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _longSignalCount > SignalsAllowedPerZone - 1))
+                        _isBullishFvgValid = false;
                     else if (Bars.ClosePrices[index - 1] < prevProximalBu && Bars.ClosePrices[index - 1] > prevDistalBu)
-                        _proximalLvLBu[index] = Bars.ClosePrices[index - 1];
+                        _bullishProximalLevel[index] = Bars.ClosePrices[index - 1];
                 }
             }
 
-            if (_validityBeFVG)
+            if (_isBearishFvgValid)
             {
                 if (body1 > 0)
                 {
-                    var sweepCheck = IssSigM == "Sweeps"
+                    var sweepCheck = SignalMethod == "Sweeps"
                         ? Bars.ClosePrices[index - 1] > prevDistalBe
                         : Bars.HighPrices[index - 1] > prevDistalBe;
 
-                    if (sweepCheck || index > _beFVGPoint + ValLenFVG || (!SaH && _shortCount > NSA - 1))
-                        _validityBeFVG = false;
+                    if (sweepCheck || index > _bearishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _shortSignalCount > SignalsAllowedPerZone - 1))
+                        _isBearishFvgValid = false;
                     else if (Bars.ClosePrices[index - 1] > prevProximalBe && Bars.ClosePrices[index - 1] < prevDistalBe)
-                        _proximalLvLBe[index] = Bars.ClosePrices[index - 1];
+                        _bearishProximalLevel[index] = Bars.ClosePrices[index - 1];
                 }
 
                 if (body1 <= 0)
                 {
-                    var sweepCheck = IssSigM == "Sweeps"
+                    var sweepCheck = SignalMethod == "Sweeps"
                         ? Bars.OpenPrices[index - 1] > prevDistalBe
                         : Bars.HighPrices[index - 1] > prevDistalBe;
 
-                    if (sweepCheck || index > _beFVGPoint + ValLenFVG || (!SaH && _shortCount > NSA - 1))
-                        _validityBeFVG = false;
+                    if (sweepCheck || index > _bearishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _shortSignalCount > SignalsAllowedPerZone - 1))
+                        _isBearishFvgValid = false;
                     else if (Bars.OpenPrices[index - 1] > prevProximalBe && Bars.OpenPrices[index - 1] < prevDistalBe)
-                        _proximalLvLBe[index] = Bars.OpenPrices[index - 1];
+                        _bearishProximalLevel[index] = Bars.OpenPrices[index - 1];
                 }
             }
 
-            if (_buPointSeries[index - 1] != _buFVGPoint)
+            if (_bullishFvgPointSeries[index - 1] != _bullishFvgPoint)
             {
-                _validityBuFVG = true;
+                _isBullishFvgValid = true;
                 _lowTracker = 0.0;
-                _longCount = 0;
-                _longSignal = false;
+                _longSignalCount = 0;
+                _isLongSignal = false;
             }
 
-            if (_bePointSeries[index - 1] != _beFVGPoint)
+            if (_bearishFvgPointSeries[index - 1] != _bearishFvgPoint)
             {
-                _validityBeFVG = true;
+                _isBearishFvgValid = true;
                 _highTracker = 0.0;
-                _shortCount = 0;
-                _shortSignal = false;
+                _shortSignalCount = 0;
+                _isShortSignal = false;
             }
 
-            if (_validityBuFVG)
+            if (_isBullishFvgValid)
             {
-                if (_lowTracker == 0.0 && low < _proximalLvLBu[index])
+                if (_lowTracker == 0.0 && low < _bullishProximalLevel[index])
                     _lowTracker = low;
 
                 if (low < _lowTracker && _lowTracker > 0.0)
                 {
                     _lowTracker = low;
-                    if (close >= _proximalLvLBu[index])
+                    if (close >= _bullishProximalLevel[index])
                     {
-                        _longCount += 1;
-                        if (SaH)
-                            _longSignal = _longCount == HMH;
+                        _longSignalCount += 1;
+                        if (SignalAfterHunts)
+                            _isLongSignal = _longSignalCount == RequiredHunts;
                         else
-                            _longSignal = true;
+                            _isLongSignal = true;
                     }
                     else
                     {
-                        _longSignal = false;
+                        _isLongSignal = false;
                     }
                 }
                 else
                 {
-                    _longSignal = false;
+                    _isLongSignal = false;
                 }
             }
             else
             {
                 _lowTracker = 0.0;
-                _longCount = 0;
-                _longSignal = false;
+                _longSignalCount = 0;
+                _isLongSignal = false;
             }
 
-            if (_validityBeFVG)
+            if (_isBearishFvgValid)
             {
-                if (_highTracker == 0.0 && high > _proximalLvLBe[index])
+                if (_highTracker == 0.0 && high > _bearishProximalLevel[index])
                     _highTracker = high;
 
                 if (high > _highTracker && _highTracker > 0.0)
                 {
                     _highTracker = high;
-                    if (close <= _proximalLvLBe[index])
+                    if (close <= _bearishProximalLevel[index])
                     {
-                        _shortCount += 1;
-                        if (SaH)
-                            _shortSignal = _shortCount == HMH;
+                        _shortSignalCount += 1;
+                        if (SignalAfterHunts)
+                            _isShortSignal = _shortSignalCount == RequiredHunts;
                         else
-                            _shortSignal = true;
+                            _isShortSignal = true;
                     }
                     else
                     {
-                        _shortSignal = false;
+                        _isShortSignal = false;
                     }
                 }
                 else
                 {
-                    _shortSignal = false;
+                    _isShortSignal = false;
                 }
             }
             else
             {
                 _highTracker = 0.0;
-                _shortCount = 0;
-                _shortSignal = false;
+                _shortSignalCount = 0;
+                _isShortSignal = false;
             }
 
-            _buPointSeries[index] = _buFVGPoint;
-            _bePointSeries[index] = _beFVGPoint;
+            _bullishFvgPointSeries[index] = _bullishFvgPoint;
+            _bearishFvgPointSeries[index] = _bearishFvgPoint;
 
             DrawSignals(index);
             DrawCurrentZones(index);
@@ -361,8 +367,8 @@ namespace cAlgo
 
             if (index == 0)
             {
-                _tr[index] = high - low;
-                _atr[index] = double.NaN;
+                _trueRange[index] = high - low;
+                _averageTrueRange[index] = double.NaN;
                 return;
             }
 
@@ -370,11 +376,11 @@ namespace cAlgo
             var tr1 = high - low;
             var tr2 = Math.Abs(high - prevClose);
             var tr3 = Math.Abs(low - prevClose);
-            _tr[index] = Math.Max(tr1, Math.Max(tr2, tr3));
+            _trueRange[index] = Math.Max(tr1, Math.Max(tr2, tr3));
 
             if (index < AtrLength - 1)
             {
-                _atr[index] = double.NaN;
+                _averageTrueRange[index] = double.NaN;
                 return;
             }
 
@@ -382,13 +388,13 @@ namespace cAlgo
             {
                 var sum = 0.0;
                 for (var i = 0; i < AtrLength; i++)
-                    sum += _tr[i];
+                    sum += _trueRange[i];
 
-                _atr[index] = sum / AtrLength;
+                _averageTrueRange[index] = sum / AtrLength;
                 return;
             }
 
-            _atr[index] = ((_atr[index - 1] * (AtrLength - 1)) + _tr[index]) / AtrLength;
+            _averageTrueRange[index] = ((_averageTrueRange[index - 1] * (AtrLength - 1)) + _trueRange[index]) / AtrLength;
         }
 
         private void DrawSignals(int index)
@@ -396,12 +402,12 @@ namespace cAlgo
             var longSignalId = $"long_signal_{index}";
             var shortSignalId = $"short_signal_{index}";
 
-            if (_longSignal)
+            if (_isLongSignal)
                 Chart.DrawIcon(longSignalId, ChartIconType.UpTriangle, index, Bars.LowPrices[index], Color.FromHex(LongSignalColorHex));
             else
                 Chart.RemoveObject(longSignalId);
 
-            if (_shortSignal)
+            if (_isShortSignal)
                 Chart.DrawIcon(shortSignalId, ChartIconType.DownTriangle, index, Bars.HighPrices[index], Color.FromHex(ShortSignalColorHex));
             else
                 Chart.RemoveObject(shortSignalId);
@@ -409,28 +415,28 @@ namespace cAlgo
 
         private void DrawCurrentZones(int index)
         {
-            if (_validityBuFVG && _buFVGPoint > 0 && index <= _buFVGPoint + ValLenFVG)
+            if (_isBullishFvgValid && _bullishFvgPoint > 0 && index <= _bullishFvgPoint + FvgValidityPeriod)
             {
-                var bullDistalId = $"bull_distal_{_buFVGPoint}";
-                var bullProximalId = $"bull_proximal_{_buFVGPoint}";
-                var bullFillId = $"bull_fill_{_buFVGPoint}";
-                var bullLabelId = $"bull_lbl_{_buFVGPoint}";
+                var bullDistalId = $"bull_distal_{_bullishFvgPoint}";
+                var bullProximalId = $"bull_proximal_{_bullishFvgPoint}";
+                var bullFillId = $"bull_fill_{_bullishFvgPoint}";
+                var bullLabelId = $"bull_lbl_{_bullishFvgPoint}";
 
-                Chart.DrawTrendLine(bullDistalId, _buFVGPoint, _distalLvLBu[index], index, _distalLvLBu[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
-                Chart.DrawTrendLine(bullProximalId, _buFVGPoint, _proximalLvLBu[index], index, _proximalLvLBu[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
-                var bullFill = Chart.DrawRectangle(bullFillId, _buFVGPoint, _distalLvLBu[index], index, _proximalLvLBu[index], Color.FromArgb(77, 76, 175, 79));
+                Chart.DrawTrendLine(bullDistalId, _bullishFvgPoint, _bullishDistalLevel[index], index, _bullishDistalLevel[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
+                Chart.DrawTrendLine(bullProximalId, _bullishFvgPoint, _bullishProximalLevel[index], index, _bullishProximalLevel[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
+                var bullFill = Chart.DrawRectangle(bullFillId, _bullishFvgPoint, _bullishDistalLevel[index], index, _bullishProximalLevel[index], Color.FromArgb(77, 76, 175, 79));
                 bullFill.IsFilled = true;
                 bullFill.IsInteractive = false;
-                Chart.DrawText(bullLabelId, "FVG", _buFVGPoint + 1, _distalLvLBu[index], Color.Black);
+                Chart.DrawText(bullLabelId, "FVG", _bullishFvgPoint + 1, _bullishDistalLevel[index], Color.Black);
             }
 
-            if (_bullFVG)
+            if (_isBullishFvg)
             {
-                DrawBullDiscountPremium(_buFVGPoint);
-                if (!SALS)
+                DrawBullDiscountPremium(_bullishFvgPoint);
+                if (!ShowAllLongSetups)
                 {
-                    var previousPoint = (int)_buPointSeries[index - 1];
-                    if (previousPoint > 0 && previousPoint != _buFVGPoint)
+                    var previousPoint = (int)_bullishFvgPointSeries[index - 1];
+                    if (previousPoint > 0 && previousPoint != _bullishFvgPoint)
                     {
                         Chart.RemoveObject($"bull_distal_{previousPoint}");
                         Chart.RemoveObject($"bull_proximal_{previousPoint}");
@@ -441,28 +447,28 @@ namespace cAlgo
                 }
             }
 
-            if (_validityBeFVG && _beFVGPoint > 0 && index <= _beFVGPoint + ValLenFVG)
+            if (_isBearishFvgValid && _bearishFvgPoint > 0 && index <= _bearishFvgPoint + FvgValidityPeriod)
             {
-                var bearDistalId = $"bear_distal_{_beFVGPoint}";
-                var bearProximalId = $"bear_proximal_{_beFVGPoint}";
-                var bearFillId = $"bear_fill_{_beFVGPoint}";
-                var bearLabelId = $"bear_lbl_{_beFVGPoint}";
+                var bearDistalId = $"bear_distal_{_bearishFvgPoint}";
+                var bearProximalId = $"bear_proximal_{_bearishFvgPoint}";
+                var bearFillId = $"bear_fill_{_bearishFvgPoint}";
+                var bearLabelId = $"bear_lbl_{_bearishFvgPoint}";
 
-                Chart.DrawTrendLine(bearDistalId, _beFVGPoint, _distalLvLBe[index], index, _distalLvLBe[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
-                Chart.DrawTrendLine(bearProximalId, _beFVGPoint, _proximalLvLBe[index], index, _proximalLvLBe[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
-                var bearFill = Chart.DrawRectangle(bearFillId, _beFVGPoint, _distalLvLBe[index], index, _proximalLvLBe[index], Color.FromArgb(77, 255, 49, 49));
+                Chart.DrawTrendLine(bearDistalId, _bearishFvgPoint, _bearishDistalLevel[index], index, _bearishDistalLevel[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
+                Chart.DrawTrendLine(bearProximalId, _bearishFvgPoint, _bearishProximalLevel[index], index, _bearishProximalLevel[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
+                var bearFill = Chart.DrawRectangle(bearFillId, _bearishFvgPoint, _bearishDistalLevel[index], index, _bearishProximalLevel[index], Color.FromArgb(77, 255, 49, 49));
                 bearFill.IsFilled = true;
                 bearFill.IsInteractive = false;
-                Chart.DrawText(bearLabelId, "FVG", _beFVGPoint + 1, _distalLvLBe[index], Color.Black);
+                Chart.DrawText(bearLabelId, "FVG", _bearishFvgPoint + 1, _bearishDistalLevel[index], Color.Black);
             }
 
-            if (_bearFVG)
+            if (_isBearishFvg)
             {
-                DrawBearDiscountPremium(_beFVGPoint);
-                if (!SASS)
+                DrawBearDiscountPremium(_bearishFvgPoint);
+                if (!ShowAllShortSetups)
                 {
-                    var previousPoint = (int)_bePointSeries[index - 1];
-                    if (previousPoint > 0 && previousPoint != _beFVGPoint)
+                    var previousPoint = (int)_bearishFvgPointSeries[index - 1];
+                    if (previousPoint > 0 && previousPoint != _bearishFvgPoint)
                     {
                         Chart.RemoveObject($"bear_distal_{previousPoint}");
                         Chart.RemoveObject($"bear_proximal_{previousPoint}");
@@ -476,7 +482,7 @@ namespace cAlgo
 
         private void DrawBullDiscountPremium(int point)
         {
-            if (!DisANDPre)
+            if (!UseDiscountAndPremium)
                 return;
 
             var discountLineId = $"bull_discount_line_{point}";
@@ -488,26 +494,26 @@ namespace cAlgo
             var premLabelId = $"bull_premium_lbl_{point}";
             var equiLabelId = $"bull_equilibrium_lbl_{point}";
 
-            Chart.DrawTrendLine(discountLineId, point + 12, _buDiscount, point + 20, _buDiscount, Color.Transparent);
-            Chart.DrawTrendLine(premiumLineId, point + 12, _buPremium, point + 20, _buPremium, Color.Transparent);
-            Chart.DrawTrendLine(equilibriumLineId, point + 12, _buEquilibrium, point + 20, _buEquilibrium, Color.Transparent);
+            Chart.DrawTrendLine(discountLineId, point + DiscountPremiumDrawOffsetStart, _bullishDiscount, point + DiscountPremiumDrawOffsetEnd, _bullishDiscount, Color.Transparent);
+            Chart.DrawTrendLine(premiumLineId, point + DiscountPremiumDrawOffsetStart, _bullishPremium, point + DiscountPremiumDrawOffsetEnd, _bullishPremium, Color.Transparent);
+            Chart.DrawTrendLine(equilibriumLineId, point + DiscountPremiumDrawOffsetStart, _bullishEquilibrium, point + DiscountPremiumDrawOffsetEnd, _bullishEquilibrium, Color.Transparent);
 
-            var disRect = Chart.DrawRectangle(disRectId, point + 12, _buDiscount, point + 20, _buEquilibrium, Color.FromArgb(110, 211, 238, 255));
+            var disRect = Chart.DrawRectangle(disRectId, point + DiscountPremiumDrawOffsetStart, _bullishDiscount, point + DiscountPremiumDrawOffsetEnd, _bullishEquilibrium, Color.FromArgb(110, 211, 238, 255));
             disRect.IsFilled = true;
             disRect.IsInteractive = false;
 
-            var premRect = Chart.DrawRectangle(premRectId, point + 12, _buPremium, point + 20, _buEquilibrium, Color.FromArgb(75, 255, 165, 100));
+            var premRect = Chart.DrawRectangle(premRectId, point + DiscountPremiumDrawOffsetStart, _bullishPremium, point + DiscountPremiumDrawOffsetEnd, _bullishEquilibrium, Color.FromArgb(75, 255, 165, 100));
             premRect.IsFilled = true;
             premRect.IsInteractive = false;
 
-            Chart.DrawText(disLabelId, "Discount", point + 16, _buDiscount, Color.Black);
-            Chart.DrawText(premLabelId, "Premium", point + 16, _buPremium, Color.Black);
-            Chart.DrawText(equiLabelId, "EQU", point + 16, _buEquilibrium, Color.Black);
+            Chart.DrawText(disLabelId, "Discount", point + DiscountPremiumDrawOffsetLabel, _bullishDiscount, Color.Black);
+            Chart.DrawText(premLabelId, "Premium", point + DiscountPremiumDrawOffsetLabel, _bullishPremium, Color.Black);
+            Chart.DrawText(equiLabelId, "EQU", point + DiscountPremiumDrawOffsetLabel, _bullishEquilibrium, Color.Black);
         }
 
         private void DrawBearDiscountPremium(int point)
         {
-            if (!DisANDPre)
+            if (!UseDiscountAndPremium)
                 return;
 
             var premiumLineId = $"bear_premium_line_{point}";
@@ -519,21 +525,21 @@ namespace cAlgo
             var premLabelId = $"bear_premium_lbl_{point}";
             var equiLabelId = $"bear_equilibrium_lbl_{point}";
 
-            Chart.DrawTrendLine(premiumLineId, point + 12, _bePremium, point + 20, _bePremium, Color.Transparent);
-            Chart.DrawTrendLine(discountLineId, point + 12, _beDiscount, point + 20, _beDiscount, Color.Transparent);
-            Chart.DrawTrendLine(equilibriumLineId, point + 12, _beEquilibrium, point + 20, _beEquilibrium, Color.Transparent);
+            Chart.DrawTrendLine(premiumLineId, point + DiscountPremiumDrawOffsetStart, _bearishPremium, point + DiscountPremiumDrawOffsetEnd, _bearishPremium, Color.Transparent);
+            Chart.DrawTrendLine(discountLineId, point + DiscountPremiumDrawOffsetStart, _bearishDiscount, point + DiscountPremiumDrawOffsetEnd, _bearishDiscount, Color.Transparent);
+            Chart.DrawTrendLine(equilibriumLineId, point + DiscountPremiumDrawOffsetStart, _bearishEquilibrium, point + DiscountPremiumDrawOffsetEnd, _bearishEquilibrium, Color.Transparent);
 
-            var disRect = Chart.DrawRectangle(disRectId, point + 12, _beDiscount, point + 20, _beEquilibrium, Color.FromArgb(110, 211, 238, 255));
+            var disRect = Chart.DrawRectangle(disRectId, point + DiscountPremiumDrawOffsetStart, _bearishDiscount, point + DiscountPremiumDrawOffsetEnd, _bearishEquilibrium, Color.FromArgb(110, 211, 238, 255));
             disRect.IsFilled = true;
             disRect.IsInteractive = false;
 
-            var premRect = Chart.DrawRectangle(premRectId, point + 12, _bePremium, point + 20, _beEquilibrium, Color.FromArgb(75, 255, 165, 100));
+            var premRect = Chart.DrawRectangle(premRectId, point + DiscountPremiumDrawOffsetStart, _bearishPremium, point + DiscountPremiumDrawOffsetEnd, _bearishEquilibrium, Color.FromArgb(75, 255, 165, 100));
             premRect.IsFilled = true;
             premRect.IsInteractive = false;
 
-            Chart.DrawText(disLabelId, "Discount", point + 16, _beDiscount, Color.Black);
-            Chart.DrawText(premLabelId, "Premium", point + 16, _bePremium, Color.Black);
-            Chart.DrawText(equiLabelId, "EQU", point + 16, _beEquilibrium, Color.Black);
+            Chart.DrawText(disLabelId, "Discount", point + DiscountPremiumDrawOffsetLabel, _bearishDiscount, Color.Black);
+            Chart.DrawText(premLabelId, "Premium", point + DiscountPremiumDrawOffsetLabel, _bearishPremium, Color.Black);
+            Chart.DrawText(equiLabelId, "EQU", point + DiscountPremiumDrawOffsetLabel, _bearishEquilibrium, Color.Black);
         }
 
         private void RemoveBullDiscountPremium(int point)
@@ -568,23 +574,62 @@ namespace cAlgo
 
         private void EmitAlerts(int index)
         {
-            if (AlertSetting != "On")
+            if (!string.Equals(AlertSetting, "On", StringComparison.OrdinalIgnoreCase))
                 return;
 
             if (index != Bars.Count - 1)
                 return;
 
-            if (_longSignal && _lastLongAlertBar != index)
+            var frequencyMode = Frequency ?? "Once Per Bar";
+            var isNewLiveBar = _lastLiveBarOpenTime != DateTime.MinValue && Bars.OpenTimes[index] != _lastLiveBarOpenTime;
+
+            if (string.Equals(frequencyMode, "Per Bar Close", StringComparison.OrdinalIgnoreCase))
             {
-                Print("{0} | LONG | Bar={1} | {2}", AlertName, index, MessageBull);
-                _lastLongAlertBar = index;
+                if (isNewLiveBar)
+                {
+                    var closedBarIndex = index - 1;
+                    if (_lastLiveLongSignal && _lastLongAlertBar != closedBarIndex)
+                    {
+                        Print("{0} | LONG | Bar={1} | TZ={2} | {3}", AlertName, closedBarIndex, AlertTimeZone, LongPositionMessage);
+                        _lastLongAlertBar = closedBarIndex;
+                    }
+
+                    if (_lastLiveShortSignal && _lastShortAlertBar != closedBarIndex)
+                    {
+                        Print("{0} | SHORT | Bar={1} | TZ={2} | {3}", AlertName, closedBarIndex, AlertTimeZone, ShortPositionMessage);
+                        _lastShortAlertBar = closedBarIndex;
+                    }
+                }
+
+                _lastLiveLongSignal = _isLongSignal;
+                _lastLiveShortSignal = _isShortSignal;
+                _lastLiveBarOpenTime = Bars.OpenTimes[index];
+                return;
             }
 
-            if (_shortSignal && _lastShortAlertBar != index)
+            if (_isLongSignal)
             {
-                Print("{0} | SHORT | Bar={1} | {2}", AlertName, index, MessageBear);
-                _lastShortAlertBar = index;
+                if (string.Equals(frequencyMode, "All", StringComparison.OrdinalIgnoreCase) || _lastLongAlertBar != index)
+                {
+                    Print("{0} | LONG | Bar={1} | TZ={2} | {3}", AlertName, index, AlertTimeZone, LongPositionMessage);
+                    if (!string.Equals(frequencyMode, "All", StringComparison.OrdinalIgnoreCase))
+                        _lastLongAlertBar = index;
+                }
             }
+
+            if (_isShortSignal)
+            {
+                if (string.Equals(frequencyMode, "All", StringComparison.OrdinalIgnoreCase) || _lastShortAlertBar != index)
+                {
+                    Print("{0} | SHORT | Bar={1} | TZ={2} | {3}", AlertName, index, AlertTimeZone, ShortPositionMessage);
+                    if (!string.Equals(frequencyMode, "All", StringComparison.OrdinalIgnoreCase))
+                        _lastShortAlertBar = index;
+                }
+            }
+
+            _lastLiveLongSignal = _isLongSignal;
+            _lastLiveShortSignal = _isShortSignal;
+            _lastLiveBarOpenTime = Bars.OpenTimes[index];
         }
     }
 }
