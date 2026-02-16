@@ -39,6 +39,12 @@ namespace cAlgo
         [Parameter("Alert Name", DefaultValue = "ICT Setup 01 Alerts [TradingFinder]", Group = "Alert")]
         public string AlertName { get; set; }
 
+        [Parameter("Message Frequency", DefaultValue = "Once Per Bar", Group = "Alert")]
+        public string Frequncy { get; set; }
+
+        [Parameter("Show Alert time by Time Zone", DefaultValue = "UTC", Group = "Alert")]
+        public string UTC { get; set; }
+
         [Parameter("Long Position Message", DefaultValue = "Long Signal Position Based on ICT Setup 01 [FVG Hunts]", Group = "Alert")]
         public string MessageBull { get; set; }
 
@@ -46,6 +52,8 @@ namespace cAlgo
         public string MessageBear { get; set; }
 
         private const int AtrLength = 55;
+        private const string LongSignalColorHex = "#008304";
+        private const string ShortSignalColorHex = "#d30000";
 
         private IndicatorDataSeries _tr;
         private IndicatorDataSeries _atr;
@@ -85,6 +93,9 @@ namespace cAlgo
 
         private bool _bullFVG;
         private bool _bearFVG;
+
+        private int _lastLongAlertBar = -1;
+        private int _lastShortAlertBar = -1;
 
 
         protected override void Initialize()
@@ -350,7 +361,7 @@ namespace cAlgo
 
             if (index == 0)
             {
-                _tr[index] = double.NaN;
+                _tr[index] = high - low;
                 _atr[index] = double.NaN;
                 return;
             }
@@ -361,63 +372,61 @@ namespace cAlgo
             var tr3 = Math.Abs(low - prevClose);
             _tr[index] = Math.Max(tr1, Math.Max(tr2, tr3));
 
-            if (index < AtrLength)
+            if (index < AtrLength - 1)
             {
-                var sum = 0.0;
-                var count = 0;
-                for (var i = 0; i <= index; i++)
-                {
-                    var v = _tr[i];
-                    if (double.IsNaN(v))
-                        continue;
-                    sum += v;
-                    count++;
-                }
-
-                _atr[index] = count > 0 ? sum / count : double.NaN;
+                _atr[index] = double.NaN;
                 return;
             }
 
-            var rollingSum = 0.0;
-            var rollingCount = 0;
-            var start = index - AtrLength + 1;
-            for (var i = start; i <= index; i++)
+            if (index == AtrLength - 1)
             {
-                var v = _tr[i];
-                if (double.IsNaN(v))
-                    continue;
-                rollingSum += v;
-                rollingCount++;
+                var sum = 0.0;
+                for (var i = 0; i < AtrLength; i++)
+                    sum += _tr[i];
+
+                _atr[index] = sum / AtrLength;
+                return;
             }
 
-            _atr[index] = rollingCount == AtrLength ? rollingSum / AtrLength : double.NaN;
+            _atr[index] = ((_atr[index - 1] * (AtrLength - 1)) + _tr[index]) / AtrLength;
         }
 
         private void DrawSignals(int index)
         {
+            var longSignalId = $"long_signal_{index}";
+            var shortSignalId = $"short_signal_{index}";
+
             if (_longSignal)
-            {
-                Chart.DrawIcon($"long_signal_{index}", ChartIconType.UpTriangle, index, Bars.LowPrices[index], Color.Green);
-            }
+                Chart.DrawIcon(longSignalId, ChartIconType.UpTriangle, index, Bars.LowPrices[index], Color.FromHex(LongSignalColorHex));
+            else
+                Chart.RemoveObject(longSignalId);
 
             if (_shortSignal)
-            {
-                Chart.DrawIcon($"short_signal_{index}", ChartIconType.DownTriangle, index, Bars.HighPrices[index], Color.Red);
-            }
+                Chart.DrawIcon(shortSignalId, ChartIconType.DownTriangle, index, Bars.HighPrices[index], Color.FromHex(ShortSignalColorHex));
+            else
+                Chart.RemoveObject(shortSignalId);
         }
 
         private void DrawCurrentZones(int index)
         {
-            if (_bullFVG)
+            if (_validityBuFVG && _buFVGPoint > 0 && index <= _buFVGPoint + ValLenFVG)
             {
                 var bullDistalId = $"bull_distal_{_buFVGPoint}";
                 var bullProximalId = $"bull_proximal_{_buFVGPoint}";
+                var bullFillId = $"bull_fill_{_buFVGPoint}";
                 var bullLabelId = $"bull_lbl_{_buFVGPoint}";
 
                 Chart.DrawTrendLine(bullDistalId, _buFVGPoint, _distalLvLBu[index], index, _distalLvLBu[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
                 Chart.DrawTrendLine(bullProximalId, _buFVGPoint, _proximalLvLBu[index], index, _proximalLvLBu[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
+                var bullFill = Chart.DrawRectangle(bullFillId, _buFVGPoint, _distalLvLBu[index], index, _proximalLvLBu[index], Color.FromArgb(77, 76, 175, 79));
+                bullFill.IsFilled = true;
+                bullFill.IsInteractive = false;
                 Chart.DrawText(bullLabelId, "FVG", _buFVGPoint + 1, _distalLvLBu[index], Color.Black);
+            }
 
+            if (_bullFVG)
+            {
+                DrawBullDiscountPremium(_buFVGPoint);
                 if (!SALS)
                 {
                     var previousPoint = (int)_buPointSeries[index - 1];
@@ -425,21 +434,31 @@ namespace cAlgo
                     {
                         Chart.RemoveObject($"bull_distal_{previousPoint}");
                         Chart.RemoveObject($"bull_proximal_{previousPoint}");
+                        Chart.RemoveObject($"bull_fill_{previousPoint}");
                         Chart.RemoveObject($"bull_lbl_{previousPoint}");
+                        RemoveBullDiscountPremium(previousPoint);
                     }
                 }
             }
 
-            if (_bearFVG)
+            if (_validityBeFVG && _beFVGPoint > 0 && index <= _beFVGPoint + ValLenFVG)
             {
                 var bearDistalId = $"bear_distal_{_beFVGPoint}";
                 var bearProximalId = $"bear_proximal_{_beFVGPoint}";
+                var bearFillId = $"bear_fill_{_beFVGPoint}";
                 var bearLabelId = $"bear_lbl_{_beFVGPoint}";
 
                 Chart.DrawTrendLine(bearDistalId, _beFVGPoint, _distalLvLBe[index], index, _distalLvLBe[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
                 Chart.DrawTrendLine(bearProximalId, _beFVGPoint, _proximalLvLBe[index], index, _proximalLvLBe[index], Color.FromArgb(186, 8, 8, 8), 1, LineStyle.LinesDots);
+                var bearFill = Chart.DrawRectangle(bearFillId, _beFVGPoint, _distalLvLBe[index], index, _proximalLvLBe[index], Color.FromArgb(77, 255, 49, 49));
+                bearFill.IsFilled = true;
+                bearFill.IsInteractive = false;
                 Chart.DrawText(bearLabelId, "FVG", _beFVGPoint + 1, _distalLvLBe[index], Color.Black);
+            }
 
+            if (_bearFVG)
+            {
+                DrawBearDiscountPremium(_beFVGPoint);
                 if (!SASS)
                 {
                     var previousPoint = (int)_bePointSeries[index - 1];
@@ -447,10 +466,104 @@ namespace cAlgo
                     {
                         Chart.RemoveObject($"bear_distal_{previousPoint}");
                         Chart.RemoveObject($"bear_proximal_{previousPoint}");
+                        Chart.RemoveObject($"bear_fill_{previousPoint}");
                         Chart.RemoveObject($"bear_lbl_{previousPoint}");
+                        RemoveBearDiscountPremium(previousPoint);
                     }
                 }
             }
+        }
+
+        private void DrawBullDiscountPremium(int point)
+        {
+            if (!DisANDPre)
+                return;
+
+            var discountLineId = $"bull_discount_line_{point}";
+            var premiumLineId = $"bull_premium_line_{point}";
+            var equilibriumLineId = $"bull_equilibrium_line_{point}";
+            var disRectId = $"bull_discount_fill_{point}";
+            var premRectId = $"bull_premium_fill_{point}";
+            var disLabelId = $"bull_discount_lbl_{point}";
+            var premLabelId = $"bull_premium_lbl_{point}";
+            var equiLabelId = $"bull_equilibrium_lbl_{point}";
+
+            Chart.DrawTrendLine(discountLineId, point + 12, _buDiscount, point + 20, _buDiscount, Color.Transparent);
+            Chart.DrawTrendLine(premiumLineId, point + 12, _buPremium, point + 20, _buPremium, Color.Transparent);
+            Chart.DrawTrendLine(equilibriumLineId, point + 12, _buEquilibrium, point + 20, _buEquilibrium, Color.Transparent);
+
+            var disRect = Chart.DrawRectangle(disRectId, point + 12, _buDiscount, point + 20, _buEquilibrium, Color.FromArgb(110, 211, 238, 255));
+            disRect.IsFilled = true;
+            disRect.IsInteractive = false;
+
+            var premRect = Chart.DrawRectangle(premRectId, point + 12, _buPremium, point + 20, _buEquilibrium, Color.FromArgb(75, 255, 165, 100));
+            premRect.IsFilled = true;
+            premRect.IsInteractive = false;
+
+            Chart.DrawText(disLabelId, "Discount", point + 16, _buDiscount, Color.Black);
+            Chart.DrawText(premLabelId, "Premium", point + 16, _buPremium, Color.Black);
+            Chart.DrawText(equiLabelId, "EQU", point + 16, _buEquilibrium, Color.Black);
+        }
+
+        private void DrawBearDiscountPremium(int point)
+        {
+            if (!DisANDPre)
+                return;
+
+            var premiumLineId = $"bear_premium_line_{point}";
+            var discountLineId = $"bear_discount_line_{point}";
+            var equilibriumLineId = $"bear_equilibrium_line_{point}";
+            var disRectId = $"bear_discount_fill_{point}";
+            var premRectId = $"bear_premium_fill_{point}";
+            var disLabelId = $"bear_discount_lbl_{point}";
+            var premLabelId = $"bear_premium_lbl_{point}";
+            var equiLabelId = $"bear_equilibrium_lbl_{point}";
+
+            Chart.DrawTrendLine(premiumLineId, point + 12, _bePremium, point + 20, _bePremium, Color.Transparent);
+            Chart.DrawTrendLine(discountLineId, point + 12, _beDiscount, point + 20, _beDiscount, Color.Transparent);
+            Chart.DrawTrendLine(equilibriumLineId, point + 12, _beEquilibrium, point + 20, _beEquilibrium, Color.Transparent);
+
+            var disRect = Chart.DrawRectangle(disRectId, point + 12, _beDiscount, point + 20, _beEquilibrium, Color.FromArgb(110, 211, 238, 255));
+            disRect.IsFilled = true;
+            disRect.IsInteractive = false;
+
+            var premRect = Chart.DrawRectangle(premRectId, point + 12, _bePremium, point + 20, _beEquilibrium, Color.FromArgb(75, 255, 165, 100));
+            premRect.IsFilled = true;
+            premRect.IsInteractive = false;
+
+            Chart.DrawText(disLabelId, "Discount", point + 16, _beDiscount, Color.Black);
+            Chart.DrawText(premLabelId, "Premium", point + 16, _bePremium, Color.Black);
+            Chart.DrawText(equiLabelId, "EQU", point + 16, _beEquilibrium, Color.Black);
+        }
+
+        private void RemoveBullDiscountPremium(int point)
+        {
+            if (point <= 0)
+                return;
+
+            Chart.RemoveObject($"bull_discount_line_{point}");
+            Chart.RemoveObject($"bull_premium_line_{point}");
+            Chart.RemoveObject($"bull_equilibrium_line_{point}");
+            Chart.RemoveObject($"bull_discount_fill_{point}");
+            Chart.RemoveObject($"bull_premium_fill_{point}");
+            Chart.RemoveObject($"bull_discount_lbl_{point}");
+            Chart.RemoveObject($"bull_premium_lbl_{point}");
+            Chart.RemoveObject($"bull_equilibrium_lbl_{point}");
+        }
+
+        private void RemoveBearDiscountPremium(int point)
+        {
+            if (point <= 0)
+                return;
+
+            Chart.RemoveObject($"bear_discount_line_{point}");
+            Chart.RemoveObject($"bear_premium_line_{point}");
+            Chart.RemoveObject($"bear_equilibrium_line_{point}");
+            Chart.RemoveObject($"bear_discount_fill_{point}");
+            Chart.RemoveObject($"bear_premium_fill_{point}");
+            Chart.RemoveObject($"bear_discount_lbl_{point}");
+            Chart.RemoveObject($"bear_premium_lbl_{point}");
+            Chart.RemoveObject($"bear_equilibrium_lbl_{point}");
         }
 
         private void EmitAlerts(int index)
@@ -458,11 +571,20 @@ namespace cAlgo
             if (AlertSetting != "On")
                 return;
 
-            if (_longSignal)
-                Print("{0} | LONG | Bar={1} | {2}", AlertName, index, MessageBull);
+            if (index != Bars.Count - 1)
+                return;
 
-            if (_shortSignal)
+            if (_longSignal && _lastLongAlertBar != index)
+            {
+                Print("{0} | LONG | Bar={1} | {2}", AlertName, index, MessageBull);
+                _lastLongAlertBar = index;
+            }
+
+            if (_shortSignal && _lastShortAlertBar != index)
+            {
                 Print("{0} | SHORT | Bar={1} | {2}", AlertName, index, MessageBear);
+                _lastShortAlertBar = index;
+            }
         }
     }
 }
