@@ -65,76 +65,59 @@ namespace cAlgo
                 if (fvgType == 0)
                     continue;
 
-                if (fvgType == 1)
-                {
-                    var gapLow = Bars.HighPrices[index - (i + 2)];
-                    var gapHigh = Bars.LowPrices[index - i];
-
-                    if ((gapHigh - gapLow) >= minSizeValue)
-                    {
-                        var alreadyBroken = false;
-                        if (i > 1)
-                        {
-                            for (var k = i - 1; k >= 1; k--)
-                            {
-                                if (Bars.ClosePrices[index - k] < gapLow)
-                                {
-                                    alreadyBroken = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!alreadyBroken && Bars.ClosePrices[index] < gapLow)
-                        {
-                            var maCondition = !double.IsNaN(maVal) && !double.IsNaN(_maSeries[index - 1]) && maVal < _maSeries[index - 1] && Bars.ClosePrices[index] < maVal;
-                            if (maCondition)
-                            {
-                                signalDir = -1;
-                                if (ShowZones)
-                                    DrawIfvgZone(index, i, gapHigh, gapLow, false);
-                                break;
-                            }
-                        }
-                    }
-                }
-                else if (fvgType == -1)
-                {
-                    var gapLow2 = Bars.HighPrices[index - i];
-                    var gapHigh2 = Bars.LowPrices[index - (i + 2)];
-
-                    if ((gapHigh2 - gapLow2) >= minSizeValue)
-                    {
-                        var alreadyBroken2 = false;
-                        if (i > 1)
-                        {
-                            for (var k = i - 1; k >= 1; k--)
-                            {
-                                if (Bars.ClosePrices[index - k] > gapHigh2)
-                                {
-                                    alreadyBroken2 = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!alreadyBroken2 && Bars.ClosePrices[index] > gapHigh2)
-                        {
-                            var maCondition2 = !double.IsNaN(maVal) && !double.IsNaN(_maSeries[index - 1]) && maVal > _maSeries[index - 1] && Bars.ClosePrices[index] > maVal;
-                            if (maCondition2)
-                            {
-                                signalDir = 1;
-                                if (ShowZones)
-                                    DrawIfvgZone(index, i, gapHigh2, gapLow2, true);
-                                break;
-                            }
-                        }
-                    }
-                }
+                if (TryProcessFvgCandidate(index, i, fvgType, minSizeValue, maVal, out signalDir))
+                    break;
             }
 
             DrawSignals(index, signalDir);
             EmitAlerts(index, signalDir);
+        }
+
+        private bool TryProcessFvgCandidate(int index, int i, int fvgType, double minSizeValue, double maVal, out int signalDir)
+        {
+            signalDir = 0;
+
+            var isBearishGap = fvgType == 1;
+            var gapLow = isBearishGap ? Bars.HighPrices[index - (i + 2)] : Bars.HighPrices[index - i];
+            var gapHigh = isBearishGap ? Bars.LowPrices[index - i] : Bars.LowPrices[index - (i + 2)];
+
+            if ((gapHigh - gapLow) < minSizeValue)
+                return false;
+
+            var alreadyBroken = false;
+            if (i > 1)
+            {
+                for (var k = i - 1; k >= 1; k--)
+                {
+                    var close = Bars.ClosePrices[index - k];
+                    if ((isBearishGap && close < gapLow) || (!isBearishGap && close > gapHigh))
+                    {
+                        alreadyBroken = true;
+                        break;
+                    }
+                }
+            }
+
+            if (alreadyBroken)
+                return false;
+
+            var breakout = isBearishGap ? Bars.ClosePrices[index] < gapLow : Bars.ClosePrices[index] > gapHigh;
+            if (!breakout)
+                return false;
+
+            var maReady = !double.IsNaN(maVal) && !double.IsNaN(_maSeries[index - 1]);
+            var maCondition = isBearishGap
+                ? maReady && maVal < _maSeries[index - 1] && Bars.ClosePrices[index] < maVal
+                : maReady && maVal > _maSeries[index - 1] && Bars.ClosePrices[index] > maVal;
+
+            if (!maCondition)
+                return false;
+
+            signalDir = isBearishGap ? -1 : 1;
+            if (ShowZones)
+                DrawIfvgZone(index, i, gapHigh, gapLow, !isBearishGap);
+
+            return true;
         }
 
         private int DetectFvg(int currentIndex, int idx, double epsVal)
@@ -194,13 +177,9 @@ namespace cAlgo
 
             if (signalDir == 1)
                 Chart.DrawIcon(buyId, ChartIconType.UpTriangle, index, Bars.LowPrices[index], Color.FromHex(BuySignalColorHex));
-            else
-                Chart.RemoveObject(buyId);
 
             if (signalDir == -1)
                 Chart.DrawIcon(sellId, ChartIconType.DownTriangle, index, Bars.HighPrices[index], Color.FromHex(SellSignalColorHex));
-            else
-                Chart.RemoveObject(sellId);
         }
 
         private void EmitAlerts(int index, int signalDir)
