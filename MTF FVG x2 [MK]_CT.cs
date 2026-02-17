@@ -9,7 +9,11 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class MtfFvgX2MkCt : Indicator
     {
-        private enum MitigationMode { Normal = 1, Dynamic = 2, None = 3, Half = 4 }
+        public enum MitigationMode { Normal = 1, Dynamic = 2, None = 3, Half = 4 }
+        public enum MitigationType { Wicks = 1, Body = 2 }
+        public enum OverlayBoxType { Imbalance = 1, Gap = 2, Wick = 3 }
+        public enum FillCondition { FullFill = 1, HalfFill = 2, Touch = 3 }
+        public enum OverlayConditionType { None = 1, Percentage = 2, Atr = 3 }
 
         private sealed class FvgZone
         {
@@ -29,6 +33,7 @@ namespace cAlgo
             public ChartTrendLine TopLine;
             public ChartTrendLine MidLine;
             public ChartTrendLine BottomLine;
+            public bool IsFrozen;
         }
 
         [Parameter("MTF FVGs (display to right)", DefaultValue = true, Group = "Enable/Disable")]
@@ -55,11 +60,11 @@ namespace cAlgo
         [Parameter("Incursion %", DefaultValue = 20.0, MinValue = 0, MaxValue = 100, Group = "MTF Fair Value Gaps")]
         public double IncursionPct { get; set; }
 
-        [Parameter("Mitigation Action", DefaultValue = "Normal", Group = "MTF Fair Value Gaps")]
-        public string MitigationActionInput { get; set; }
+        [Parameter("Mitigation Action", DefaultValue = MitigationMode.Normal, Group = "MTF Fair Value Gaps")]
+        public MitigationMode MitigationActionInput { get; set; }
 
-        [Parameter("Mitigation Type", DefaultValue = "Wicks", Group = "MTF Fair Value Gaps")]
-        public string MitigationTypeInput { get; set; }
+        [Parameter("Mitigation Type", DefaultValue = MitigationType.Wicks, Group = "MTF Fair Value Gaps")]
+        public MitigationType MitigationTypeInput { get; set; }
 
         [Parameter("Change FVG Color On Entry", DefaultValue = true, Group = "MTF Fair Value Gaps")]
         public bool EntryChangeColor { get; set; }
@@ -132,8 +137,8 @@ namespace cAlgo
         [Parameter("Max Monthly", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int MaxMonthly { get; set; }
 
-        [Parameter("Boxtype", DefaultValue = "Imbalance", Group = "FVG Price Overlay")]
-        public string BoxType { get; set; }
+        [Parameter("Boxtype", DefaultValue = OverlayBoxType.Imbalance, Group = "FVG Price Overlay")]
+        public OverlayBoxType BoxType { get; set; }
         [Parameter("Show Up", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ShowUp { get; set; }
         [Parameter("Show Down", DefaultValue = true, Group = "FVG Price Overlay")]
@@ -148,8 +153,8 @@ namespace cAlgo
         public Color DownBorderColor { get; set; }
         [Parameter("Extend Till Filled", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ExtendTillFilled { get; set; }
-        [Parameter("Fill Condition", DefaultValue = "Full Fill", Group = "FVG Price Overlay")]
-        public string FilledType { get; set; }
+        [Parameter("Fill Condition", DefaultValue = FillCondition.FullFill, Group = "FVG Price Overlay")]
+        public FillCondition FilledType { get; set; }
         [Parameter("Lookback", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool Lookback { get; set; }
         [Parameter("Lookback Days", DefaultValue = 5.0, Group = "FVG Price Overlay")]
@@ -158,8 +163,8 @@ namespace cAlgo
         public bool HideFilled { get; set; }
         [Parameter("Show Boxes", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ShowBoxes { get; set; }
-        [Parameter("Condition Type", DefaultValue = "None", Group = "FVG Price Overlay")]
-        public string ConditionType { get; set; }
+        [Parameter("Condition Type", DefaultValue = OverlayConditionType.None, Group = "FVG Price Overlay")]
+        public OverlayConditionType ConditionType { get; set; }
         [Parameter("ATR Length", DefaultValue = 30, Group = "FVG Price Overlay")]
         public int AtrLength { get; set; }
         [Parameter("ATR Mult", DefaultValue = 1.0, Group = "FVG Price Overlay")]
@@ -175,6 +180,8 @@ namespace cAlgo
         private readonly Dictionary<string, List<FvgZone>> _bullByTf = new Dictionary<string, List<FvgZone>>();
         private readonly Dictionary<string, List<FvgZone>> _bearByTf = new Dictionary<string, List<FvgZone>>();
         private readonly Dictionary<string, int> _maxByTf = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> _lastBullTfIndex = new Dictionary<string, int>();
+        private readonly Dictionary<string, int> _lastBearTfIndex = new Dictionary<string, int>();
 
         private readonly List<OverlayZone> _overlayZones = new List<OverlayZone>();
         private AverageTrueRange _overlayAtr;
@@ -223,17 +230,13 @@ namespace cAlgo
             _bullByTf[key] = new List<FvgZone>();
             _bearByTf[key] = new List<FvgZone>();
             _maxByTf[key] = max;
+            _lastBullTfIndex[key] = -1;
+            _lastBearTfIndex[key] = -1;
         }
 
-        private MitigationMode GetMitigationMode()
-        {
-            if (string.Equals(MitigationActionInput, "Dynamic", StringComparison.OrdinalIgnoreCase)) return MitigationMode.Dynamic;
-            if (string.Equals(MitigationActionInput, "None", StringComparison.OrdinalIgnoreCase)) return MitigationMode.None;
-            if (string.Equals(MitigationActionInput, "Half", StringComparison.OrdinalIgnoreCase)) return MitigationMode.Half;
-            return MitigationMode.Normal;
-        }
+        private MitigationMode GetMitigationMode() => MitigationActionInput;
 
-        private bool UseBodyMitigation => string.Equals(MitigationTypeInput, "Body", StringComparison.OrdinalIgnoreCase);
+        private bool UseBodyMitigation => MitigationTypeInput == MitigationType.Body;
 
         private void ProcessMtfSubsystem(int chartIndex)
         {
@@ -262,22 +265,28 @@ namespace cAlgo
                 var newBull = IsFvgBull(l, h2, close1, open1);
                 var newBear = IsFvgBear(l2, h, close1, open1);
 
-                if (newBull)
+                if (newBull && _lastBullTfIndex[tfKey] != i)
                 {
                     if (_bullByTf[tfKey].Count > _maxByTf[tfKey])
                         RemoveFvgAt(_bullByTf[tfKey], 0);
 
                     if (h2 != tfBars.HighPrices[Math.Max(0, i - 4)] && l != tfBars.LowPrices[Math.Max(0, i - 2)])
+                    {
                         AddFvg(tfKey, true, tfBars.OpenTimes[i - 3], l, h2);
+                        _lastBullTfIndex[tfKey] = i;
+                    }
                 }
 
-                if (newBear)
+                if (newBear && _lastBearTfIndex[tfKey] != i)
                 {
                     if (_bearByTf[tfKey].Count > _maxByTf[tfKey])
                         RemoveFvgAt(_bearByTf[tfKey], 0);
 
                     if (l2 != tfBars.LowPrices[Math.Max(0, i - 4)] && h != tfBars.HighPrices[Math.Max(0, i - 2)])
+                    {
                         AddFvg(tfKey, false, tfBars.OpenTimes[i - 3], l2, h);
+                        _lastBearTfIndex[tfKey] = i;
+                    }
                 }
 
                 UpdateExistingFvgs(_bullByTf[tfKey], true, tfKey, chartIndex);
@@ -412,7 +421,7 @@ namespace cAlgo
 
             var atr = _overlayAtr.Result[Math.Max(0, idx)];
             bool c1ok, c2ok, c3ok, c4ok, c5ok, c6ok;
-            if (string.Equals(ConditionType, "Percentage", StringComparison.OrdinalIgnoreCase))
+            if (ConditionType == OverlayConditionType.Percentage)
             {
                 c1ok = upImbDist > (PctCond * PctMult);
                 c2ok = downImbDist > (PctCond * PctMult);
@@ -421,7 +430,7 @@ namespace cAlgo
                 c5ok = upWickDist > (PctCond * PctMult);
                 c6ok = downWickDist > (PctCond * PctMult);
             }
-            else if (string.Equals(ConditionType, "ATR", StringComparison.OrdinalIgnoreCase))
+            else if (ConditionType == OverlayConditionType.Atr)
             {
                 c1ok = (l0 - h2) > (AtrMult * atr);
                 c2ok = (l2 - h0) > (AtrMult * atr);
@@ -438,19 +447,19 @@ namespace cAlgo
             var upColor = ShowBoxes ? UpColor : Color.FromArgb(0, 0, 0, 0);
             var downColor = ShowBoxes ? DownColor : Color.FromArgb(0, 0, 0, 0);
 
-            if (string.Equals(BoxType, "Imbalance", StringComparison.OrdinalIgnoreCase) && ShowUp && l0 > h2 && c1ok)
+            if (BoxType == OverlayBoxType.Imbalance && ShowUp && l0 > h2 && c1ok)
                 AddOverlay(t[i - 2], l0, Server.Time, h2, upColor, UpBorderColor);
-            if (string.Equals(BoxType, "Imbalance", StringComparison.OrdinalIgnoreCase) && ShowDown && h0 < l2 && c2ok)
+            if (BoxType == OverlayBoxType.Imbalance && ShowDown && h0 < l2 && c2ok)
                 AddOverlay(t[i - 2], l2, Server.Time, h0, downColor, DownBorderColor);
 
-            if (string.Equals(BoxType, "Gap", StringComparison.OrdinalIgnoreCase) && ShowUp && l0 > h1 && c3ok)
+            if (BoxType == OverlayBoxType.Gap && ShowUp && l0 > h1 && c3ok)
                 AddOverlay(t[i - 1], l0, Server.Time, h1, upColor, UpBorderColor);
-            if (string.Equals(BoxType, "Gap", StringComparison.OrdinalIgnoreCase) && ShowDown && h0 < l1 && c4ok)
+            if (BoxType == OverlayBoxType.Gap && ShowDown && h0 < l1 && c4ok)
                 AddOverlay(t[i - 1], l1, Server.Time, h0, downColor, DownBorderColor);
 
-            if (string.Equals(BoxType, "Wick", StringComparison.OrdinalIgnoreCase) && ShowUp && upperWick > (bodySize / 6.0) && c5ok)
+            if (BoxType == OverlayBoxType.Wick && ShowUp && upperWick > (bodySize / 6.0) && c5ok)
                 AddOverlay(t[i - 1], h1, Server.Time, Math.Max(o1, c1), upColor, UpBorderColor);
-            if (string.Equals(BoxType, "Wick", StringComparison.OrdinalIgnoreCase) && ShowDown && lowerWick > (bodySize / 6.0) && c6ok)
+            if (BoxType == OverlayBoxType.Wick && ShowDown && lowerWick > (bodySize / 6.0) && c6ok)
                 AddOverlay(t[i - 1], Math.Min(o1, c1), Server.Time, l1, downColor, DownBorderColor);
 
             UpdateOverlayLifecycle(idx);
@@ -464,10 +473,9 @@ namespace cAlgo
             b.IsInteractive = false;
             b.Color = fillColor;
 
-            var lineColor = Color.FromArgb(31, 178, 181, 190);
-            var t = Chart.DrawTrendLine(id + "_t", left, top, right, top, lineColor);
-            var m = Chart.DrawTrendLine(id + "_m", left, (top + bottom) / 2.0, right, (top + bottom) / 2.0, lineColor);
-            var bt = Chart.DrawTrendLine(id + "_b", left, bottom, right, bottom, lineColor);
+            var t = Chart.DrawTrendLine(id + "_t", left, top, right, top, border);
+            var m = Chart.DrawTrendLine(id + "_m", left, (top + bottom) / 2.0, right, (top + bottom) / 2.0, border);
+            var bt = Chart.DrawTrendLine(id + "_b", left, bottom, right, bottom, border);
             _overlayZones.Add(new OverlayZone { Id = id, Box = b, TopLine = t, MidLine = m, BottomLine = bt });
         }
 
@@ -480,9 +488,9 @@ namespace cAlgo
                 var bottom = z.Box.Y2;
                 var mid = (top + bottom) / 2.0;
 
-                var filled = string.Equals(FilledType, "Touch", StringComparison.OrdinalIgnoreCase)
+                var filled = FilledType == FillCondition.Touch
                     ? (Bars.HighPrices[idx] > bottom && Bars.LowPrices[idx] < bottom) || (Bars.HighPrices[idx] > top && Bars.LowPrices[idx] < top)
-                    : string.Equals(FilledType, "Half Fill", StringComparison.OrdinalIgnoreCase)
+                    : FilledType == FillCondition.HalfFill
                         ? (Bars.HighPrices[idx] > mid && Bars.LowPrices[idx] < mid)
                         : (Bars.HighPrices[idx] > top && Bars.LowPrices[idx] < top) || (Bars.HighPrices[idx] > bottom && Bars.LowPrices[idx] < bottom);
 
@@ -494,9 +502,12 @@ namespace cAlgo
 
                 if (filled && ExtendTillFilled)
                 {
-                    _overlayZones.RemoveAt(i);
+                    z.IsFrozen = true;
                     continue;
                 }
+
+                if (z.IsFrozen)
+                    continue;
 
                 z.Box.Time2 = Server.Time.AddSeconds(1);
                 z.TopLine.Time2 = Server.Time.AddSeconds(1);

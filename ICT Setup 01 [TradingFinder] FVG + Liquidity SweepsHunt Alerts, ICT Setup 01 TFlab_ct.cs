@@ -217,58 +217,10 @@ namespace cAlgo
             var prevProximalBe = _bearishProximalLevel[index - 1];
 
             if (_isBullishFvgValid)
-            {
-                if (body1 > 0)
-                {
-                    var sweepCheck = SignalMethod == "Sweeps"
-                        ? Bars.OpenPrices[index - 1] < prevDistalBu
-                        : Bars.LowPrices[index - 1] < prevDistalBu;
-
-                    if (sweepCheck || index > _bullishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _longSignalCount > SignalsAllowedPerZone - 1))
-                        _isBullishFvgValid = false;
-                    else if (Bars.OpenPrices[index - 1] < prevProximalBu && Bars.OpenPrices[index - 1] > prevDistalBu)
-                        _bullishProximalLevel[index] = Bars.OpenPrices[index - 1];
-                }
-
-                if (body1 <= 0)
-                {
-                    var sweepCheck = SignalMethod == "Sweeps"
-                        ? Bars.ClosePrices[index - 1] < prevDistalBu
-                        : Bars.LowPrices[index - 1] < prevDistalBu;
-
-                    if (sweepCheck || index > _bullishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _longSignalCount > SignalsAllowedPerZone - 1))
-                        _isBullishFvgValid = false;
-                    else if (Bars.ClosePrices[index - 1] < prevProximalBu && Bars.ClosePrices[index - 1] > prevDistalBu)
-                        _bullishProximalLevel[index] = Bars.ClosePrices[index - 1];
-                }
-            }
+                _isBullishFvgValid = UpdateZoneValidity(index, body1, true, _bullishFvgPoint, prevDistalBu, prevProximalBu, _longSignalCount, ref _bullishProximalLevel[index]);
 
             if (_isBearishFvgValid)
-            {
-                if (body1 > 0)
-                {
-                    var sweepCheck = SignalMethod == "Sweeps"
-                        ? Bars.ClosePrices[index - 1] > prevDistalBe
-                        : Bars.HighPrices[index - 1] > prevDistalBe;
-
-                    if (sweepCheck || index > _bearishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _shortSignalCount > SignalsAllowedPerZone - 1))
-                        _isBearishFvgValid = false;
-                    else if (Bars.ClosePrices[index - 1] > prevProximalBe && Bars.ClosePrices[index - 1] < prevDistalBe)
-                        _bearishProximalLevel[index] = Bars.ClosePrices[index - 1];
-                }
-
-                if (body1 <= 0)
-                {
-                    var sweepCheck = SignalMethod == "Sweeps"
-                        ? Bars.OpenPrices[index - 1] > prevDistalBe
-                        : Bars.HighPrices[index - 1] > prevDistalBe;
-
-                    if (sweepCheck || index > _bearishFvgPoint + FvgValidityPeriod || (!SignalAfterHunts && _shortSignalCount > SignalsAllowedPerZone - 1))
-                        _isBearishFvgValid = false;
-                    else if (Bars.OpenPrices[index - 1] > prevProximalBe && Bars.OpenPrices[index - 1] < prevDistalBe)
-                        _bearishProximalLevel[index] = Bars.OpenPrices[index - 1];
-                }
-            }
+                _isBearishFvgValid = UpdateZoneValidity(index, body1, false, _bearishFvgPoint, prevDistalBe, prevProximalBe, _shortSignalCount, ref _bearishProximalLevel[index]);
 
             if (_bullishFvgPointSeries[index - 1] != _bullishFvgPoint)
             {
@@ -404,13 +356,34 @@ namespace cAlgo
 
             if (_isLongSignal)
                 Chart.DrawIcon(longSignalId, ChartIconType.UpTriangle, index, Bars.LowPrices[index], Color.FromHex(LongSignalColorHex));
-            else
-                Chart.RemoveObject(longSignalId);
 
             if (_isShortSignal)
                 Chart.DrawIcon(shortSignalId, ChartIconType.DownTriangle, index, Bars.HighPrices[index], Color.FromHex(ShortSignalColorHex));
-            else
-                Chart.RemoveObject(shortSignalId);
+        }
+
+        private bool UpdateZoneValidity(int index, double body1, bool isBull, int zonePoint, double prevDistal, double prevProximal, int signalCount, ref double updatedProximal)
+        {
+            var useOpenForBodyDirection = isBull ? body1 > 0 : body1 <= 0;
+            var selectedPrice = useOpenForBodyDirection ? Bars.OpenPrices[index - 1] : Bars.ClosePrices[index - 1];
+            var sweepPrice = isBull
+                ? (SignalMethod == "Sweeps" ? selectedPrice : Bars.LowPrices[index - 1])
+                : (SignalMethod == "Sweeps" ? selectedPrice : Bars.HighPrices[index - 1]);
+
+            var sweepCheck = isBull ? sweepPrice < prevDistal : sweepPrice > prevDistal;
+            var expired = index > zonePoint + FvgValidityPeriod;
+            var signalLimitExceeded = !SignalAfterHunts && signalCount > SignalsAllowedPerZone - 1;
+
+            if (sweepCheck || expired || signalLimitExceeded)
+                return false;
+
+            var movedInsideZone = isBull
+                ? selectedPrice < prevProximal && selectedPrice > prevDistal
+                : selectedPrice > prevProximal && selectedPrice < prevDistal;
+
+            if (movedInsideZone)
+                updatedProximal = selectedPrice;
+
+            return true;
         }
 
         private void DrawCurrentZones(int index)
