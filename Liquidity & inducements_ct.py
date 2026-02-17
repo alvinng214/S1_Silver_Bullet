@@ -105,7 +105,7 @@ class ExternalLiquidity:
 
 class TurtleSoup:
     __slots__ = ("start", "end", "pivot", "deepest",
-                 "line_color", "box_color")
+                 "line_color", "box_color", "line_end", "confirmed")
 
     def __init__(self, start, end, pivot, deepest,
                  line_color=None, box_color=None):
@@ -115,6 +115,22 @@ class TurtleSoup:
         self.deepest = deepest
         self.line_color = line_color
         self.box_color = box_color
+        self.line_end = None      # truncated end (set by subsumed logic)
+        self.confirmed = not (line_color is None and box_color is None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Drawing ID counter (module-level, provides unique names for chart objects)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_draw_id = 0
+
+
+def _next_id(prefix="liq"):
+    """Return a unique string name for a cTrader chart object."""
+    global _draw_id
+    _draw_id += 1
+    return f"{prefix}_{_draw_id}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -180,6 +196,7 @@ class LiquidityInducements():
 
         self.change_of_character = None       # Pivot | None
         self.break_of_structure = None        # Pivot | None
+        self.last_choch_label = "CHoCH"       # "CHoCH" or "CHoCH+"
         self.previous_structure_break_pivot = None
         self.previous_structure_break_index = None
         self.retracement_structure_break_index = None
@@ -199,6 +216,8 @@ class LiquidityInducements():
         self.turtle_pivot_lows = []           # list[Pivot]
         self.turtle_bullish = []              # list[TurtleSoup]
         self.turtle_bearish = []              # list[TurtleSoup]
+        self.turtle_alert_messages = []       # list[str]
+        self.turtle_screener_until = None     # int | None (bar index)
 
         # ── equal pivot state ────────────────────────────────────────────
         self.eq_highs = []                    # list[Pivot]
@@ -215,6 +234,44 @@ class LiquidityInducements():
         self.retr_lows = []                   # list[RetracementInducement]
         self.retr_high_pivots = []            # list[Pivot]
         self.retr_low_pivots = []             # list[Pivot]
+        self.retr_historical_highs = []       # list[RetracementInducement]
+        self.retr_historical_lows = []        # list[RetracementInducement]
+
+    # ── drawing helpers (cTrader Chart API) ──────────────────────────────
+
+    def _draw_line(self, x1_index, y1, x2_index, y2, color_str="Gray",
+                   style="DotsRare", thickness=1):
+        """Draw a trend line between two bar indices on the chart."""
+        name = _next_id("line")
+        t1 = api.Bars.OpenTimes[x1_index]
+        t2 = api.Bars.OpenTimes[x2_index]
+        api.Chart.DrawTrendLine(name, t1, y1, t2, y2, color_str, thickness)
+
+    def _draw_hline(self, x1_index, price, x2_index, color_str="Gray",
+                    style="DotsRare", thickness=1, extend_right=False):
+        """Draw a horizontal line between two bar indices."""
+        name = _next_id("hline")
+        t1 = api.Bars.OpenTimes[x1_index]
+        t2 = api.Bars.OpenTimes[x2_index]
+        obj = api.Chart.DrawTrendLine(name, t1, price, t2, price,
+                                      color_str, thickness)
+        if extend_right:
+            obj.ExtendToInfinity = True
+        return name
+
+    def _draw_rectangle(self, x1_index, y1, x2_index, y2, color_str="Gray"):
+        """Draw a rectangle (box) between two bar indices."""
+        name = _next_id("rect")
+        t1 = api.Bars.OpenTimes[x1_index]
+        t2 = api.Bars.OpenTimes[x2_index]
+        api.Chart.DrawRectangle(name, t1, y1, t2, y2, color_str)
+
+    def _draw_text(self, bar_index, price, text, color_str="Gray",
+                   v_align="Top"):
+        """Draw a text label at a bar index and price."""
+        name = _next_id("txt")
+        t = api.Bars.OpenTimes[bar_index]
+        api.Chart.DrawText(name, text, t, price, color_str)
 
     # ── main calculate ────────────────────────────────────────────────────
 
@@ -225,6 +282,9 @@ class LiquidityInducements():
         high = api.Bars.HighPrices[index]
         low = api.Bars.LowPrices[index]
         close = api.Bars.ClosePrices[index]
+
+        # clear per-bar alert messages
+        self.turtle_alert_messages.clear()
 
         # ── 1. structure pivot detection ─────────────────────────────────
         self._structure_pivot_step(index)
@@ -246,12 +306,23 @@ class LiquidityInducements():
             self.break_of_structure = None
             self.previous_structure_break_pivot = self.change_of_character
             structure_break_event = True
+            # draw CHoCH / CHoCH+ line and label
+            choch = self.change_of_character
+            choch_color = "Teal" if self.structure_trend == 1 else "Red"
+            self._draw_hline(choch.bar_index, choch.price, index, choch_color)
+            mid_bar = choch.bar_index + (index - choch.bar_index) // 2
+            self._draw_text(mid_bar, choch.price, self.last_choch_label, choch_color)
 
         bos_pivot = self._break_of_structure(index)
         if bos_pivot:
             self.break_of_structure = bos_pivot
             self.previous_structure_break_pivot = bos_pivot
             structure_break_event = True
+            # draw BOS line and label
+            bos_color = "Teal" if self.structure_trend == 1 else "Red"
+            self._draw_hline(bos_pivot.bar_index, bos_pivot.price, index, bos_color)
+            mid_bar = bos_pivot.bar_index + (index - bos_pivot.bar_index) // 2
+            self._draw_text(mid_bar, bos_pivot.price, "BOS", bos_color)
 
         # ── 3. detect grabs/sweeps BEFORE storing new pivots ─────────────
         if index > 0:
@@ -260,11 +331,11 @@ class LiquidityInducements():
 
             self._process_grabs(
                 self.grabs_highs + self.grabs_lows,
-                prev_high, prev_low, close, index,
+                prev_high, prev_low, close, index, "Orange",
             )
             self._process_grabs(
                 self.big_grabs_highs + self.big_grabs_lows,
-                prev_high, prev_low, close, index,
+                prev_high, prev_low, close, index, "Aqua",
             )
             self._process_sweeps(
                 prev_high, prev_low, close, index,
@@ -341,6 +412,12 @@ class LiquidityInducements():
         # ── 10. write output DataSeries ──────────────────────────────────
         api.LiqBuysideTarget[index] = self.buyside[0].price if self.buyside else NAN
         api.LiqSellsideTarget[index] = self.sellside[0].price if self.sellside else NAN
+
+        # ── 11. fire turtle soup alerts ────────────────────────────────
+        if self.turtle_alert_messages:
+            for msg in self.turtle_alert_messages:
+                api.Print(msg)
+            self.turtle_alert_messages.clear()
 
         if structure_break_event:
             self.previous_structure_break_index = index
@@ -424,8 +501,9 @@ class LiquidityInducements():
             self.structure_pivots.insert(0, Pivot(center_low, pivot_idx, -1))
 
     def _change_of_character(self, index):
-        """Detect CHoCH (mirrors PriceAction.change_of_character).
-        Returns the broken Pivot or None."""
+        """Detect CHoCH / CHoCH+ (mirrors PriceAction.ChangeOfCharacter).
+        Returns the broken Pivot or None.  Sets self.last_choch_label to
+        'CHoCH' or 'CHoCH+' for downstream drawing."""
         close_now = api.Bars.ClosePrices[index]
         close_prev = api.Bars.ClosePrices[index - 1] if index > 0 else close_now
 
@@ -437,6 +515,24 @@ class LiquidityInducements():
                     and close_prev < pivot.price
                     and not pivot.change_of_character_broken):
                 pivot.change_of_character_broken = True
+
+                # CHoCH+ detection: if trend was bearish and the latest low
+                # pivot has a HIGHER price than the next-latest low pivot,
+                # the reversal is stronger → CHoCH+.
+                txt = "CHoCH"
+                if len(self.structure_pivots) >= 2 and self.structure_trend != 0:
+                    latest_low = None
+                    for p in self.structure_pivots:
+                        if p.type == -1:
+                            if latest_low is None:
+                                latest_low = p
+                            else:
+                                # next-latest low found
+                                if latest_low.price > p.price:
+                                    txt = "CHoCH+"
+                                break
+
+                self.last_choch_label = txt
                 self.structure_trend = 1
                 self.structure_bos_list.clear()
                 remaining = []
@@ -458,6 +554,23 @@ class LiquidityInducements():
                     and close_prev > pivot.price
                     and not pivot.change_of_character_broken):
                 pivot.change_of_character_broken = True
+
+                # CHoCH+ detection: if trend was bullish and the latest high
+                # pivot has a LOWER price than the next-latest high pivot,
+                # the reversal is stronger → CHoCH+.
+                txt = "CHoCH"
+                if len(self.structure_pivots) >= 2 and self.structure_trend != 0:
+                    latest_high = None
+                    for p in self.structure_pivots:
+                        if p.type == 1:
+                            if latest_high is None:
+                                latest_high = p
+                            else:
+                                if latest_high.price < p.price:
+                                    txt = "CHoCH+"
+                                break
+
+                self.last_choch_label = txt
                 self.structure_trend = -1
                 self.structure_bos_list.clear()
                 remaining = []
@@ -530,9 +643,11 @@ class LiquidityInducements():
     # Liquidity grabs
     # ═════════════════════════════════════════════════════════════════════
 
-    def _process_grabs(self, grabs, prev_high, prev_low, close, index):
+    def _process_grabs(self, grabs, prev_high, prev_low, close, index,
+                        color_str="Orange"):
         """Process grabs/big-grabs detection on existing pivots.
-        Mirrors the inner ``_process_grabs`` closure in the original."""
+        Mirrors the inner ``_process_grabs`` closure in the original.
+        Draws limit line, fill rectangle, and $$$ label on the chart."""
         for grab in grabs:
             if grab.taken or grab.invalidated:
                 continue
@@ -549,6 +664,15 @@ class LiquidityInducements():
                     grab.invalidated = True
             if grabbed:
                 grab.taken = True
+                grab_bar = index - 1
+                grab_price = prev_low if grab.pivot.type == -1 else prev_high
+                # draw limit line + fill rectangle + label
+                self._draw_hline(grab.pivot.bar_index, grab.pivot.price,
+                                 grab_bar, color_str)
+                self._draw_rectangle(grab.pivot.bar_index, grab.pivot.price,
+                                     grab_bar, grab_price, color_str)
+                mid_bar = grab.pivot.bar_index + (grab_bar - grab.pivot.bar_index) // 2
+                self._draw_text(mid_bar, grab.pivot.price, "$$$", color_str)
 
     # ═════════════════════════════════════════════════════════════════════
     # Sweeps
@@ -581,6 +705,12 @@ class LiquidityInducements():
                     sweep.invalidated = True
             if swept:
                 sweep.taken = True
+                sweep_bar = index - 1
+                sweep_color = "Red" if sweep.pivot.type == -1 else "Teal"
+                self._draw_hline(sweep.pivot.bar_index, sweep.pivot.price,
+                                 sweep_bar, sweep_color)
+                mid_bar = sweep.pivot.bar_index + (sweep_bar - sweep.pivot.bar_index) // 2
+                self._draw_text(mid_bar, sweep.pivot.price, "$", sweep_color)
             elif not sweep.invalidated:
                 # check if grabbed (invalidating)
                 if sweep.pivot.type == -1:
@@ -654,24 +784,61 @@ class LiquidityInducements():
                 turtle_soups.pop()
             turtle_soups.insert(0, ts)
 
+            # draw turtle soup box and pivot-to-sweep line
+            ts_color = box_color if box_color else "DimGray"
+            self._draw_rectangle(start, pivot.price, end, deepest, ts_color)
+            self._draw_text(start + (end - start) // 2,
+                            (pivot.price + deepest) / 2, "TS", ts_color)
+            if line_color:
+                self._draw_hline(pivot.bar_index, pivot.price,
+                                 end, line_color)
+
+            # alert for unconfirmed turtle soups (when confirmation not required)
+            if not self.turtle_confirmation:
+                direction = "bullish" if pivot.type == -1 else "bearish"
+                msg = (f"Turtle soup (NOT confirmed) ({direction} of "
+                       f"{end - start} bars, {index - end} bars ago)")
+                self.turtle_alert_messages.append(msg)
+
     def _remove_subsumed_turtle(self, turtle_soups, new_ts):
-        """Remove turtle soups that are fully contained within the new one."""
+        """Handle turtle soups that are fully contained within the new one.
+        Mirrors Pine Script: clears the box text but preserves the line by
+        adjusting its x2 to the new turtle soup's start if the new one
+        starts after the subsumed one."""
         to_remove = [
             j for j, prev in enumerate(turtle_soups)
             if prev.start >= new_ts.start and prev.end <= new_ts.end
         ]
         for j in reversed(to_remove):
+            subsumed = turtle_soups[j]
+            # Preserve subsumed turtle's line segment up to new_ts.start
+            # (mirrors: removeTurtleSoup.Line.set_x2(turtleSoup.Start))
+            if new_ts.start > subsumed.start:
+                subsumed.line_end = new_ts.start  # truncate line
             turtle_soups.pop(j)
 
     def _confirm_turtle(self, turtle_soups, index):
         """Confirm unconfirmed turtle soups after CHoCH.
-        Mirrors PriceAction.confirm."""
+        Mirrors PriceAction.Confirm – sets colors, screener state, and
+        emits alert messages."""
         if self.previous_structure_break_index is None:
             return
+        screener_keep = self.turtle_lookback  # default screener keep
         for ts in turtle_soups:
             if ts.end > self.previous_structure_break_index:
                 ts.line_color = "orange"
                 ts.box_color = "orange"
+                ts.confirmed = True
+                self.turtle_screener_until = index + screener_keep
+                # re-draw with confirmed color
+                self._draw_rectangle(ts.start, ts.pivot.price,
+                                     ts.end, ts.deepest, "Orange")
+                self._draw_hline(ts.pivot.bar_index, ts.pivot.price,
+                                 ts.end, "Orange")
+                direction = "bullish" if ts.pivot.type == -1 else "bearish"
+                msg = (f"Turtle soup (confirmed) ({direction} of "
+                       f"{ts.end - ts.start} bars, {index - ts.end} bars ago)")
+                self.turtle_alert_messages.append(msg)
 
     # ═════════════════════════════════════════════════════════════════════
     # Equal pivots
@@ -746,6 +913,20 @@ class LiquidityInducements():
 
                 trend_inducement = ((latest.type == 1 and self.structure_trend == -1)
                                     or (latest.type == -1 and self.structure_trend == 1))
+                # draw equal pivot connecting line + label
+                if trend_inducement:
+                    label_color = "Teal" if self.structure_trend == 1 else "Red"
+                    label_text = "IDM"
+                else:
+                    label_color = "Orange"
+                    label_text = "$$$"
+                self._draw_line(latest.bar_index, latest.price,
+                                equal_pivot.bar_index, equal_pivot.price,
+                                label_color)
+                mid_bar = equal_pivot.bar_index + (latest.bar_index - equal_pivot.bar_index) // 2
+                mid_price = latest.price + (equal_pivot.price - latest.price) / 2
+                self._draw_text(mid_bar, mid_price, label_text, label_color)
+
                 if trend_inducement:
                     if latest.type == 1:
                         stop_price = equal_pivot.price + (atr_val * 0.1)
@@ -759,12 +940,25 @@ class LiquidityInducements():
                     and not inducement.liquidity_taken
                     and high >= inducement.stop_losses):
                 inducement.liquidity_taken = True
+                # draw taken stop-loss line + label
+                self._draw_hline(inducement.first_pivot.bar_index,
+                                 inducement.stop_losses,
+                                 inducement.second_pivot.bar_index, "Orange")
+                mid = inducement.first_pivot.bar_index + (
+                    inducement.second_pivot.bar_index - inducement.first_pivot.bar_index) // 2
+                self._draw_text(mid, inducement.stop_losses, "$$$", "Orange")
 
         for inducement in self.eq_bullish_inducements:
             if (self.structure_trend == 1
                     and not inducement.liquidity_taken
                     and low <= inducement.stop_losses):
                 inducement.liquidity_taken = True
+                self._draw_hline(inducement.first_pivot.bar_index,
+                                 inducement.stop_losses,
+                                 inducement.second_pivot.bar_index, "Orange")
+                mid = inducement.first_pivot.bar_index + (
+                    inducement.second_pivot.bar_index - inducement.first_pivot.bar_index) // 2
+                self._draw_text(mid, inducement.stop_losses, "$$$", "Orange")
 
         if structure_break_event:
             self.eq_bullish_inducements.clear()
@@ -798,13 +992,21 @@ class LiquidityInducements():
         # remove taken buyside pools (price swept above)
         self.buyside = [pool for pool in self.buyside if high < pool.price]
 
-        # unhide the top N pools
+        # unhide the top N pools and draw extending lines + labels
         for i_pool, pool in enumerate(self.buyside):
             if i_pool + 1 <= self.external_show:
                 pool.hidden = False
+                self._draw_hline(pool.pivot.bar_index, pool.price, index,
+                                 "Teal", extend_right=True)
+                self._draw_text(pool.pivot.bar_index, pool.price,
+                                "Buyside liquidity", "Teal")
         for i_pool, pool in enumerate(self.sellside):
             if i_pool + 1 <= self.external_show:
                 pool.hidden = False
+                self._draw_hline(pool.pivot.bar_index, pool.price, index,
+                                 "Red", extend_right=True)
+                self._draw_text(pool.pivot.bar_index, pool.price,
+                                "Sellside liquidity", "Red")
 
     # ═════════════════════════════════════════════════════════════════════
     # Retracement inducements
@@ -836,6 +1038,12 @@ class LiquidityInducements():
                             and next_latest.bar_index < self.retracement_structure_break_index):
                         target_list = self.retr_highs if self.structure_trend == -1 else self.retr_lows
                         target_list.insert(0, RetracementInducement(latest))
+                        # draw retracement inducement line + label
+                        retr_color = "Red" if self.structure_trend == -1 else "Teal"
+                        self._draw_hline(latest.bar_index, latest.price, index,
+                                         retr_color, extend_right=True)
+                        self._draw_text(latest.bar_index, latest.price,
+                                        "IDM", retr_color)
 
         # stop inducements that are taken
         self._stop_retracement_inducements(high, low, index, "take")
@@ -849,7 +1057,8 @@ class LiquidityInducements():
 
     def _stop_retracement_inducements(self, high, low, bar_index, stop_reason):
         """Stop (take or invalidate) retracement inducements.
-        Mirrors ``_stop_retracement_inducements`` in the original."""
+        Mirrors ``_stop_retracement_inducements`` in the original.
+        Supports keep_invalidated flag and historical lists."""
 
         remaining_highs = []
         for ind in self.retr_highs:
@@ -860,6 +1069,9 @@ class LiquidityInducements():
                     ind.taken = True
                 else:
                     ind.invalidated = True
+                keep_line = stop_reason == "take" or self.retr_keep_invalidated
+                if keep_line:
+                    self.retr_historical_highs.append(ind)
             else:
                 remaining_highs.append(ind)
         self.retr_highs = remaining_highs
@@ -873,6 +1085,9 @@ class LiquidityInducements():
                     ind.taken = True
                 else:
                     ind.invalidated = True
+                keep_line = stop_reason == "take" or self.retr_keep_invalidated
+                if keep_line:
+                    self.retr_historical_lows.append(ind)
             else:
                 remaining_lows.append(ind)
         self.retr_lows = remaining_lows
