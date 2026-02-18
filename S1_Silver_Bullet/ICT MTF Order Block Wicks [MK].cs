@@ -406,6 +406,7 @@ namespace cAlgo
 
         private void UpdateBullZones(TfConfig tf, int index, double low, double close, double lastLow, DateTime now)
         {
+            var bullIncursionPrinted = false;
             for (int i = tf.Bulls.Count - 1; i >= 0; i--)
             {
                 var z = tf.Bulls[i];
@@ -420,8 +421,11 @@ namespace cAlgo
                 var closeUnderMid = low < mid; // exact source parity
                 var intrusion = low < threshold && lastLow > threshold;
 
-                if ((MitigationActionInput == MitigationMode.Normal || MitigationActionInput == MitigationMode.None) && intrusion && IncursionAlerts)
+                if ((MitigationActionInput == MitigationMode.Normal || MitigationActionInput == MitigationMode.None) && intrusion && IncursionAlerts && !bullIncursionPrinted)
+                {
                     Print("Bull OB Wick Incursion {0}", tf.Label);
+                    bullIncursionPrinted = true;
+                }
 
                 if (EntryChangeColor && lowUnderTop)
                     z.Box.Color = EntryBullColor;
@@ -483,6 +487,7 @@ namespace cAlgo
 
         private void UpdateBearZones(TfConfig tf, int index, double high, double close, double lastHigh, DateTime now)
         {
+            var bearIncursionPrinted = false;
             for (int i = tf.Bears.Count - 1; i >= 0; i--)
             {
                 var z = tf.Bears[i];
@@ -497,8 +502,11 @@ namespace cAlgo
                 var closeOverMid = close > mid;
                 var intrusion = high > threshold && lastHigh < threshold;
 
-                if ((MitigationActionInput == MitigationMode.Normal || MitigationActionInput == MitigationMode.None) && intrusion && IncursionAlerts)
+                if ((MitigationActionInput == MitigationMode.Normal || MitigationActionInput == MitigationMode.None) && intrusion && IncursionAlerts && !bearIncursionPrinted)
+                {
                     Print("Bear OB Wick Incursion {0}", tf.Label);
+                    bearIncursionPrinted = true;
+                }
 
                 if (EntryChangeColor)
                 {
@@ -568,6 +576,9 @@ namespace cAlgo
         {
             var left = ShiftTime(index, LabelShift);
             zone.Box.Time1 = left;
+            // cTrader has no extend.right on rectangles; keep right in the future each bar
+            // to emulate Pine's right-extended OB boxes.
+            zone.Box.Time2 = ShiftTime(index, 200);
             SetLabelY(zone, index, zone.Top, zone.Bottom);
         }
 
@@ -584,6 +595,8 @@ namespace cAlgo
         {
             zone.Box.Y1 = zone.Top;
             zone.Box.Y2 = zone.Bottom;
+            zone.Box.Time1 = ShiftTime(index, LabelShift);
+            zone.Box.Time2 = ShiftTime(index, 200);
         }
 
         private bool HasDuplicateByTop(List<ObZone> zones, double top)
