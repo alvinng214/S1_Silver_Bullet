@@ -740,19 +740,6 @@ namespace cAlgo
                     var c = sweep.Pivot.Type == -1 ? SweepsBullishColor : SweepsBearishColor;
                     Chart.DrawText($"sweep_{sweep.Pivot.BarIndex}_{index}", "$", index, sweep.Pivot.Price, c).FontSize = LiquidityFontSize;
                 }
-                else if (!sweep.Invalidated)
-                {
-                    if (sweep.Pivot.Type == -1)
-                    {
-                        if (prevLow <= sweep.Pivot.Price && close >= sweep.Pivot.Price)
-                            sweep.Invalidated = true;
-                    }
-                    else
-                    {
-                        if (prevHigh >= sweep.Pivot.Price && close <= sweep.Pivot.Price)
-                            sweep.Invalidated = true;
-                    }
-                }
             }
         }
 

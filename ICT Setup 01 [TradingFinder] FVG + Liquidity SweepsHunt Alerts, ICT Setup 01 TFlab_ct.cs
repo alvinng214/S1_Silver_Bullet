@@ -151,6 +151,8 @@ namespace cAlgo
                 var high1 = Bars.HighPrices[index - 1];
                 var low1 = Bars.LowPrices[index - 1];
                 var atrValue = _averageTrueRange[index];
+                if (double.IsNaN(atrValue))
+                    atrValue = 0.0;
 
                 if ((high - low2) > (FvgDetectorMultiplier * atrValue))
                 {
@@ -217,10 +219,18 @@ namespace cAlgo
             var prevProximalBe = _bearishProximalLevel[index - 1];
 
             if (_isBullishFvgValid)
-                _isBullishFvgValid = UpdateZoneValidity(index, body1, true, _bullishFvgPoint, prevDistalBu, prevProximalBu, _longSignalCount, ref _bullishProximalLevel[index]);
+            {
+                var bullProximal = _bullishProximalLevel[index];
+                _isBullishFvgValid = UpdateZoneValidity(index, body1, true, _bullishFvgPoint, prevDistalBu, prevProximalBu, _longSignalCount, ref bullProximal);
+                _bullishProximalLevel[index] = bullProximal;
+            }
 
             if (_isBearishFvgValid)
-                _isBearishFvgValid = UpdateZoneValidity(index, body1, false, _bearishFvgPoint, prevDistalBe, prevProximalBe, _shortSignalCount, ref _bearishProximalLevel[index]);
+            {
+                var bearProximal = _bearishProximalLevel[index];
+                _isBearishFvgValid = UpdateZoneValidity(index, body1, false, _bearishFvgPoint, prevDistalBe, prevProximalBe, _shortSignalCount, ref bearProximal);
+                _bearishProximalLevel[index] = bearProximal;
+            }
 
             if (_bullishFvgPointSeries[index - 1] != _bullishFvgPoint)
             {
