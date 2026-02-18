@@ -267,10 +267,10 @@ namespace cAlgo
 
                 if (newBull && _lastBullTfIndex[tfKey] != i)
                 {
-                    if (_bullByTf[tfKey].Count > _maxByTf[tfKey])
+                    if (_bullByTf[tfKey].Count >= _maxByTf[tfKey])
                         RemoveFvgAt(_bullByTf[tfKey], 0);
 
-                    if (h2 != tfBars.HighPrices[Math.Max(0, i - 4)] && l != tfBars.LowPrices[Math.Max(0, i - 2)])
+                    if (i < 4 || (h2 != tfBars.HighPrices[i - 4] && l != tfBars.LowPrices[i - 2]))
                     {
                         AddFvg(tfKey, true, tfBars.OpenTimes[i - 3], l, h2);
                         _lastBullTfIndex[tfKey] = i;
@@ -279,10 +279,10 @@ namespace cAlgo
 
                 if (newBear && _lastBearTfIndex[tfKey] != i)
                 {
-                    if (_bearByTf[tfKey].Count > _maxByTf[tfKey])
+                    if (_bearByTf[tfKey].Count >= _maxByTf[tfKey])
                         RemoveFvgAt(_bearByTf[tfKey], 0);
 
-                    if (l2 != tfBars.LowPrices[Math.Max(0, i - 4)] && h != tfBars.HighPrices[Math.Max(0, i - 2)])
+                    if (i < 4 || (l2 != tfBars.LowPrices[i - 4] && h != tfBars.HighPrices[i - 2]))
                     {
                         AddFvg(tfKey, false, tfBars.OpenTimes[i - 3], l2, h);
                         _lastBearTfIndex[tfKey] = i;
@@ -315,6 +315,8 @@ namespace cAlgo
 
         private void UpdateExistingFvgs(List<FvgZone> zones, bool bull, string tfKey, int idx)
         {
+            if (idx < 1)
+                return;
             var mode = GetMitigationMode();
             var intrPct = IncursionPct / 100.0;
             for (var i = zones.Count - 1; i >= 0; i--)
