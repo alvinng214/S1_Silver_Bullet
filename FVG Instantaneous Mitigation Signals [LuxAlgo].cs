@@ -50,6 +50,9 @@ namespace cAlgo
         [Parameter("Bull Average", DefaultValue = true, Group = "Style")]
         public bool BullAvg { get; set; }
 
+        [Parameter("Color Bull Candles", DefaultValue = true, Group = "Style")]
+        public bool ColorBullCandles { get; set; }
+
         [Parameter("Bearish IMFVG", DefaultValue = true, Group = "Style")]
         public bool ShowBear { get; set; }
 
@@ -58,6 +61,9 @@ namespace cAlgo
 
         [Parameter("Bear Average", DefaultValue = true, Group = "Style")]
         public bool BearAvg { get; set; }
+
+        [Parameter("Color Bear Candles", DefaultValue = true, Group = "Style")]
+        public bool ColorBearCandles { get; set; }
 
         [Output("Trailing Stop", Thickness = 2, LineColor = "#5B9CF6")]
         public IndicatorDataSeries TrailingStopPlot { get; set; }
@@ -329,13 +335,13 @@ namespace cAlgo
                 return false;
             }
 
-            if (os == 1 && !bullReached && ShowBull && _hasBullSignal)
+            if (os == 1 && !bullReached && ShowBull && ColorBullCandles && _hasBullSignal)
             {
                 color = BullColor;
                 return true;
             }
 
-            if (os == 0 && !bearReached && ShowBear && _hasBearSignal)
+            if (os == 0 && !bearReached && ShowBear && ColorBearCandles && _hasBearSignal)
             {
                 color = BearColor;
                 return true;
