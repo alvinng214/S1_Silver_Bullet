@@ -329,15 +329,34 @@ namespace cAlgo
             if (isChartTf && !NotCurrentTimeframeEqualEnabledTfs())
                 return;
 
-            _tfs.Add(new TfConfig
+            var cfg = new TfConfig
             {
                 Key = key,
                 Label = label,
                 SourceBars = timeframe == Bars.TimeFrame ? Bars : MarketData.GetBars(timeframe),
                 MaxCount = maxCount
-            });
+            };
+
+            EnsureSourceHistory(cfg.SourceBars);
+            _tfs.Add(cfg);
         }
 
+
+        private void EnsureSourceHistory(Bars sourceBars)
+        {
+            if (sourceBars == null || sourceBars == Bars)
+                return;
+
+            // TradingView generally has deeper HTF history immediately available.
+            // Load additional source history to reduce missing older OBs in cTrader.
+            var target = Math.Max(Bars.Count / 2, 1500);
+            for (int i = 0; i < 20 && sourceBars.Count < target; i++)
+            {
+                var loaded = sourceBars.LoadMoreHistory();
+                if (loaded <= 0)
+                    break;
+            }
+        }
         private bool NotCurrentTimeframeEqualEnabledTfs()
         {
             if (Bars.TimeFrame == TimeFrame.Minute5)
