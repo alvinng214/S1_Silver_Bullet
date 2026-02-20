@@ -300,22 +300,22 @@ namespace cAlgo
             AlertAny[index] = (obBull || obBear) ? 1 : double.NaN;
         }
 
-        private int TimeframeToSec(TimeFrame tf) => tf switch
+        private int TimeframeToSec(TimeFrame tf)
         {
-            TimeFrame.Minute => 60,
-            TimeFrame.Minute5 => 300,
-            TimeFrame.Minute10 => 600,
-            TimeFrame.Minute15 => 900,
-            TimeFrame.Minute30 => 1800,
-            TimeFrame.Hour => 3600,
-            TimeFrame.Hour4 => 14400,
-            TimeFrame.Hour8 => 28800,
-            TimeFrame.Hour12 => 43200,
-            TimeFrame.Daily => 86400,
-            TimeFrame.Weekly => 604800,
-            TimeFrame.Monthly => 2592000,
-            _ => 60
-        };
+            if (tf == TimeFrame.Minute) return 60;
+            if (tf == TimeFrame.Minute5) return 300;
+            if (tf == TimeFrame.Minute10) return 600;
+            if (tf == TimeFrame.Minute15) return 900;
+            if (tf == TimeFrame.Minute30) return 1800;
+            if (tf == TimeFrame.Hour) return 3600;
+            if (tf == TimeFrame.Hour4) return 14400;
+            if (tf == TimeFrame.Hour8) return 28800;
+            if (tf == TimeFrame.Hour12) return 43200;
+            if (tf == TimeFrame.Daily) return 86400;
+            if (tf == TimeFrame.Weekly) return 604800;
+            if (tf == TimeFrame.Monthly) return 2592000;
+            return 60;
+        }
 
         private int FindBarIndexAtOrBefore(Bars bars, DateTime time)
         {

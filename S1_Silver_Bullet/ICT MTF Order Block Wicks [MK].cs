@@ -8,22 +8,22 @@ namespace cAlgo
 {
     internal static class TimeFrameCompatExtensions
     {
-        public static TimeSpan ToTimeSpan(this TimeFrame tf) => tf switch
+        public static TimeSpan ToTimeSpan(this TimeFrame tf)
         {
-            TimeFrame.Minute => TimeSpan.FromMinutes(1),
-            TimeFrame.Minute5 => TimeSpan.FromMinutes(5),
-            TimeFrame.Minute10 => TimeSpan.FromMinutes(10),
-            TimeFrame.Minute15 => TimeSpan.FromMinutes(15),
-            TimeFrame.Minute30 => TimeSpan.FromMinutes(30),
-            TimeFrame.Hour => TimeSpan.FromHours(1),
-            TimeFrame.Hour4 => TimeSpan.FromHours(4),
-            TimeFrame.Hour8 => TimeSpan.FromHours(8),
-            TimeFrame.Hour12 => TimeSpan.FromHours(12),
-            TimeFrame.Daily => TimeSpan.FromDays(1),
-            TimeFrame.Weekly => TimeSpan.FromDays(7),
-            TimeFrame.Monthly => TimeSpan.FromDays(30),
-            _ => TimeSpan.FromMinutes(1)
-        };
+            if (tf == TimeFrame.Minute) return TimeSpan.FromMinutes(1);
+            if (tf == TimeFrame.Minute5) return TimeSpan.FromMinutes(5);
+            if (tf == TimeFrame.Minute10) return TimeSpan.FromMinutes(10);
+            if (tf == TimeFrame.Minute15) return TimeSpan.FromMinutes(15);
+            if (tf == TimeFrame.Minute30) return TimeSpan.FromMinutes(30);
+            if (tf == TimeFrame.Hour) return TimeSpan.FromHours(1);
+            if (tf == TimeFrame.Hour4) return TimeSpan.FromHours(4);
+            if (tf == TimeFrame.Hour8) return TimeSpan.FromHours(8);
+            if (tf == TimeFrame.Hour12) return TimeSpan.FromHours(12);
+            if (tf == TimeFrame.Daily) return TimeSpan.FromDays(1);
+            if (tf == TimeFrame.Weekly) return TimeSpan.FromDays(7);
+            if (tf == TimeFrame.Monthly) return TimeSpan.FromDays(30);
+            return TimeSpan.FromMinutes(1);
+        }
     }
 
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
@@ -365,21 +365,32 @@ namespace cAlgo
                 lastCount = sourceBars.Count;
             }
         }
-        private bool NotCurrentTimeframeEqualEnabledTfs() => Bars.TimeFrame switch
+        private bool NotCurrentTimeframeEqualEnabledTfs()
         {
-            TimeFrame.Minute5 => !Enable5m,
-            TimeFrame.Minute10 => !Enable10m,
-            TimeFrame.Minute15 => !Enable15m,
-            TimeFrame.Minute30 => !Enable30m,
-            TimeFrame.Hour => !Enable1h,
-            TimeFrame.Hour4 => !Enable4h,
-            TimeFrame.Hour8 => !Enable8h,
-            TimeFrame.Hour12 => !Enable12h,
-            TimeFrame.Daily => !EnableDaily,
-            TimeFrame.Weekly => !EnableWeekly,
-            TimeFrame.Monthly => !EnableMonthly,
-            _ => true
-        };
+            if (Bars.TimeFrame == TimeFrame.Minute5)
+                return !Enable5m;
+            if (Bars.TimeFrame == TimeFrame.Minute10)
+                return !Enable10m;
+            if (Bars.TimeFrame == TimeFrame.Minute15)
+                return !Enable15m;
+            if (Bars.TimeFrame == TimeFrame.Minute30)
+                return !Enable30m;
+            if (Bars.TimeFrame == TimeFrame.Hour)
+                return !Enable1h;
+            if (Bars.TimeFrame == TimeFrame.Hour4)
+                return !Enable4h;
+            if (Bars.TimeFrame == TimeFrame.Hour8)
+                return !Enable8h;
+            if (Bars.TimeFrame == TimeFrame.Hour12)
+                return !Enable12h;
+            if (Bars.TimeFrame == TimeFrame.Daily)
+                return !EnableDaily;
+            if (Bars.TimeFrame == TimeFrame.Weekly)
+                return !EnableWeekly;
+            if (Bars.TimeFrame == TimeFrame.Monthly)
+                return !EnableMonthly;
+            return true;
+        }
 
         private bool IsBullDetected(double open1, double close1, double op, double cl, double high1)
         {
