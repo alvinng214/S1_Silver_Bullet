@@ -272,8 +272,8 @@ namespace cAlgo
                         }
                     }
 
-                    var syncMult = tfSec == 0 ? 1 : (resSec / Math.Max(1, tfSec));
-                    var os = -(_obPeriod - selectorShift) * (Resolution == Bars.TimeFrame ? 1 : syncMult);
+                    var syncMult = tfSec == 0 ? 1 : Math.Max(1, resSec / Math.Max(1, tfSec));
+                    var os = -(_obPeriod - selectorShift) * (_srcBars.TimeFrame == Bars.TimeFrame ? 1 : syncMult);
                     var srcIndexA = htfIndex - (_obPeriod - selectorShift);
                     var srcIndexB = htfIndex - (_obPeriod - selectorShift - 1);
                     if (srcIndexA >= 0 && srcIndexB >= 0 && srcIndexA < _srcBars.Count && srcIndexB < _srcBars.Count)
@@ -337,7 +337,7 @@ namespace cAlgo
             int idx = 0;
             for (int i = 0; i <= len; i++)
             {
-                var bi = start + i;
+                var bi = start - i;
                 if (bi < 0 || bi >= _srcBars.Count)
                     continue;
                 if (!double.IsNaN(wickL) && _srcBars.LowPrices[bi] > wickL && i > 0)
@@ -356,7 +356,7 @@ namespace cAlgo
             int idx = 0;
             for (int i = 0; i <= len; i++)
             {
-                var bi = start + i;
+                var bi = start - i;
                 if (bi < 0 || bi >= _srcBars.Count)
                     continue;
                 if (!double.IsNaN(wickH) && _srcBars.HighPrices[bi] < wickH && i > 0)
@@ -403,7 +403,7 @@ namespace cAlgo
             var text = bull ? "Bull OB" : "Bear OB";
             var baseId = "ob_m_" + _id++;
 
-            if (Resolution == Bars.TimeFrame)
+            if (_srcBars.TimeFrame == Bars.TimeFrame)
             {
                 var i = Bars.Count - 1;
                 var x = Math.Max(0, i + os);

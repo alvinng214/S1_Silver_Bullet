@@ -313,9 +313,10 @@ namespace cAlgo
             // Parity with Pine alertcondition section: 30m and 12h are not included there.
             var anyBull = newBullChart || newBull5 || newBull10 || newBull15 || newBull1h || newBull4h || newBull8h || newBullD || newBullW || newBullM;
             var anyBear = newBearChart || newBear5 || newBear10 || newBear15 || newBear1h || newBear4h || newBear8h || newBearD || newBearW || newBearM;
-            BullCreationAlert[index] = anyBull ? 1.0 : double.NaN;
-            BearCreationAlert[index] = anyBear ? 1.0 : double.NaN;
-            BothCreationAlert[index] = (anyBull || anyBear) ? 1.0 : double.NaN;
+            var markerPrice = (high + low) / 2.0;
+            BullCreationAlert[index] = anyBull ? markerPrice : double.NaN;
+            BearCreationAlert[index] = anyBear ? markerPrice : double.NaN;
+            BothCreationAlert[index] = (anyBull || anyBear) ? markerPrice : double.NaN;
         }
 
         private void RegisterTf(string key, string label, TimeFrame timeframe, bool enabled, int maxCount, bool isChartTf)
@@ -387,10 +388,15 @@ namespace cAlgo
 
             var leftTime = ShiftTime(index, 20);
             var rightTime = ShiftTime(index, 200);
+            var zoneTop = Math.Max(top, bottom);
+            var zoneBottom = Math.Min(top, bottom);
+            if (double.IsNaN(zoneTop) || double.IsNaN(zoneBottom) || double.IsInfinity(zoneTop) || double.IsInfinity(zoneBottom) || zoneBottom <= 0)
+                return;
+
             var borderColor = isBull ? Color.FromArgb(0, Color.Yellow) : Color.FromArgb(0, Color.Blue);
             var fillColor = isBull ? BullObColor : BearObColor;
 
-            var rect = Chart.DrawRectangle(id, leftTime, top, rightTime, bottom, borderColor, 1, LineStyle.DotsRare);
+            var rect = Chart.DrawRectangle(id, leftTime, zoneTop, rightTime, zoneBottom, borderColor, 1, LineStyle.DotsRare);
             rect.IsFilled = true;
             rect.Color = fillColor;
 
@@ -412,8 +418,8 @@ namespace cAlgo
                 LabelId = labelId,
                 TfLabel = tf.Label,
                 IsBull = isBull,
-                Top = top,
-                Bottom = bottom,
+                Top = zoneTop,
+                Bottom = zoneBottom,
                 Box = rect,
                 Label = label
             };
