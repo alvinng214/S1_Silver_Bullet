@@ -90,8 +90,8 @@ namespace cAlgo
         private readonly List<ObRecord> _obRecords = new List<ObRecord>();
         private readonly List<FvgRecord> _fvgRecords = new List<FvgRecord>();
 
-        private SignalState _signal = new SignalState();
-        private SignalState _signalFvg = new SignalState();
+        private SignalState _signal = NewEmptySignal();
+        private SignalState _signalFvg = NewEmptySignal();
 
         private int _lastDetectedObSourceIndex = -1;
         private int _lastDetectedFvgSourceIndex = -1;
@@ -342,6 +342,15 @@ namespace cAlgo
                 Entry = false,
                 Index = index,
                 Time = Bars.OpenTimes[index]
+            };
+        }
+
+        private static SignalState NewEmptySignal()
+        {
+            return new SignalState
+            {
+                Point = double.NaN,
+                Entry = false
             };
         }
 
