@@ -390,7 +390,7 @@ namespace cAlgo
             var rightTime = ShiftTime(index, 200);
             var zoneTop = Math.Max(top, bottom);
             var zoneBottom = Math.Min(top, bottom);
-            if (double.IsNaN(zoneTop) || double.IsNaN(zoneBottom) || double.IsInfinity(zoneTop) || double.IsInfinity(zoneBottom) || zoneBottom <= 0)
+            if (double.IsNaN(zoneTop) || double.IsNaN(zoneBottom) || double.IsInfinity(zoneTop) || double.IsInfinity(zoneBottom))
                 return;
 
             var borderColor = isBull ? Color.FromArgb(0, Color.Yellow) : Color.FromArgb(0, Color.Blue);
