@@ -176,9 +176,9 @@ namespace cAlgo
             bool tsReset = TsReset == TrailingStopResetMode.EverySignals ? (bull || bear) : (_os != _prevOs);
             TrailingStop(tsReset, _os, TsMult, index, atr);
 
-            var barColor = GetBarColor(_trail.Reached, _os, bullReached, bearReached);
-            if (barColor.HasValue)
-                Chart.SetBarColor(index, barColor.Value);
+            Color barColor;
+            if (TryGetBarColor(_trail.Reached, _os, bullReached, bearReached, out barColor))
+                Chart.SetBarColor(index, barColor);
 
             if (_trail.Reached || bull || bear || !_trail.Ts.HasValue)
             {
@@ -310,18 +310,28 @@ namespace cAlgo
             return double.IsNaN(value) || double.IsInfinity(value) ? 0.0 : value;
         }
 
-        private Color? GetBarColor(bool tsReached, int os, bool bullReached, bool bearReached)
+        private bool TryGetBarColor(bool tsReached, int os, bool bullReached, bool bearReached, out Color color)
         {
             if (tsReached)
-                return null;
+            {
+                color = default(Color);
+                return false;
+            }
 
             if (os == 1 && !bullReached)
-                return BullColor;
+            {
+                color = BullColor;
+                return true;
+            }
 
             if (os == 0 && !bearReached)
-                return BearColor;
+            {
+                color = BearColor;
+                return true;
+            }
 
-            return null;
+            color = default(Color);
+            return false;
         }
     }
 }
