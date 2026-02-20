@@ -347,10 +347,11 @@ namespace cAlgo
             if (sourceBars == null || sourceBars == Bars)
                 return;
 
-            // TradingView generally has deeper HTF history immediately available.
-            // Load additional source history to reduce missing older OBs in cTrader.
-            var target = Math.Max(Bars.Count / 2, 1500);
-            for (int i = 0; i < 20 && sourceBars.Count < target; i++)
+            // Pine doesn't clamp historical lookback in this script declaration,
+            // so we load as much HTF history as the cTrader provider exposes.
+            // Keep a hard iteration cap as a safety guard for initialization time.
+            const int maxHistoryLoadIterations = 400;
+            for (int i = 0; i < maxHistoryLoadIterations; i++)
             {
                 var loaded = sourceBars.LoadMoreHistory();
                 if (loaded <= 0)
