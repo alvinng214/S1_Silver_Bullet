@@ -5,6 +5,26 @@ using cAlgo.API.Internals;
 
 namespace cAlgo
 {
+    internal static class TimeFrameCompatExtensions
+    {
+        public static TimeSpan ToTimeSpan(this TimeFrame tf)
+        {
+            if (tf == TimeFrame.Minute) return TimeSpan.FromMinutes(1);
+            if (tf == TimeFrame.Minute5) return TimeSpan.FromMinutes(5);
+            if (tf == TimeFrame.Minute10) return TimeSpan.FromMinutes(10);
+            if (tf == TimeFrame.Minute15) return TimeSpan.FromMinutes(15);
+            if (tf == TimeFrame.Minute30) return TimeSpan.FromMinutes(30);
+            if (tf == TimeFrame.Hour) return TimeSpan.FromHours(1);
+            if (tf == TimeFrame.Hour4) return TimeSpan.FromHours(4);
+            if (tf == TimeFrame.Hour8) return TimeSpan.FromHours(8);
+            if (tf == TimeFrame.Hour12) return TimeSpan.FromHours(12);
+            if (tf == TimeFrame.Daily) return TimeSpan.FromDays(1);
+            if (tf == TimeFrame.Weekly) return TimeSpan.FromDays(7);
+            if (tf == TimeFrame.Monthly) return TimeSpan.FromDays(30);
+            return TimeSpan.FromMinutes(1);
+        }
+    }
+
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class ICTMTFOrderBlockWicksMK : Indicator
     {
