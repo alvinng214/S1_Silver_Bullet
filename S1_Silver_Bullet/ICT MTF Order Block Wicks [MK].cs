@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using cAlgo.API;
 using cAlgo.API.Internals;
 
@@ -7,22 +8,22 @@ namespace cAlgo
 {
     internal static class TimeFrameCompatExtensions
     {
-        public static TimeSpan ToTimeSpan(this TimeFrame tf)
+        public static TimeSpan ToTimeSpan(this TimeFrame tf) => tf switch
         {
-            if (tf == TimeFrame.Minute) return TimeSpan.FromMinutes(1);
-            if (tf == TimeFrame.Minute5) return TimeSpan.FromMinutes(5);
-            if (tf == TimeFrame.Minute10) return TimeSpan.FromMinutes(10);
-            if (tf == TimeFrame.Minute15) return TimeSpan.FromMinutes(15);
-            if (tf == TimeFrame.Minute30) return TimeSpan.FromMinutes(30);
-            if (tf == TimeFrame.Hour) return TimeSpan.FromHours(1);
-            if (tf == TimeFrame.Hour4) return TimeSpan.FromHours(4);
-            if (tf == TimeFrame.Hour8) return TimeSpan.FromHours(8);
-            if (tf == TimeFrame.Hour12) return TimeSpan.FromHours(12);
-            if (tf == TimeFrame.Daily) return TimeSpan.FromDays(1);
-            if (tf == TimeFrame.Weekly) return TimeSpan.FromDays(7);
-            if (tf == TimeFrame.Monthly) return TimeSpan.FromDays(30);
-            return TimeSpan.FromMinutes(1);
-        }
+            TimeFrame.Minute => TimeSpan.FromMinutes(1),
+            TimeFrame.Minute5 => TimeSpan.FromMinutes(5),
+            TimeFrame.Minute10 => TimeSpan.FromMinutes(10),
+            TimeFrame.Minute15 => TimeSpan.FromMinutes(15),
+            TimeFrame.Minute30 => TimeSpan.FromMinutes(30),
+            TimeFrame.Hour => TimeSpan.FromHours(1),
+            TimeFrame.Hour4 => TimeSpan.FromHours(4),
+            TimeFrame.Hour8 => TimeSpan.FromHours(8),
+            TimeFrame.Hour12 => TimeSpan.FromHours(12),
+            TimeFrame.Daily => TimeSpan.FromDays(1),
+            TimeFrame.Weekly => TimeSpan.FromDays(7),
+            TimeFrame.Monthly => TimeSpan.FromDays(30),
+            _ => TimeSpan.FromMinutes(1)
+        };
     }
 
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
@@ -219,8 +220,9 @@ namespace cAlgo
             RegisterTf("W", "Weekly", TimeFrame.Weekly, EnableWeekly, MaxWeekly, false);
             RegisterTf("M", "Monthly", TimeFrame.Monthly, EnableMonthly, MaxMonthly, false);
 
-            // Keep parity with source's total calculation (it omits 30m and 12h).
-            var totalMax = MaxChart + Max5m + Max10m + Max15m + Max1h + Max4h + Max8h + MaxDaily + MaxWeekly + MaxMonthly;
+            // Keep parity with source's total calculation (it omits 30m and 12h),
+            // but only include enabled timeframes that are actually registered.
+            var totalMax = _tfs.Where(tf => tf.Key != "30" && tf.Key != "720").Sum(tf => tf.MaxCount);
             if (totalMax > 500)
                 Chart.DrawStaticText("mk_ob_error", "MTF OB INDICATOR ERROR\n\nMax Number of OBs exceeded, please change settings.", VerticalAlignment.Bottom, HorizontalAlignment.Right, Color.Red);
         }
@@ -350,40 +352,34 @@ namespace cAlgo
             // Pine doesn't clamp historical lookback in this script declaration,
             // so we load as much HTF history as the cTrader provider exposes.
             // Keep a hard iteration cap as a safety guard for initialization time.
-            const int maxHistoryLoadIterations = 400;
+            const int maxHistoryLoadIterations = 40;
+            var lastCount = sourceBars.Count;
             for (int i = 0; i < maxHistoryLoadIterations; i++)
             {
                 var loaded = sourceBars.LoadMoreHistory();
                 if (loaded <= 0)
                     break;
+
+                if (sourceBars.Count <= lastCount)
+                    break;
+                lastCount = sourceBars.Count;
             }
         }
-        private bool NotCurrentTimeframeEqualEnabledTfs()
+        private bool NotCurrentTimeframeEqualEnabledTfs() => Bars.TimeFrame switch
         {
-            if (Bars.TimeFrame == TimeFrame.Minute5)
-                return !Enable5m;
-            if (Bars.TimeFrame == TimeFrame.Minute10)
-                return !Enable10m;
-            if (Bars.TimeFrame == TimeFrame.Minute15)
-                return !Enable15m;
-            if (Bars.TimeFrame == TimeFrame.Minute30)
-                return !Enable30m;
-            if (Bars.TimeFrame == TimeFrame.Hour)
-                return !Enable1h;
-            if (Bars.TimeFrame == TimeFrame.Hour4)
-                return !Enable4h;
-            if (Bars.TimeFrame == TimeFrame.Hour8)
-                return !Enable8h;
-            if (Bars.TimeFrame == TimeFrame.Hour12)
-                return !Enable12h;
-            if (Bars.TimeFrame == TimeFrame.Daily)
-                return !EnableDaily;
-            if (Bars.TimeFrame == TimeFrame.Weekly)
-                return !EnableWeekly;
-            if (Bars.TimeFrame == TimeFrame.Monthly)
-                return !EnableMonthly;
-            return true;
-        }
+            TimeFrame.Minute5 => !Enable5m,
+            TimeFrame.Minute10 => !Enable10m,
+            TimeFrame.Minute15 => !Enable15m,
+            TimeFrame.Minute30 => !Enable30m,
+            TimeFrame.Hour => !Enable1h,
+            TimeFrame.Hour4 => !Enable4h,
+            TimeFrame.Hour8 => !Enable8h,
+            TimeFrame.Hour12 => !Enable12h,
+            TimeFrame.Daily => !EnableDaily,
+            TimeFrame.Weekly => !EnableWeekly,
+            TimeFrame.Monthly => !EnableMonthly,
+            _ => true
+        };
 
         private bool IsBullDetected(double open1, double close1, double op, double cl, double high1)
         {
@@ -716,18 +712,7 @@ namespace cAlgo
                     return delta;
             }
 
-            if (Bars.TimeFrame == TimeFrame.Minute5) return 300;
-            if (Bars.TimeFrame == TimeFrame.Minute10) return 600;
-            if (Bars.TimeFrame == TimeFrame.Minute15) return 900;
-            if (Bars.TimeFrame == TimeFrame.Minute30) return 1800;
-            if (Bars.TimeFrame == TimeFrame.Hour) return 3600;
-            if (Bars.TimeFrame == TimeFrame.Hour4) return 14400;
-            if (Bars.TimeFrame == TimeFrame.Hour8) return 28800;
-            if (Bars.TimeFrame == TimeFrame.Hour12) return 43200;
-            if (Bars.TimeFrame == TimeFrame.Daily) return 86400;
-            if (Bars.TimeFrame == TimeFrame.Weekly) return 604800;
-            if (Bars.TimeFrame == TimeFrame.Monthly) return 2592000;
-            return 60;
+            return Bars.TimeFrame.ToTimeSpan().TotalSeconds;
         }
     }
 }

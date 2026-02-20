@@ -155,8 +155,10 @@ namespace cAlgo
                 var i0 = htfIndex - 1;
                 var iob = htfIndex - _obPeriod;
 
-                var relMove = 100.0 * (Math.Abs(_srcBars.ClosePrices[iob] - _srcBars.ClosePrices[i0]) / _srcBars.ClosePrices[iob]) > Threshold;
-                var dojiCandle = 100.0 * Math.Abs(_srcBars.ClosePrices[iob] - _srcBars.OpenPrices[iob]) / _srcBars.OpenPrices[iob] > Doji;
+                var closeIob = _srcBars.ClosePrices[iob];
+                var openIob = _srcBars.OpenPrices[iob];
+                var relMove = closeIob != 0 && 100.0 * (Math.Abs(closeIob - _srcBars.ClosePrices[i0]) / Math.Abs(closeIob)) > Threshold;
+                var dojiCandle = openIob != 0 && 100.0 * Math.Abs(closeIob - openIob) / Math.Abs(openIob) > Doji;
 
                 var bullishOB = _srcBars.ClosePrices[iob] < _srcBars.OpenPrices[iob];
                 var bearishOB = _srcBars.ClosePrices[iob] > _srcBars.OpenPrices[iob];
@@ -170,7 +172,8 @@ namespace cAlgo
 
                     var tClose = _srcBars.ClosePrices[bi];
                     var tOpen = _srcBars.OpenPrices[bi];
-                    if (Math.Abs(100.0 * (tClose - tOpen) / tOpen) < Fuzzy)
+                    var candleMovePct = tOpen == 0 ? double.PositiveInfinity : Math.Abs(100.0 * (tClose - tOpen) / Math.Abs(tOpen));
+                    if (candleMovePct < Fuzzy)
                     {
                         up++;
                         down++;
@@ -297,22 +300,22 @@ namespace cAlgo
             AlertAny[index] = (obBull || obBear) ? 1 : double.NaN;
         }
 
-        private int TimeframeToSec(TimeFrame tf)
+        private int TimeframeToSec(TimeFrame tf) => tf switch
         {
-            if (tf == TimeFrame.Minute) return 60;
-            if (tf == TimeFrame.Minute5) return 300;
-            if (tf == TimeFrame.Minute10) return 600;
-            if (tf == TimeFrame.Minute15) return 900;
-            if (tf == TimeFrame.Minute30) return 1800;
-            if (tf == TimeFrame.Hour) return 3600;
-            if (tf == TimeFrame.Hour4) return 14400;
-            if (tf == TimeFrame.Hour8) return 28800;
-            if (tf == TimeFrame.Hour12) return 43200;
-            if (tf == TimeFrame.Daily) return 86400;
-            if (tf == TimeFrame.Weekly) return 604800;
-            if (tf == TimeFrame.Monthly) return 2592000;
-            return 60;
-        }
+            TimeFrame.Minute => 60,
+            TimeFrame.Minute5 => 300,
+            TimeFrame.Minute10 => 600,
+            TimeFrame.Minute15 => 900,
+            TimeFrame.Minute30 => 1800,
+            TimeFrame.Hour => 3600,
+            TimeFrame.Hour4 => 14400,
+            TimeFrame.Hour8 => 28800,
+            TimeFrame.Hour12 => 43200,
+            TimeFrame.Daily => 86400,
+            TimeFrame.Weekly => 604800,
+            TimeFrame.Monthly => 2592000,
+            _ => 60
+        };
 
         private int FindBarIndexAtOrBefore(Bars bars, DateTime time)
         {
