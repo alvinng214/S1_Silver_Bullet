@@ -250,16 +250,21 @@ namespace cAlgo
                 tf.NewBear = false;
 
                 var srcIdx = FindBarIndexAtOrBefore(tf.SourceBars, now);
-                if (srcIdx < 2)
+                var currClosedIdx = srcIdx - 1;
+                var prevIdx = currClosedIdx - 1;
+                var prev2Idx = currClosedIdx - 2;
+                if (prev2Idx < 0)
                     continue;
 
-                var open1 = tf.SourceBars.OpenPrices[srcIdx - 1];
-                var close1 = tf.SourceBars.ClosePrices[srcIdx - 1];
-                var op = tf.SourceBars.OpenPrices[srcIdx];
-                var cl = tf.SourceBars.ClosePrices[srcIdx];
-                var high1 = tf.SourceBars.HighPrices[srcIdx - 1];
-                var low1 = tf.SourceBars.LowPrices[srcIdx - 1];
-                var high2 = tf.SourceBars.HighPrices[srcIdx - 2];
+                // Pine request.security(..., lookahead_off) relies on closed HTF bars.
+                // Use the last two CLOSED source candles for detection parity.
+                var open1 = tf.SourceBars.OpenPrices[prevIdx];
+                var close1 = tf.SourceBars.ClosePrices[prevIdx];
+                var op = tf.SourceBars.OpenPrices[currClosedIdx];
+                var cl = tf.SourceBars.ClosePrices[currClosedIdx];
+                var high1 = tf.SourceBars.HighPrices[prevIdx];
+                var low1 = tf.SourceBars.LowPrices[prevIdx];
+                var high2 = tf.SourceBars.HighPrices[prev2Idx];
 
                 bool canDetect = (OnlyMktHrs && inSession) || !OnlyMktHrs;
                 var isNewBull = canDetect && IsBullDetected(open1, close1, op, cl, high1);
