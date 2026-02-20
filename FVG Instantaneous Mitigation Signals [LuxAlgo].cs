@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using cAlgo.API;
 using cAlgo.API.Indicators;
 
@@ -62,6 +63,7 @@ namespace cAlgo
         public IndicatorDataSeries TrailingStopPlot { get; set; }
 
         private AverageTrueRange _atr;
+        private MethodInfo _resetBarColorMethod;
 
         private sealed class AreaState
         {
@@ -84,6 +86,8 @@ namespace cAlgo
         private ChartTrendLine _bearLine;
         private bool? _bullLevelReached;
         private bool? _bearLevelReached;
+        private bool _hasBullSignal;
+        private bool _hasBearSignal;
 
         private int _os;
         private int _prevOs;
@@ -91,11 +95,14 @@ namespace cAlgo
         protected override void Initialize()
         {
             _atr = Indicators.AverageTrueRange(200, MovingAverageType.WilderSmoothing);
+            _resetBarColorMethod = Chart.GetType().GetMethod("ResetBarColor", BindingFlags.Instance | BindingFlags.Public);
             _bullTpsl = new AreaState();
             _bearTpsl = new AreaState();
             _trail = new TrailState();
             _os = 0;
             _prevOs = 0;
+            _hasBullSignal = false;
+            _hasBearSignal = false;
         }
 
         public override void Calculate(int index)
@@ -133,6 +140,7 @@ namespace cAlgo
 
                 _os = 1;
                 _bullLevelReached = false;
+                _hasBullSignal = true;
             }
 
             if (bear)
@@ -149,6 +157,7 @@ namespace cAlgo
 
                 _os = 0;
                 _bearLevelReached = false;
+                _hasBearSignal = true;
             }
 
             if (_bullLevelReached == false && _bullLine != null)
@@ -179,6 +188,8 @@ namespace cAlgo
             Color barColor;
             if (TryGetBarColor(_trail.Reached, _os, bullReached, bearReached, out barColor))
                 Chart.SetBarColor(index, barColor);
+            else
+                TryResetBarColor(index);
 
             if (_trail.Reached || bull || bear || !_trail.Ts.HasValue)
             {
@@ -318,13 +329,13 @@ namespace cAlgo
                 return false;
             }
 
-            if (os == 1 && !bullReached)
+            if (os == 1 && !bullReached && ShowBull && _hasBullSignal)
             {
                 color = BullColor;
                 return true;
             }
 
-            if (os == 0 && !bearReached)
+            if (os == 0 && !bearReached && ShowBear && _hasBearSignal)
             {
                 color = BearColor;
                 return true;
@@ -332,6 +343,12 @@ namespace cAlgo
 
             color = default(Color);
             return false;
+        }
+
+        private void TryResetBarColor(int index)
+        {
+            if (_resetBarColorMethod != null)
+                _resetBarColorMethod.Invoke(Chart, new object[] { index });
         }
     }
 }
