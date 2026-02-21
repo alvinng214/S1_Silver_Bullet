@@ -278,7 +278,8 @@ namespace cAlgo
                 structureBreakEvent = true;
             }
 
-            if (index > 0)
+            var isConfirmedBar = index < Bars.Count - 1;
+            if (index > 0 && isConfirmedBar)
             {
                 var prevHigh = Bars.HighPrices[index - 1];
                 var prevLow = Bars.LowPrices[index - 1];
@@ -312,13 +313,16 @@ namespace cAlgo
 
             if (TurtleSoupsEnabled)
             {
-                VisualizeTurtleSoups(_turtlePivotHighs, _turtleBearish, index);
-                VisualizeTurtleSoups(_turtlePivotLows, _turtleBullish, index);
-
-                if (TurtleConfirmation && _changeOfCharacter != null && _previousStructureBreakIndex.HasValue)
+                if (isConfirmedBar)
                 {
-                    ConfirmTurtle(_turtleBullish, index);
-                    ConfirmTurtle(_turtleBearish, index);
+                    VisualizeTurtleSoups(_turtlePivotHighs, _turtleBearish, index);
+                    VisualizeTurtleSoups(_turtlePivotLows, _turtleBullish, index);
+
+                    if (TurtleConfirmation && _changeOfCharacter != null && _previousStructureBreakIndex.HasValue)
+                    {
+                        ConfirmTurtle(_turtleBullish, index);
+                        ConfirmTurtle(_turtleBearish, index);
+                    }
                 }
 
                 if (IsNewTfBar("turtle", index, out var tfTurtle))
