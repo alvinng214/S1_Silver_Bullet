@@ -555,7 +555,7 @@ namespace cAlgo
 
                 if (filled && ExtendTillFilled)
                 {
-                    _overlayZones.RemoveAt(i);
+                    RemoveOverlayAt(i);
                     continue;
                 }
 
@@ -570,7 +570,7 @@ namespace cAlgo
 
                 if (!filled && !ExtendTillFilled)
                 {
-                    _overlayZones.RemoveAt(i);
+                    RemoveOverlayAt(i);
                     continue;
                 }
             }
