@@ -774,6 +774,12 @@ namespace cAlgo
         }
 
 
+
+        private DateTime GetSecurityAlignmentTime(int chartIndex)
+        {
+            return Bars.OpenTimes[chartIndex];
+        }
+
         private static int FindBarIndexAtOrBefore(Bars bars, DateTime t)
         {
             var lo = 0;
