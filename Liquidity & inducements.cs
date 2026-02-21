@@ -9,6 +9,7 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class LiquidityInducements : Indicator
     {
+        private const string BuildVersion = "parity-2026-02-21-r1";
         private sealed class Pivot
         {
             public double Price;
@@ -263,6 +264,7 @@ namespace cAlgo
         protected override void Initialize()
         {
             _atr = Indicators.AverageTrueRange(14, MovingAverageType.Simple);
+            Print("LiquidityInducements build {0}", BuildVersion);
             _structurePivots = new List<Pivot>();
             _structureBosList = new List<StructureBreak>();
             _structureTrend = 0;
