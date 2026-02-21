@@ -340,7 +340,6 @@ namespace cAlgo
             var rect = Chart.DrawRectangle(id, ShiftFromCurrentBar(5), top, ShiftFromCurrentBar(15), bottom, c);
             rect.IsFilled = true;
             rect.IsInteractive = false;
-            rect.BorderColor = HiddenFvgBorder;
             rect.LineStyle = LineStyle.Dots;
 
             ChartText label = null;
@@ -525,7 +524,6 @@ namespace cAlgo
             b.IsFilled = true;
             b.IsInteractive = false;
             b.Color = fillColor;
-            b.BorderColor = isUp ? UpBorderColor : DownBorderColor;
             b.LineStyle = LineStyle.Solid;
 
             var t = ShowTopLine ? Chart.DrawTrendLine(id + "_t", left, top, right, top, OverlayLineColor) : null;
