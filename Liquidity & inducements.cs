@@ -32,7 +32,6 @@ namespace cAlgo
             public Pivot Pivot;
             public bool Taken;
             public bool Invalidated;
-            public ChartIcon Icon;
             public ChartTrendLine Limit;
             public ChartTrendLine Break;
             public ChartRectangle FillBox;
@@ -44,8 +43,6 @@ namespace cAlgo
             public Pivot FirstPivot;
             public Pivot SecondPivot;
             public bool LiquidityTaken;
-            public ChartText Label;
-            public ChartTrendLine Line;
         }
 
         private sealed class RetracementInducement
@@ -54,8 +51,6 @@ namespace cAlgo
             public bool Taken;
             public bool Invalidated;
             public int? StopIndex;
-            public ChartTrendLine Line;
-            public ChartText Label;
         }
 
         private sealed class ExternalLiquidity
@@ -63,8 +58,6 @@ namespace cAlgo
             public double Price;
             public Pivot Pivot;
             public bool Hidden;
-            public ChartTrendLine Line;
-            public ChartText Label;
         }
 
         private sealed class TurtleSoup
