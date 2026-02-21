@@ -408,15 +408,12 @@ namespace cAlgo
 
                 z.Rect.Y1 = z.Top;
                 z.Rect.Y2 = z.Bottom;
-                if (ShowLabels)
+                z.Rect.Time1 = ShiftFromCurrentBar(LabelShift);
+                z.Rect.Time2 = ShiftFromCurrentBar(LabelShiftRight);
+                if (ShowLabels && z.Label != null)
                 {
-                    z.Rect.Time1 = ShiftFromCurrentBar(LabelShift);
-                    z.Rect.Time2 = ShiftFromCurrentBar(LabelShiftRight);
-                    if (z.Label != null)
-                    {
-                        z.Label.Time = ShiftFromCurrentBar(LabelShift);
-                        z.Label.Y = (z.Top + z.Bottom) / 2.0;
-                    }
+                    z.Label.Time = ShiftFromCurrentBar(LabelShift);
+                    z.Label.Y = (z.Top + z.Bottom) / 2.0;
                 }
             }
         }
