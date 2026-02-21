@@ -254,7 +254,7 @@ namespace cAlgo
 
         private void ValidateMaxFvgCount()
         {
-            var total = MaxChart + Max5m + Max10m + Max15m + Max30m + Max1h + Max4h + Max8h + Max12h + MaxDaily + MaxWeekly + MaxMonthly;
+            var total = MaxChart + Max5m + Max10m + Max15m + Max1h + Max4h + Max8h + MaxDaily + MaxWeekly + MaxMonthly;
             if (total > 500)
                 Chart.DrawStaticText("mk_error", "MTF FVG INDICATOR ERROR\n\nMax Number of FVGs exceeded, please change settings.", VerticalAlignment.Bottom, HorizontalAlignment.Right, Color.Red);
         }
