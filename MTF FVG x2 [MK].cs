@@ -280,7 +280,7 @@ namespace cAlgo
                     continue;
 
                 var tfBars = kv.Value;
-                var i = FindBarIndexAtOrBefore(tfBars, Bars.OpenTimes[chartIndex]);
+                var i = FindBarIndexAtOrBefore(tfBars, GetSecurityAlignmentTime(chartIndex));
                 if (i < 3)
                     continue;
 
@@ -430,7 +430,7 @@ namespace cAlgo
         private void ProcessOverlaySubsystem(int idx)
         {
             var tfBars = MarketData.GetBars(TfInput);
-            var i = FindBarIndexAtOrBefore(tfBars, Bars.OpenTimes[idx]);
+            var i = FindBarIndexAtOrBefore(tfBars, GetSecurityAlignmentTime(idx));
             if (i < 2)
                 return;
 
@@ -750,6 +750,24 @@ namespace cAlgo
                 span = TimeSpan.FromMinutes(1);
 
             return last + TimeSpan.FromTicks(span.Ticks * barsToRight);
+        }
+
+
+        private DateTime GetSecurityAlignmentTime(int chartIndex)
+        {
+            var t = Bars.OpenTimes[chartIndex];
+            if (chartIndex + 1 < Bars.Count)
+                return Bars.OpenTimes[chartIndex + 1].AddMilliseconds(-1);
+
+            if (chartIndex > 0)
+            {
+                var span = Bars.OpenTimes[chartIndex] - Bars.OpenTimes[chartIndex - 1];
+                if (span <= TimeSpan.Zero)
+                    span = TimeSpan.FromMinutes(1);
+                return t + span - TimeSpan.FromMilliseconds(1);
+            }
+
+            return t;
         }
 
         private static int FindBarIndexAtOrBefore(Bars bars, DateTime t)
