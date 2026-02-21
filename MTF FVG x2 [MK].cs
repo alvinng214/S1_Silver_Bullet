@@ -753,23 +753,6 @@ namespace cAlgo
         }
 
 
-        private DateTime GetSecurityAlignmentTime(int chartIndex)
-        {
-            var t = Bars.OpenTimes[chartIndex];
-            if (chartIndex + 1 < Bars.Count)
-                return Bars.OpenTimes[chartIndex + 1].AddMilliseconds(-1);
-
-            if (chartIndex > 0)
-            {
-                var span = Bars.OpenTimes[chartIndex] - Bars.OpenTimes[chartIndex - 1];
-                if (span <= TimeSpan.Zero)
-                    span = TimeSpan.FromMinutes(1);
-                return t + span - TimeSpan.FromMilliseconds(1);
-            }
-
-            return t;
-        }
-
         private static int FindBarIndexAtOrBefore(Bars bars, DateTime t)
         {
             var lo = 0;
