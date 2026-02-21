@@ -32,7 +32,6 @@ namespace cAlgo
             public Pivot Pivot;
             public bool Taken;
             public bool Invalidated;
-            public ChartIcon Icon;
             public ChartTrendLine Limit;
             public ChartTrendLine Break;
             public ChartRectangle FillBox;
@@ -44,8 +43,6 @@ namespace cAlgo
             public Pivot FirstPivot;
             public Pivot SecondPivot;
             public bool LiquidityTaken;
-            public ChartText Label;
-            public ChartTrendLine Line;
         }
 
         private sealed class RetracementInducement
@@ -54,8 +51,6 @@ namespace cAlgo
             public bool Taken;
             public bool Invalidated;
             public int? StopIndex;
-            public ChartTrendLine Line;
-            public ChartText Label;
         }
 
         private sealed class ExternalLiquidity
@@ -63,8 +58,6 @@ namespace cAlgo
             public double Price;
             public Pivot Pivot;
             public bool Hidden;
-            public ChartTrendLine Line;
-            public ChartText Label;
         }
 
         private sealed class TurtleSoup
@@ -194,17 +187,6 @@ namespace cAlgo
         [Parameter("Line Style", Group = "Display", DefaultValue = "Dotted")]
         public string LineStyleInput { get; set; }
 
-        [Output("LiqBuysideTarget", LineColor = "#00FF00", PlotType = PlotType.Points, Thickness = 3)]
-        public IndicatorDataSeries LiqBuysideTarget { get; set; }
-        [Output("LiqSellsideTarget", LineColor = "#FF0000", PlotType = PlotType.Points, Thickness = 3)]
-        public IndicatorDataSeries LiqSellsideTarget { get; set; }
-        [Output("DebugTrend", LineColor = "#FFFFFF", PlotType = PlotType.Line, Thickness = 1)]
-        public IndicatorDataSeries DebugTrend { get; set; }
-        [Output("DebugChoch", LineColor = "#00FFFF", PlotType = PlotType.Histogram, Thickness = 2)]
-        public IndicatorDataSeries DebugChoch { get; set; }
-        [Output("DebugBos", LineColor = "#FFA500", PlotType = PlotType.Histogram, Thickness = 2)]
-        public IndicatorDataSeries DebugBos { get; set; }
-
         private AverageTrueRange _atr;
         private int _structureTrend;
         private List<Pivot> _structurePivots;
@@ -288,15 +270,16 @@ namespace cAlgo
             }
 
             var bosPivot = BreakOfStructure(index);
+            _breakOfStructure = bosPivot;
             if (bosPivot != null)
             {
-                _breakOfStructure = bosPivot;
                 _previousStructureBreakPivot = bosPivot;
                 _previousStructureBreakIndex = index;
                 structureBreakEvent = true;
             }
 
-            if (index > 0)
+            var isConfirmedBar = index < Bars.Count - 1;
+            if (index > 0 && isConfirmedBar)
             {
                 var prevHigh = Bars.HighPrices[index - 1];
                 var prevLow = Bars.LowPrices[index - 1];
@@ -330,13 +313,16 @@ namespace cAlgo
 
             if (TurtleSoupsEnabled)
             {
-                VisualizeTurtleSoups(_turtlePivotHighs, _turtleBearish, index);
-                VisualizeTurtleSoups(_turtlePivotLows, _turtleBullish, index);
-
-                if (TurtleConfirmation && _changeOfCharacter != null && _previousStructureBreakIndex.HasValue)
+                if (isConfirmedBar)
                 {
-                    ConfirmTurtle(_turtleBullish, index);
-                    ConfirmTurtle(_turtleBearish, index);
+                    VisualizeTurtleSoups(_turtlePivotHighs, _turtleBearish, index);
+                    VisualizeTurtleSoups(_turtlePivotLows, _turtleBullish, index);
+
+                    if (TurtleConfirmation && _changeOfCharacter != null && _previousStructureBreakIndex.HasValue)
+                    {
+                        ConfirmTurtle(_turtleBullish, index);
+                        ConfirmTurtle(_turtleBearish, index);
+                    }
                 }
 
                 if (IsNewTfBar("turtle", index, out var tfTurtle))
@@ -363,11 +349,6 @@ namespace cAlgo
             DrawStructure(index);
             DrawExternalLiquidity(index);
             DrawRetracement(index);
-            PublishOutputs(index);
-
-            DebugTrend[index] = _structureTrend;
-            DebugChoch[index] = _changeOfCharacter != null ? _changeOfCharacter.Price : 0;
-            DebugBos[index] = _breakOfStructure != null ? _breakOfStructure.Price : 0;
         }
 
 
@@ -408,29 +389,6 @@ namespace cAlgo
                 return false;
             _lastTfBarIndex[key] = tfIndex;
             return true;
-        }
-
-        private void PublishOutputs(int index)
-        {
-            LiqBuysideTarget[index] = double.NaN;
-            LiqSellsideTarget[index] = double.NaN;
-
-            foreach (var b in _buyside)
-            {
-                if (!b.Hidden)
-                {
-                    LiqBuysideTarget[index] = b.Price;
-                    break;
-                }
-            }
-            foreach (var s in _sellside)
-            {
-                if (!s.Hidden)
-                {
-                    LiqSellsideTarget[index] = s.Price;
-                    break;
-                }
-            }
         }
 
         private void StructurePivotStep(int index)
@@ -684,17 +642,19 @@ namespace cAlgo
                 if (grabbed)
                 {
                     grab.Taken = true;
+                    var grabBarIndex = index - 1;
                     var id = $"{tag}_{grab.Pivot.BarIndex}_{index}_{grab.Pivot.Type}";
                     var iconType = grab.Pivot.Type == -1 ? ChartIconType.UpArrow : ChartIconType.DownArrow;
-                    Chart.DrawIcon(id, iconType, index, grab.Pivot.Price, c);
-                    grab.Limit = Chart.DrawTrendLine(id + "_lim", grab.Pivot.BarIndex, grab.Pivot.Price, index, grab.Pivot.Price, c, 1, ResolvedLineStyle);
-                    var breakPrice = grab.Pivot.Type == -1 ? Bars.LowPrices[index] : Bars.HighPrices[index];
-                    grab.Break = Chart.DrawTrendLine(id + "_brk", grab.Pivot.BarIndex, breakPrice, index, breakPrice, Color.FromArgb(0, 0, 0, 0), 1, ResolvedLineStyle);
-                    grab.FillBox = Chart.DrawRectangle(id + "_fill", grab.Pivot.BarIndex, Math.Max(grab.Pivot.Price, breakPrice), index, Math.Min(grab.Pivot.Price, breakPrice), Color.FromArgb(80, c.R, c.G, c.B));
+                    Chart.DrawIcon(id, iconType, grabBarIndex, grab.Pivot.Price, c);
+                    grab.Limit = Chart.DrawTrendLine(id + "_lim", grab.Pivot.BarIndex, grab.Pivot.Price, grabBarIndex, grab.Pivot.Price, c, 1, ResolvedLineStyle);
+                    var breakPrice = grab.Pivot.Type == -1 ? Bars.LowPrices[grabBarIndex] : Bars.HighPrices[grabBarIndex];
+                    grab.Break = Chart.DrawTrendLine(id + "_brk", grab.Pivot.BarIndex, breakPrice, grabBarIndex, breakPrice, Color.FromArgb(0, 0, 0, 0), 1, ResolvedLineStyle);
+                    grab.FillBox = Chart.DrawRectangle(id + "_fill", grab.Pivot.BarIndex, Math.Max(grab.Pivot.Price, breakPrice), grabBarIndex, Math.Min(grab.Pivot.Price, breakPrice), Color.FromArgb(80, c.R, c.G, c.B));
                     grab.FillBox.IsFilled = true;
                     grab.FillBox.IsInteractive = false;
                     var txt = "$$$";
-                    Chart.DrawText(id + "_t", txt, index, grab.Pivot.Price, c).FontSize = LiquidityFontSize;
+                    var labelBarIndex = grabBarIndex - ((grabBarIndex - grab.Pivot.BarIndex) / 2);
+                    Chart.DrawText(id + "_t", txt, labelBarIndex, grab.Pivot.Price, c).FontSize = LiquidityFontSize;
                 }
             }
         }
@@ -737,8 +697,12 @@ namespace cAlgo
                 if (swept)
                 {
                     sweep.Taken = true;
-                    var c = sweep.Pivot.Type == -1 ? SweepsBullishColor : SweepsBearishColor;
-                    Chart.DrawText($"sweep_{sweep.Pivot.BarIndex}_{index}", "$", index, sweep.Pivot.Price, c).FontSize = LiquidityFontSize;
+                    var sweepBarIndex = index - 1;
+                    var c = sweep.Pivot.Type == -1 ? SweepsBearishColor : SweepsBullishColor;
+                    var id = $"sweep_{sweep.Pivot.BarIndex}_{index}";
+                    Chart.DrawTrendLine(id + "_lim", sweep.Pivot.BarIndex, sweep.Pivot.Price, sweepBarIndex, sweep.Pivot.Price, c, 1, ResolvedLineStyle);
+                    var labelBarIndex = sweepBarIndex - ((sweepBarIndex - sweep.Pivot.BarIndex) / 2);
+                    Chart.DrawText(id + "_t", "$", labelBarIndex, sweep.Pivot.Price, c).FontSize = LiquidityFontSize;
                 }
             }
         }
