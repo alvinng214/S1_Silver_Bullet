@@ -187,17 +187,6 @@ namespace cAlgo
         [Parameter("Line Style", Group = "Display", DefaultValue = "Dotted")]
         public string LineStyleInput { get; set; }
 
-        [Output("LiqBuysideTarget", LineColor = "#00FF00", PlotType = PlotType.Points, Thickness = 3)]
-        public IndicatorDataSeries LiqBuysideTarget { get; set; }
-        [Output("LiqSellsideTarget", LineColor = "#FF0000", PlotType = PlotType.Points, Thickness = 3)]
-        public IndicatorDataSeries LiqSellsideTarget { get; set; }
-        [Output("DebugTrend", LineColor = "#FFFFFF", PlotType = PlotType.Line, Thickness = 1)]
-        public IndicatorDataSeries DebugTrend { get; set; }
-        [Output("DebugChoch", LineColor = "#00FFFF", PlotType = PlotType.Histogram, Thickness = 2)]
-        public IndicatorDataSeries DebugChoch { get; set; }
-        [Output("DebugBos", LineColor = "#FFA500", PlotType = PlotType.Histogram, Thickness = 2)]
-        public IndicatorDataSeries DebugBos { get; set; }
-
         private AverageTrueRange _atr;
         private int _structureTrend;
         private List<Pivot> _structurePivots;
@@ -356,11 +345,6 @@ namespace cAlgo
             DrawStructure(index);
             DrawExternalLiquidity(index);
             DrawRetracement(index);
-            PublishOutputs(index);
-
-            DebugTrend[index] = _structureTrend;
-            DebugChoch[index] = _changeOfCharacter != null ? _changeOfCharacter.Price : 0;
-            DebugBos[index] = _breakOfStructure != null ? _breakOfStructure.Price : 0;
         }
 
 
@@ -401,29 +385,6 @@ namespace cAlgo
                 return false;
             _lastTfBarIndex[key] = tfIndex;
             return true;
-        }
-
-        private void PublishOutputs(int index)
-        {
-            LiqBuysideTarget[index] = double.NaN;
-            LiqSellsideTarget[index] = double.NaN;
-
-            foreach (var b in _buyside)
-            {
-                if (!b.Hidden)
-                {
-                    LiqBuysideTarget[index] = b.Price;
-                    break;
-                }
-            }
-            foreach (var s in _sellside)
-            {
-                if (!s.Hidden)
-                {
-                    LiqSellsideTarget[index] = s.Price;
-                    break;
-                }
-            }
         }
 
         private void StructurePivotStep(int index)
