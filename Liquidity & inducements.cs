@@ -101,6 +101,8 @@ namespace cAlgo
         public int GrabsLookback { get; set; }
         [Parameter("Grabs Timeframe", Group = "Grabs", DefaultValue = "Minute")]
         public TimeFrame GrabsTimeframe { get; set; }
+        [Parameter("Grabs Use chart TF", Group = "Grabs", DefaultValue = true)]
+        public bool GrabsUseChartTimeframe { get; set; }
         [Parameter("Grabs Color", Group = "Grabs", DefaultValue = "#FFA500")]
         public Color GrabsColor { get; set; }
 
@@ -112,6 +114,8 @@ namespace cAlgo
         public int BigGrabsLookback { get; set; }
         [Parameter("Big Grabs Timeframe", Group = "Big grabs", DefaultValue = "Minute")]
         public TimeFrame BigGrabsTimeframe { get; set; }
+        [Parameter("Big Grabs Use chart TF", Group = "Big grabs", DefaultValue = true)]
+        public bool BigGrabsUseChartTimeframe { get; set; }
         [Parameter("Big Grabs Color", Group = "Big grabs", DefaultValue = "#00FFFF")]
         public Color BigGrabsColor { get; set; }
 
@@ -123,6 +127,8 @@ namespace cAlgo
         public int SweepsLookback { get; set; }
         [Parameter("Sweeps Timeframe", Group = "Sweeps", DefaultValue = "Minute")]
         public TimeFrame SweepsTimeframe { get; set; }
+        [Parameter("Sweeps Use chart TF", Group = "Sweeps", DefaultValue = true)]
+        public bool SweepsUseChartTimeframe { get; set; }
         [Parameter("Sweeps Bull", Group = "Sweeps", DefaultValue = "#008080")]
         public Color SweepsBullishColor { get; set; }
         [Parameter("Sweeps Bear", Group = "Sweeps", DefaultValue = "#FF0000")]
@@ -136,6 +142,8 @@ namespace cAlgo
         public int TurtleLookback { get; set; }
         [Parameter("Turtle Timeframe", Group = "Turtle soups", DefaultValue = "Minute")]
         public TimeFrame TurtleTimeframe { get; set; }
+        [Parameter("Turtle Use chart TF", Group = "Turtle soups", DefaultValue = true)]
+        public bool TurtleUseChartTimeframe { get; set; }
         [Parameter("Turtle Color", Group = "Turtle soups", DefaultValue = "#B3FFA500")]
         public Color TurtleColor { get; set; }
         [Parameter("Turtle confirmation", Group = "Turtle soups", DefaultValue = true)]
@@ -151,6 +159,8 @@ namespace cAlgo
         public int EqualLookback { get; set; }
         [Parameter("Equal Timeframe", Group = "Equal highs/lows", DefaultValue = "Minute")]
         public TimeFrame EqualTimeframe { get; set; }
+        [Parameter("Equal Use chart TF", Group = "Equal highs/lows", DefaultValue = true)]
+        public bool EqualUseChartTimeframe { get; set; }
         [Parameter("Equal Liquidity Color", Group = "Equal highs/lows", DefaultValue = "#FFA500")]
         public Color EqualLiquidityColor { get; set; }
         [Parameter("Equal Bull IDM", Group = "Equal highs/lows", DefaultValue = "#008080")]
@@ -166,6 +176,8 @@ namespace cAlgo
         public int RetrLookback { get; set; }
         [Parameter("Retr Timeframe", Group = "Retracement", DefaultValue = "Minute")]
         public TimeFrame RetrTimeframe { get; set; }
+        [Parameter("Retr Use chart TF", Group = "Retracement", DefaultValue = true)]
+        public bool RetrUseChartTimeframe { get; set; }
         [Parameter("Retr Bull", Group = "Retracement", DefaultValue = "#008080")]
         public Color RetrBullishColor { get; set; }
         [Parameter("Retr Bear", Group = "Retracement", DefaultValue = "#FF0000")]
@@ -186,6 +198,9 @@ namespace cAlgo
         public int LiquidityFontSize { get; set; }
         [Parameter("Line Style", Group = "Display", DefaultValue = "Dotted")]
         public string LineStyleInput { get; set; }
+
+        [Parameter("Parity Log", Group = "Debug", DefaultValue = false)]
+        public bool ParityLogEnabled { get; set; }
 
         private AverageTrueRange _atr;
         private int _structureTrend;
@@ -238,6 +253,13 @@ namespace cAlgo
             return Color.FromArgb(alpha, color.R, color.G, color.B);
         }
 
+        private void LogEvent(string module, string type, int barIndex, double price)
+        {
+            if (!ParityLogEnabled)
+                return;
+            Print("PARITY|{0}|{1}|bar={2}|price={3}", module, type, barIndex, price);
+        }
+
         protected override void Initialize()
         {
             _atr = Indicators.AverageTrueRange(14, MovingAverageType.Simple);
@@ -245,12 +267,12 @@ namespace cAlgo
             _structureBosList = new List<StructureBreak>();
             _structureTrend = 0;
 
-            RegisterTf("grabs", GrabsTimeframe);
-            RegisterTf("big_grabs", BigGrabsTimeframe);
-            RegisterTf("sweeps", SweepsTimeframe);
-            RegisterTf("turtle", TurtleTimeframe);
-            RegisterTf("equal", EqualTimeframe);
-            RegisterTf("retr", RetrTimeframe);
+            RegisterTf("grabs", GrabsUseChartTimeframe, GrabsTimeframe);
+            RegisterTf("big_grabs", BigGrabsUseChartTimeframe, BigGrabsTimeframe);
+            RegisterTf("sweeps", SweepsUseChartTimeframe, SweepsTimeframe);
+            RegisterTf("turtle", TurtleUseChartTimeframe, TurtleTimeframe);
+            RegisterTf("equal", EqualUseChartTimeframe, EqualTimeframe);
+            RegisterTf("retr", RetrUseChartTimeframe, RetrTimeframe);
         }
 
         public override void Calculate(int index)
@@ -297,17 +319,17 @@ namespace cAlgo
                 ProcessSweeps(prevHigh, prevLow, close, index);
             }
 
-            if (GrabsEnabled)
+            if (GrabsEnabled && isConfirmedBar)
             {
                 if (IsNewTfBar("grabs", index, out var tfGrabs))
                     AddPivotIfAnyTf("grabs", index, GrabsLeft, GrabsRight, GrabsLookback, _grabsHighs, _grabsLows);
             }
-            if (BigGrabsEnabled)
+            if (BigGrabsEnabled && isConfirmedBar)
             {
                 if (IsNewTfBar("big_grabs", index, out var tfBigGrabs))
                     AddPivotIfAnyTf("big_grabs", index, BigGrabsLeft, BigGrabsRight, BigGrabsLookback, _bigGrabsHighs, _bigGrabsLows);
             }
-            if (SweepsEnabled)
+            if (SweepsEnabled && isConfirmedBar)
             {
                 if (IsNewTfBar("sweeps", index, out var tfSweeps))
                     AddPivotIfAnyTf("sweeps", index, SweepsLeft, SweepsRight, SweepsLookback, _sweepsHighs, _sweepsLows);
@@ -332,11 +354,11 @@ namespace cAlgo
                     }
                 }
 
-                if (IsNewTfBar("turtle", index, out var tfTurtle))
+                if (isConfirmedBar && IsNewTfBar("turtle", index, out var tfTurtle))
                     AddTurtlePivotsFromTf(index);
             }
 
-            if (EqualPivotsEnabled)
+            if (EqualPivotsEnabled && isConfirmedBar)
             {
                 if (IsNewTfBar("equal", index, out var tfEqual))
                     UpdateEqualPivotsFromTf(index, "equal");
@@ -346,7 +368,7 @@ namespace cAlgo
             if (ExternalLiquidityEnabled)
                 ProcessExternalLiquidity(index, high, low, lastHigh, lastLow);
 
-            if (RetracementEnabled)
+            if (RetracementEnabled && isConfirmedBar)
             {
                 if (IsNewTfBar("retr", index, out var tfRetr))
                     UpdateRetracementPivotsFromTf(index, "retr");
@@ -359,9 +381,9 @@ namespace cAlgo
         }
 
 
-        private void RegisterTf(string key, TimeFrame tf)
+        private void RegisterTf(string key, bool useChartTimeframe, TimeFrame tf)
         {
-            _tfBars[key] = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
+            _tfBars[key] = useChartTimeframe || tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
             _lastTfBarIndex[key] = -1;
         }
 
@@ -663,6 +685,7 @@ namespace cAlgo
                     var labelBarIndex = grabBarIndex - ((grabBarIndex - grab.Pivot.BarIndex) / 2);
                     var textColor = ApplyTransparency(c, 30);
                     Chart.DrawText(id + "_t", txt, labelBarIndex, grab.Pivot.Price, textColor).FontSize = LiquidityFontSize;
+                    LogEvent(tag, "$$$", grabBarIndex, grab.Pivot.Price);
                 }
             }
         }
@@ -712,6 +735,7 @@ namespace cAlgo
                     var labelBarIndex = sweepBarIndex - ((sweepBarIndex - sweep.Pivot.BarIndex) / 2);
                     var textColor = ApplyTransparency(c, 30);
                     Chart.DrawText(id + "_t", "$", labelBarIndex, sweep.Pivot.Price, textColor).FontSize = LiquidityFontSize;
+                    LogEvent("sweep", "$", sweepBarIndex, sweep.Pivot.Price);
                 }
             }
         }
@@ -863,12 +887,26 @@ namespace cAlgo
             foreach (var ind in _eqBearishInducements)
             {
                 if (_structureTrend == -1 && !ind.LiquidityTaken && high >= ind.StopLosses)
+                {
                     ind.LiquidityTaken = true;
+                    var id = $"eq_trig_h_{ind.FirstPivot.BarIndex}_{ind.SecondPivot.BarIndex}";
+                    var midIndex = ind.SecondPivot.BarIndex - ((ind.SecondPivot.BarIndex - ind.FirstPivot.BarIndex) / 2);
+                    Chart.DrawTrendLine(id + "_l", ind.FirstPivot.BarIndex, ind.StopLosses, ind.SecondPivot.BarIndex, ind.StopLosses, EqualLiquidityColor, 1, ResolvedLineStyle);
+                    Chart.DrawText(id + "_t", "$$$", midIndex, ind.StopLosses, EqualLiquidityColor).FontSize = LiquidityFontSize;
+                    LogEvent("equal_trigger", "$$$", index, ind.StopLosses);
+                }
             }
             foreach (var ind in _eqBullishInducements)
             {
                 if (_structureTrend == 1 && !ind.LiquidityTaken && low <= ind.StopLosses)
+                {
                     ind.LiquidityTaken = true;
+                    var id = $"eq_trig_l_{ind.FirstPivot.BarIndex}_{ind.SecondPivot.BarIndex}";
+                    var midIndex = ind.SecondPivot.BarIndex - ((ind.SecondPivot.BarIndex - ind.FirstPivot.BarIndex) / 2);
+                    Chart.DrawTrendLine(id + "_l", ind.FirstPivot.BarIndex, ind.StopLosses, ind.SecondPivot.BarIndex, ind.StopLosses, EqualLiquidityColor, 1, ResolvedLineStyle);
+                    Chart.DrawText(id + "_t", "$$$", midIndex, ind.StopLosses, EqualLiquidityColor).FontSize = LiquidityFontSize;
+                    LogEvent("equal_trigger", "$$$", index, ind.StopLosses);
+                }
             }
 
             if (structureBreakEvent)
@@ -932,6 +970,7 @@ namespace cAlgo
             var midIndex = latest.BarIndex - ((latest.BarIndex - prior.BarIndex) / 2);
             var midPrice = latest.Price + ((prior.Price - latest.Price) / 2.0);
             Chart.DrawText($"eq_{type}_{latest.BarIndex}_{prior.BarIndex}", text, midIndex, midPrice, c).FontSize = LiquidityFontSize;
+            LogEvent("equal", text, latest.BarIndex, latest.Price);
             Chart.DrawTrendLine($"eq_l_{type}_{latest.BarIndex}_{prior.BarIndex}", latest.BarIndex, latest.Price, prior.BarIndex, prior.Price, c, 1, ResolvedLineStyle);
 
             if (trendInducement)
