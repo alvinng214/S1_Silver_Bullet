@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using cAlgo.API;
 using cAlgo.API.Indicators;
 
@@ -49,6 +50,9 @@ namespace cAlgo
         [Parameter("Bull Average", DefaultValue = true, Group = "Style")]
         public bool BullAvg { get; set; }
 
+        [Parameter("Color Bull Candles", DefaultValue = true, Group = "Style")]
+        public bool ColorBullCandles { get; set; }
+
         [Parameter("Bearish IMFVG", DefaultValue = true, Group = "Style")]
         public bool ShowBear { get; set; }
 
@@ -58,10 +62,14 @@ namespace cAlgo
         [Parameter("Bear Average", DefaultValue = true, Group = "Style")]
         public bool BearAvg { get; set; }
 
+        [Parameter("Color Bear Candles", DefaultValue = true, Group = "Style")]
+        public bool ColorBearCandles { get; set; }
+
         [Output("Trailing Stop", Thickness = 2, LineColor = "#5B9CF6")]
         public IndicatorDataSeries TrailingStopPlot { get; set; }
 
         private AverageTrueRange _atr;
+        private MethodInfo _resetBarColorMethod;
 
         private sealed class AreaState
         {
@@ -84,6 +92,8 @@ namespace cAlgo
         private ChartTrendLine _bearLine;
         private bool? _bullLevelReached;
         private bool? _bearLevelReached;
+        private bool _hasBullSignal;
+        private bool _hasBearSignal;
 
         private int _os;
         private int _prevOs;
@@ -91,11 +101,14 @@ namespace cAlgo
         protected override void Initialize()
         {
             _atr = Indicators.AverageTrueRange(200, MovingAverageType.WilderSmoothing);
+            _resetBarColorMethod = Chart.GetType().GetMethod("ResetBarColor", BindingFlags.Instance | BindingFlags.Public);
             _bullTpsl = new AreaState();
             _bearTpsl = new AreaState();
             _trail = new TrailState();
             _os = 0;
             _prevOs = 0;
+            _hasBullSignal = false;
+            _hasBearSignal = false;
         }
 
         public override void Calculate(int index)
@@ -133,6 +146,7 @@ namespace cAlgo
 
                 _os = 1;
                 _bullLevelReached = false;
+                _hasBullSignal = true;
             }
 
             if (bear)
@@ -149,6 +163,7 @@ namespace cAlgo
 
                 _os = 0;
                 _bearLevelReached = false;
+                _hasBearSignal = true;
             }
 
             if (_bullLevelReached == false && _bullLine != null)
@@ -176,9 +191,11 @@ namespace cAlgo
             bool tsReset = TsReset == TrailingStopResetMode.EverySignals ? (bull || bear) : (_os != _prevOs);
             TrailingStop(tsReset, _os, TsMult, index, atr);
 
-            var barColor = GetBarColor(_trail.Reached, _os, bullReached, bearReached);
-            if (barColor.HasValue)
-                Chart.SetBarColor(index, barColor.Value);
+            Color barColor;
+            if (TryGetBarColor(_trail.Reached, _os, bullReached, bearReached, out barColor))
+                Chart.SetBarColor(index, barColor);
+            else
+                TryResetBarColor(index);
 
             if (_trail.Reached || bull || bear || !_trail.Ts.HasValue)
             {
@@ -310,18 +327,34 @@ namespace cAlgo
             return double.IsNaN(value) || double.IsInfinity(value) ? 0.0 : value;
         }
 
-        private Color? GetBarColor(bool tsReached, int os, bool bullReached, bool bearReached)
+        private bool TryGetBarColor(bool tsReached, int os, bool bullReached, bool bearReached, out Color color)
         {
             if (tsReached)
-                return null;
+            {
+                color = default(Color);
+                return false;
+            }
 
-            if (os == 1 && !bullReached)
-                return BullColor;
+            if (os == 1 && !bullReached && ShowBull && ColorBullCandles && _hasBullSignal)
+            {
+                color = BullColor;
+                return true;
+            }
 
-            if (os == 0 && !bearReached)
-                return BearColor;
+            if (os == 0 && !bearReached && ShowBear && ColorBearCandles && _hasBearSignal)
+            {
+                color = BearColor;
+                return true;
+            }
 
-            return null;
+            color = default(Color);
+            return false;
+        }
+
+        private void TryResetBarColor(int index)
+        {
+            if (_resetBarColorMethod != null)
+                _resetBarColorMethod.Invoke(Chart, new object[] { index });
         }
     }
 }
