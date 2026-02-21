@@ -9,6 +9,7 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class LiquidityInducements : Indicator
     {
+        private const string BuildVersion = "parity-2026-02-21-r1";
         private sealed class Pivot
         {
             public double Price;
@@ -32,7 +33,6 @@ namespace cAlgo
             public Pivot Pivot;
             public bool Taken;
             public bool Invalidated;
-            public ChartIcon Icon;
             public ChartTrendLine Limit;
             public ChartTrendLine Break;
             public ChartRectangle FillBox;
@@ -44,8 +44,6 @@ namespace cAlgo
             public Pivot FirstPivot;
             public Pivot SecondPivot;
             public bool LiquidityTaken;
-            public ChartText Label;
-            public ChartTrendLine Line;
         }
 
         private sealed class RetracementInducement
@@ -54,8 +52,6 @@ namespace cAlgo
             public bool Taken;
             public bool Invalidated;
             public int? StopIndex;
-            public ChartTrendLine Line;
-            public ChartText Label;
         }
 
         private sealed class ExternalLiquidity
@@ -63,8 +59,6 @@ namespace cAlgo
             public double Price;
             public Pivot Pivot;
             public bool Hidden;
-            public ChartTrendLine Line;
-            public ChartText Label;
         }
 
         private sealed class TurtleSoup
@@ -108,6 +102,8 @@ namespace cAlgo
         public int GrabsLookback { get; set; }
         [Parameter("Grabs Timeframe", Group = "Grabs", DefaultValue = "Minute")]
         public TimeFrame GrabsTimeframe { get; set; }
+        [Parameter("Grabs Use chart TF", Group = "Grabs", DefaultValue = true)]
+        public bool GrabsUseChartTimeframe { get; set; }
         [Parameter("Grabs Color", Group = "Grabs", DefaultValue = "#FFA500")]
         public Color GrabsColor { get; set; }
 
@@ -119,6 +115,8 @@ namespace cAlgo
         public int BigGrabsLookback { get; set; }
         [Parameter("Big Grabs Timeframe", Group = "Big grabs", DefaultValue = "Minute")]
         public TimeFrame BigGrabsTimeframe { get; set; }
+        [Parameter("Big Grabs Use chart TF", Group = "Big grabs", DefaultValue = true)]
+        public bool BigGrabsUseChartTimeframe { get; set; }
         [Parameter("Big Grabs Color", Group = "Big grabs", DefaultValue = "#00FFFF")]
         public Color BigGrabsColor { get; set; }
 
@@ -130,6 +128,8 @@ namespace cAlgo
         public int SweepsLookback { get; set; }
         [Parameter("Sweeps Timeframe", Group = "Sweeps", DefaultValue = "Minute")]
         public TimeFrame SweepsTimeframe { get; set; }
+        [Parameter("Sweeps Use chart TF", Group = "Sweeps", DefaultValue = true)]
+        public bool SweepsUseChartTimeframe { get; set; }
         [Parameter("Sweeps Bull", Group = "Sweeps", DefaultValue = "#008080")]
         public Color SweepsBullishColor { get; set; }
         [Parameter("Sweeps Bear", Group = "Sweeps", DefaultValue = "#FF0000")]
@@ -143,6 +143,8 @@ namespace cAlgo
         public int TurtleLookback { get; set; }
         [Parameter("Turtle Timeframe", Group = "Turtle soups", DefaultValue = "Minute")]
         public TimeFrame TurtleTimeframe { get; set; }
+        [Parameter("Turtle Use chart TF", Group = "Turtle soups", DefaultValue = true)]
+        public bool TurtleUseChartTimeframe { get; set; }
         [Parameter("Turtle Color", Group = "Turtle soups", DefaultValue = "#B3FFA500")]
         public Color TurtleColor { get; set; }
         [Parameter("Turtle confirmation", Group = "Turtle soups", DefaultValue = true)]
@@ -158,6 +160,8 @@ namespace cAlgo
         public int EqualLookback { get; set; }
         [Parameter("Equal Timeframe", Group = "Equal highs/lows", DefaultValue = "Minute")]
         public TimeFrame EqualTimeframe { get; set; }
+        [Parameter("Equal Use chart TF", Group = "Equal highs/lows", DefaultValue = true)]
+        public bool EqualUseChartTimeframe { get; set; }
         [Parameter("Equal Liquidity Color", Group = "Equal highs/lows", DefaultValue = "#FFA500")]
         public Color EqualLiquidityColor { get; set; }
         [Parameter("Equal Bull IDM", Group = "Equal highs/lows", DefaultValue = "#008080")]
@@ -173,6 +177,8 @@ namespace cAlgo
         public int RetrLookback { get; set; }
         [Parameter("Retr Timeframe", Group = "Retracement", DefaultValue = "Minute")]
         public TimeFrame RetrTimeframe { get; set; }
+        [Parameter("Retr Use chart TF", Group = "Retracement", DefaultValue = true)]
+        public bool RetrUseChartTimeframe { get; set; }
         [Parameter("Retr Bull", Group = "Retracement", DefaultValue = "#008080")]
         public Color RetrBullishColor { get; set; }
         [Parameter("Retr Bear", Group = "Retracement", DefaultValue = "#FF0000")]
@@ -194,16 +200,8 @@ namespace cAlgo
         [Parameter("Line Style", Group = "Display", DefaultValue = "Dotted")]
         public string LineStyleInput { get; set; }
 
-        [Output("LiqBuysideTarget", LineColor = "#00FF00", PlotType = PlotType.Points, Thickness = 3)]
-        public IndicatorDataSeries LiqBuysideTarget { get; set; }
-        [Output("LiqSellsideTarget", LineColor = "#FF0000", PlotType = PlotType.Points, Thickness = 3)]
-        public IndicatorDataSeries LiqSellsideTarget { get; set; }
-        [Output("DebugTrend", LineColor = "#FFFFFF", PlotType = PlotType.Line, Thickness = 1)]
-        public IndicatorDataSeries DebugTrend { get; set; }
-        [Output("DebugChoch", LineColor = "#00FFFF", PlotType = PlotType.Histogram, Thickness = 2)]
-        public IndicatorDataSeries DebugChoch { get; set; }
-        [Output("DebugBos", LineColor = "#FFA500", PlotType = PlotType.Histogram, Thickness = 2)]
-        public IndicatorDataSeries DebugBos { get; set; }
+        [Parameter("Parity Log", Group = "Debug", DefaultValue = false)]
+        public bool ParityLogEnabled { get; set; }
 
         private AverageTrueRange _atr;
         private int _structureTrend;
@@ -249,19 +247,34 @@ namespace cAlgo
             }
         }
 
+        private Color ApplyTransparency(Color color, int transparencyPercent)
+        {
+            var clamped = Math.Max(0, Math.Min(100, transparencyPercent));
+            var alpha = (int)Math.Round(255 * (100 - clamped) / 100.0);
+            return Color.FromArgb(alpha, color.R, color.G, color.B);
+        }
+
+        private void LogEvent(string module, string type, int barIndex, double price)
+        {
+            if (!ParityLogEnabled)
+                return;
+            Print("PARITY|{0}|{1}|bar={2}|price={3}", module, type, barIndex, price);
+        }
+
         protected override void Initialize()
         {
             _atr = Indicators.AverageTrueRange(14, MovingAverageType.Simple);
+            Print("LiquidityInducements build {0}", BuildVersion);
             _structurePivots = new List<Pivot>();
             _structureBosList = new List<StructureBreak>();
             _structureTrend = 0;
 
-            RegisterTf("grabs", GrabsTimeframe);
-            RegisterTf("big_grabs", BigGrabsTimeframe);
-            RegisterTf("sweeps", SweepsTimeframe);
-            RegisterTf("turtle", TurtleTimeframe);
-            RegisterTf("equal", EqualTimeframe);
-            RegisterTf("retr", RetrTimeframe);
+            RegisterTf("grabs", GrabsUseChartTimeframe, GrabsTimeframe);
+            RegisterTf("big_grabs", BigGrabsUseChartTimeframe, BigGrabsTimeframe);
+            RegisterTf("sweeps", SweepsUseChartTimeframe, SweepsTimeframe);
+            RegisterTf("turtle", TurtleUseChartTimeframe, TurtleTimeframe);
+            RegisterTf("equal", EqualUseChartTimeframe, EqualTimeframe);
+            RegisterTf("retr", RetrUseChartTimeframe, RetrTimeframe);
         }
 
         public override void Calculate(int index)
@@ -288,9 +301,9 @@ namespace cAlgo
             }
 
             var bosPivot = BreakOfStructure(index);
+            _breakOfStructure = bosPivot;
             if (bosPivot != null)
             {
-                _breakOfStructure = bosPivot;
                 _previousStructureBreakPivot = bosPivot;
                 _previousStructureBreakIndex = index;
                 structureBreakEvent = true;
@@ -363,17 +376,12 @@ namespace cAlgo
             DrawStructure(index);
             DrawExternalLiquidity(index);
             DrawRetracement(index);
-            PublishOutputs(index);
-
-            DebugTrend[index] = _structureTrend;
-            DebugChoch[index] = _changeOfCharacter != null ? _changeOfCharacter.Price : 0;
-            DebugBos[index] = _breakOfStructure != null ? _breakOfStructure.Price : 0;
         }
 
 
-        private void RegisterTf(string key, TimeFrame tf)
+        private void RegisterTf(string key, bool useChartTimeframe, TimeFrame tf)
         {
-            _tfBars[key] = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
+            _tfBars[key] = useChartTimeframe || tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
             _lastTfBarIndex[key] = -1;
         }
 
@@ -408,29 +416,6 @@ namespace cAlgo
                 return false;
             _lastTfBarIndex[key] = tfIndex;
             return true;
-        }
-
-        private void PublishOutputs(int index)
-        {
-            LiqBuysideTarget[index] = double.NaN;
-            LiqSellsideTarget[index] = double.NaN;
-
-            foreach (var b in _buyside)
-            {
-                if (!b.Hidden)
-                {
-                    LiqBuysideTarget[index] = b.Price;
-                    break;
-                }
-            }
-            foreach (var s in _sellside)
-            {
-                if (!s.Hidden)
-                {
-                    LiqSellsideTarget[index] = s.Price;
-                    break;
-                }
-            }
         }
 
         private void StructurePivotStep(int index)
@@ -684,17 +669,21 @@ namespace cAlgo
                 if (grabbed)
                 {
                     grab.Taken = true;
+                    var grabBarIndex = index - 1;
                     var id = $"{tag}_{grab.Pivot.BarIndex}_{index}_{grab.Pivot.Type}";
                     var iconType = grab.Pivot.Type == -1 ? ChartIconType.UpArrow : ChartIconType.DownArrow;
-                    Chart.DrawIcon(id, iconType, index, grab.Pivot.Price, c);
-                    grab.Limit = Chart.DrawTrendLine(id + "_lim", grab.Pivot.BarIndex, grab.Pivot.Price, index, grab.Pivot.Price, c, 1, ResolvedLineStyle);
-                    var breakPrice = grab.Pivot.Type == -1 ? Bars.LowPrices[index] : Bars.HighPrices[index];
-                    grab.Break = Chart.DrawTrendLine(id + "_brk", grab.Pivot.BarIndex, breakPrice, index, breakPrice, Color.FromArgb(0, 0, 0, 0), 1, ResolvedLineStyle);
-                    grab.FillBox = Chart.DrawRectangle(id + "_fill", grab.Pivot.BarIndex, Math.Max(grab.Pivot.Price, breakPrice), index, Math.Min(grab.Pivot.Price, breakPrice), Color.FromArgb(80, c.R, c.G, c.B));
+                    Chart.DrawIcon(id, iconType, grabBarIndex, grab.Pivot.Price, c);
+                    grab.Limit = Chart.DrawTrendLine(id + "_lim", grab.Pivot.BarIndex, grab.Pivot.Price, grabBarIndex, grab.Pivot.Price, c, 1, ResolvedLineStyle);
+                    var breakPrice = grab.Pivot.Type == -1 ? Bars.LowPrices[grabBarIndex] : Bars.HighPrices[grabBarIndex];
+                    grab.Break = Chart.DrawTrendLine(id + "_brk", grab.Pivot.BarIndex, breakPrice, grabBarIndex, breakPrice, Color.FromArgb(0, 0, 0, 0), 1, ResolvedLineStyle);
+                    grab.FillBox = Chart.DrawRectangle(id + "_fill", grab.Pivot.BarIndex, Math.Max(grab.Pivot.Price, breakPrice), grabBarIndex, Math.Min(grab.Pivot.Price, breakPrice), Color.FromArgb(80, c.R, c.G, c.B));
                     grab.FillBox.IsFilled = true;
                     grab.FillBox.IsInteractive = false;
                     var txt = "$$$";
-                    Chart.DrawText(id + "_t", txt, index, grab.Pivot.Price, c).FontSize = LiquidityFontSize;
+                    var labelBarIndex = grabBarIndex - ((grabBarIndex - grab.Pivot.BarIndex) / 2);
+                    var textColor = ApplyTransparency(c, 30);
+                    Chart.DrawText(id + "_t", txt, labelBarIndex, grab.Pivot.Price, textColor).FontSize = LiquidityFontSize;
+                    LogEvent(tag, "$$$", grabBarIndex, grab.Pivot.Price);
                 }
             }
         }
@@ -737,8 +726,14 @@ namespace cAlgo
                 if (swept)
                 {
                     sweep.Taken = true;
-                    var c = sweep.Pivot.Type == -1 ? SweepsBullishColor : SweepsBearishColor;
-                    Chart.DrawText($"sweep_{sweep.Pivot.BarIndex}_{index}", "$", index, sweep.Pivot.Price, c).FontSize = LiquidityFontSize;
+                    var sweepBarIndex = index - 1;
+                    var c = sweep.Pivot.Type == -1 ? SweepsBearishColor : SweepsBullishColor;
+                    var id = $"sweep_{sweep.Pivot.BarIndex}_{index}";
+                    Chart.DrawTrendLine(id + "_lim", sweep.Pivot.BarIndex, sweep.Pivot.Price, sweepBarIndex, sweep.Pivot.Price, c, 1, ResolvedLineStyle);
+                    var labelBarIndex = sweepBarIndex - ((sweepBarIndex - sweep.Pivot.BarIndex) / 2);
+                    var textColor = ApplyTransparency(c, 30);
+                    Chart.DrawText(id + "_t", "$", labelBarIndex, sweep.Pivot.Price, textColor).FontSize = LiquidityFontSize;
+                    LogEvent("sweep", "$", sweepBarIndex, sweep.Pivot.Price);
                 }
             }
         }
@@ -761,30 +756,90 @@ namespace cAlgo
 
         private void VisualizeTurtleSoups(List<Pivot> pivots, List<TurtleSoup> turtleSoups, int index)
         {
-            if (index < 1) return;
-            foreach (var pivot in pivots)
-            {
-                if (pivot.LiquidityBroken) continue;
-                bool confirmed;
-                if (pivot.Type == -1)
-                    confirmed = Bars.LowPrices[index] > pivot.Price && Bars.LowPrices[index - 1] <= pivot.Price;
-                else
-                    confirmed = Bars.HighPrices[index] < pivot.Price && Bars.HighPrices[index - 1] >= pivot.Price;
+            if (index < 2)
+                return;
 
-                if (!confirmed) continue;
+            for (var p = pivots.Count - 1; p >= 0; p--)
+            {
+                var pivot = pivots[p];
+                if (pivot.LiquidityBroken)
+                    continue;
+
+                var confirmed = pivot.Type == -1
+                    ? Bars.LowPrices[index] > pivot.Price && Bars.LowPrices[index - 1] <= pivot.Price
+                    : Bars.HighPrices[index] < pivot.Price && Bars.HighPrices[index - 1] >= pivot.Price;
+                if (!confirmed)
+                    continue;
+
+                var i = 2;
+                var deepest = pivot.Type == -1 ? Bars.LowPrices[index - 1] : Bars.HighPrices[index - 1];
+                while (true)
+                {
+                    var probeIndex = index - i;
+                    if (probeIndex < 0)
+                        break;
+
+                    var price = pivot.Type == -1 ? Bars.LowPrices[probeIndex] : Bars.HighPrices[probeIndex];
+                    var swept = pivot.Type == -1 ? price <= pivot.Price : price >= pivot.Price;
+                    if (!swept)
+                        break;
+
+                    i++;
+                    if (pivot.Type == -1)
+                    {
+                        if (price < deepest)
+                            deepest = price;
+                    }
+                    else
+                    {
+                        if (price > deepest)
+                            deepest = price;
+                    }
+                }
+
+                if (i == 2)
+                    continue;
 
                 pivot.LiquidityBroken = true;
-                var deepest = pivot.Type == -1 ? Bars.LowPrices[index - 1] : Bars.HighPrices[index - 1];
-                var ts = new TurtleSoup { Start = index - 1, End = index, Pivot = pivot, Deepest = deepest };
+                var start = index - i;
+                var end = index - 1;
+                var ts = new TurtleSoup { Start = start, End = end, Pivot = pivot, Deepest = deepest };
+                var drawColor = TurtleConfirmation ? Color.FromArgb(0, 0, 0, 0) : TurtleColor;
+
+                for (var j = turtleSoups.Count - 1; j >= 0; j--)
+                {
+                    var previous = turtleSoups[j];
+                    if (previous.Start >= ts.Start && previous.End <= ts.End)
+                    {
+                        if (previous.Line != null)
+                        {
+                            if (ts.Start > previous.Start)
+                                Chart.DrawTrendLine(previous.Line.Name, previous.Start, previous.Pivot.Price, ts.Start, previous.Pivot.Price, drawColor, 1, ResolvedLineStyle);
+                            else
+                                Chart.RemoveObject(previous.Line.Name);
+                        }
+                        if (previous.Box != null)
+                            Chart.RemoveObject(previous.Box.Name);
+                        turtleSoups.RemoveAt(j);
+                    }
+                }
+
+                if (turtleSoups.Count >= 5)
+                {
+                    var remove = turtleSoups[turtleSoups.Count - 1];
+                    if (remove.Box != null) Chart.RemoveObject(remove.Box.Name);
+                    if (remove.Line != null) Chart.RemoveObject(remove.Line.Name);
+                    turtleSoups.RemoveAt(turtleSoups.Count - 1);
+                }
+
                 turtleSoups.Insert(0, ts);
 
                 var id = $"ts_{pivot.BarIndex}_{index}";
-                var box = Chart.DrawRectangle(id + "_b", ts.Start, Math.Max(pivot.Price, deepest), ts.End, Math.Min(pivot.Price, deepest), TurtleColor);
+                var box = Chart.DrawRectangle(id + "_b", start, Math.Max(pivot.Price, deepest), end, Math.Min(pivot.Price, deepest), drawColor);
                 box.IsFilled = true;
                 box.IsInteractive = false;
                 ts.Box = box;
-                ts.Line = Chart.DrawTrendLine(id + "_l", ts.Start, pivot.Price, ts.End, pivot.Price, TurtleColor, 1, ResolvedLineStyle);
-                Chart.DrawText(id + "_t", "$$$", index, pivot.Price, TurtleColor).FontSize = LiquidityFontSize;
+                ts.Line = Chart.DrawTrendLine(id + "_l", start, pivot.Price, end, pivot.Price, drawColor, 1, ResolvedLineStyle);
                 break;
             }
         }
@@ -824,20 +879,32 @@ namespace cAlgo
         {
 
             var atr = _atr.Result[index];
-            if (_eqHighs.Count > 1)
-                CheckEqualPair(_eqHighs[0], _eqHighs[1], 1, atr, index);
-            if (_eqLows.Count > 1)
-                CheckEqualPair(_eqLows[0], _eqLows[1], -1, atr, index);
+            ProcessEqualPairs(_eqHighs, 1, atr, index);
+            ProcessEqualPairs(_eqLows, -1, atr, index);
 
             foreach (var ind in _eqBearishInducements)
             {
                 if (_structureTrend == -1 && !ind.LiquidityTaken && high >= ind.StopLosses)
+                {
                     ind.LiquidityTaken = true;
+                    var id = $"eq_trig_h_{ind.FirstPivot.BarIndex}_{ind.SecondPivot.BarIndex}";
+                    var midIndex = ind.SecondPivot.BarIndex - ((ind.SecondPivot.BarIndex - ind.FirstPivot.BarIndex) / 2);
+                    Chart.DrawTrendLine(id + "_l", ind.FirstPivot.BarIndex, ind.StopLosses, ind.SecondPivot.BarIndex, ind.StopLosses, EqualLiquidityColor, 1, ResolvedLineStyle);
+                    Chart.DrawText(id + "_t", "$$$", midIndex, ind.StopLosses, EqualLiquidityColor).FontSize = LiquidityFontSize;
+                    LogEvent("equal_trigger", "$$$", index, ind.StopLosses);
+                }
             }
             foreach (var ind in _eqBullishInducements)
             {
                 if (_structureTrend == 1 && !ind.LiquidityTaken && low <= ind.StopLosses)
+                {
                     ind.LiquidityTaken = true;
+                    var id = $"eq_trig_l_{ind.FirstPivot.BarIndex}_{ind.SecondPivot.BarIndex}";
+                    var midIndex = ind.SecondPivot.BarIndex - ((ind.SecondPivot.BarIndex - ind.FirstPivot.BarIndex) / 2);
+                    Chart.DrawTrendLine(id + "_l", ind.FirstPivot.BarIndex, ind.StopLosses, ind.SecondPivot.BarIndex, ind.StopLosses, EqualLiquidityColor, 1, ResolvedLineStyle);
+                    Chart.DrawText(id + "_t", "$$$", midIndex, ind.StopLosses, EqualLiquidityColor).FontSize = LiquidityFontSize;
+                    LogEvent("equal_trigger", "$$$", index, ind.StopLosses);
+                }
             }
 
             if (structureBreakEvent)
@@ -847,11 +914,51 @@ namespace cAlgo
             }
         }
 
+        private void ProcessEqualPairs(List<Pivot> pivots, int type, double atr, int index)
+        {
+            if (pivots.Count < 2)
+                return;
+
+            var latest = pivots[0];
+            if (latest.BarIndex != index - 1)
+                return;
+
+            for (var i = 1; i < pivots.Count; i++)
+                CheckEqualPair(latest, pivots[i], type, atr, index);
+        }
+
+        private bool IsEqualPairBroken(Pivot latest, Pivot prior, int type)
+        {
+            var distance = latest.BarIndex - prior.BarIndex;
+            if (distance < 2)
+                return false;
+
+            var step = (prior.Price - latest.Price) / distance;
+            for (var offset = 1; offset < distance; offset++)
+            {
+                var barIndex = latest.BarIndex - offset;
+                var linePrice = latest.Price + (step * offset);
+                if (type == 1)
+                {
+                    if (Bars.HighPrices[barIndex] > linePrice)
+                        return true;
+                }
+                else
+                {
+                    if (Bars.LowPrices[barIndex] < linePrice)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private void CheckEqualPair(Pivot latest, Pivot prior, int type, double atr, int index)
         {
             if (double.IsNaN(atr) || atr <= 0) return;
             var tol = atr * EqualAtrFactor;
             if (Math.Abs(latest.Price - prior.Price) > tol) return;
+            if (IsEqualPairBroken(latest, prior, type)) return;
 
             var trendInducement = (type == 1 && _structureTrend == -1) || (type == -1 && _structureTrend == 1);
             var text = trendInducement ? "IDM" : "$$$";
@@ -861,6 +968,7 @@ namespace cAlgo
             var midIndex = latest.BarIndex - ((latest.BarIndex - prior.BarIndex) / 2);
             var midPrice = latest.Price + ((prior.Price - latest.Price) / 2.0);
             Chart.DrawText($"eq_{type}_{latest.BarIndex}_{prior.BarIndex}", text, midIndex, midPrice, c).FontSize = LiquidityFontSize;
+            LogEvent("equal", text, latest.BarIndex, latest.Price);
             Chart.DrawTrendLine($"eq_l_{type}_{latest.BarIndex}_{prior.BarIndex}", latest.BarIndex, latest.Price, prior.BarIndex, prior.Price, c, 1, ResolvedLineStyle);
 
             if (trendInducement)
@@ -890,8 +998,26 @@ namespace cAlgo
                 _sellside.Insert(0, new ExternalLiquidity { Price = lastLow.Price, Pivot = lastLow, Hidden = true });
             }
 
-            _sellside.RemoveAll(pool => low <= pool.Price);
-            _buyside.RemoveAll(pool => high >= pool.Price);
+            for (var i = _sellside.Count - 1; i >= 0; i--)
+            {
+                if (low <= _sellside[i].Price)
+                {
+                    var id = $"ssl_{_sellside[i].Pivot.BarIndex}";
+                    Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
+                    _sellside.RemoveAt(i);
+                }
+            }
+            for (var i = _buyside.Count - 1; i >= 0; i--)
+            {
+                if (high >= _buyside[i].Price)
+                {
+                    var id = $"bsl_{_buyside[i].Pivot.BarIndex}";
+                    Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
+                    _buyside.RemoveAt(i);
+                }
+            }
 
             for (var i = 0; i < _buyside.Count; i++) if (i < ExternalShow) _buyside[i].Hidden = false;
             for (var i = 0; i < _sellside.Count; i++) if (i < ExternalShow) _sellside[i].Hidden = false;
@@ -1004,10 +1130,11 @@ namespace cAlgo
                 if (pool.Hidden)
                 {
                     Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
                     continue;
                 }
                 Chart.DrawTrendLine(id, pool.Pivot.BarIndex, pool.Price, index, pool.Price, ExternalBullishColor, 1, ResolvedLineStyle);
-                Chart.DrawText(id + "_t", "BSL", index, pool.Price, ExternalBullishColor).FontSize = LiquidityFontSize;
+                Chart.DrawText(id + "_t", "Buyside liquidity", pool.Pivot.BarIndex, pool.Price, ExternalBullishColor).FontSize = LiquidityFontSize;
             }
             foreach (var pool in _sellside)
             {
@@ -1015,10 +1142,11 @@ namespace cAlgo
                 if (pool.Hidden)
                 {
                     Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
                     continue;
                 }
                 Chart.DrawTrendLine(id, pool.Pivot.BarIndex, pool.Price, index, pool.Price, ExternalBearishColor, 1, ResolvedLineStyle);
-                Chart.DrawText(id + "_t", "SSL", index, pool.Price, ExternalBearishColor).FontSize = LiquidityFontSize;
+                Chart.DrawText(id + "_t", "Sellside liquidity", pool.Pivot.BarIndex, pool.Price, ExternalBearishColor).FontSize = LiquidityFontSize;
             }
         }
 
