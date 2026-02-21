@@ -1000,8 +1000,26 @@ namespace cAlgo
                 _sellside.Insert(0, new ExternalLiquidity { Price = lastLow.Price, Pivot = lastLow, Hidden = true });
             }
 
-            _sellside.RemoveAll(pool => low <= pool.Price);
-            _buyside.RemoveAll(pool => high >= pool.Price);
+            for (var i = _sellside.Count - 1; i >= 0; i--)
+            {
+                if (low <= _sellside[i].Price)
+                {
+                    var id = $"ssl_{_sellside[i].Pivot.BarIndex}";
+                    Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
+                    _sellside.RemoveAt(i);
+                }
+            }
+            for (var i = _buyside.Count - 1; i >= 0; i--)
+            {
+                if (high >= _buyside[i].Price)
+                {
+                    var id = $"bsl_{_buyside[i].Pivot.BarIndex}";
+                    Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
+                    _buyside.RemoveAt(i);
+                }
+            }
 
             for (var i = 0; i < _buyside.Count; i++) if (i < ExternalShow) _buyside[i].Hidden = false;
             for (var i = 0; i < _sellside.Count; i++) if (i < ExternalShow) _sellside[i].Hidden = false;
@@ -1114,10 +1132,11 @@ namespace cAlgo
                 if (pool.Hidden)
                 {
                     Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
                     continue;
                 }
                 Chart.DrawTrendLine(id, pool.Pivot.BarIndex, pool.Price, index, pool.Price, ExternalBullishColor, 1, ResolvedLineStyle);
-                Chart.DrawText(id + "_t", "BSL", index, pool.Price, ExternalBullishColor).FontSize = LiquidityFontSize;
+                Chart.DrawText(id + "_t", "Buyside liquidity", pool.Pivot.BarIndex, pool.Price, ExternalBullishColor).FontSize = LiquidityFontSize;
             }
             foreach (var pool in _sellside)
             {
@@ -1125,10 +1144,11 @@ namespace cAlgo
                 if (pool.Hidden)
                 {
                     Chart.RemoveObject(id);
+                    Chart.RemoveObject(id + "_t");
                     continue;
                 }
                 Chart.DrawTrendLine(id, pool.Pivot.BarIndex, pool.Price, index, pool.Price, ExternalBearishColor, 1, ResolvedLineStyle);
-                Chart.DrawText(id + "_t", "SSL", index, pool.Price, ExternalBearishColor).FontSize = LiquidityFontSize;
+                Chart.DrawText(id + "_t", "Sellside liquidity", pool.Pivot.BarIndex, pool.Price, ExternalBearishColor).FontSize = LiquidityFontSize;
             }
         }
 
