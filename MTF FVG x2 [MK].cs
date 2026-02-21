@@ -280,7 +280,7 @@ namespace cAlgo
                     continue;
 
                 var tfBars = kv.Value;
-                var i = FindBarIndexAtOrBefore(tfBars, Bars.OpenTimes[chartIndex]);
+                var i = FindBarIndexAtOrBefore(tfBars, GetSecurityAlignmentTime(chartIndex));
                 if (i < 3)
                     continue;
 
@@ -340,7 +340,6 @@ namespace cAlgo
             var rect = Chart.DrawRectangle(id, ShiftFromCurrentBar(5), top, ShiftFromCurrentBar(15), bottom, c);
             rect.IsFilled = true;
             rect.IsInteractive = false;
-            rect.BorderColor = HiddenFvgBorder;
             rect.LineStyle = LineStyle.Dots;
 
             ChartText label = null;
@@ -409,15 +408,12 @@ namespace cAlgo
 
                 z.Rect.Y1 = z.Top;
                 z.Rect.Y2 = z.Bottom;
-                if (ShowLabels)
+                z.Rect.Time1 = ShiftFromCurrentBar(LabelShift);
+                z.Rect.Time2 = ShiftFromCurrentBar(LabelShiftRight);
+                if (ShowLabels && z.Label != null)
                 {
-                    z.Rect.Time1 = ShiftFromCurrentBar(LabelShift);
-                    z.Rect.Time2 = ShiftFromCurrentBar(LabelShiftRight);
-                    if (z.Label != null)
-                    {
-                        z.Label.Time = ShiftFromCurrentBar(LabelShift);
-                        z.Label.Y = (z.Top + z.Bottom) / 2.0;
-                    }
+                    z.Label.Time = ShiftFromCurrentBar(LabelShift);
+                    z.Label.Y = (z.Top + z.Bottom) / 2.0;
                 }
             }
         }
@@ -434,7 +430,7 @@ namespace cAlgo
         private void ProcessOverlaySubsystem(int idx)
         {
             var tfBars = MarketData.GetBars(TfInput);
-            var i = FindBarIndexAtOrBefore(tfBars, Bars.OpenTimes[idx]);
+            var i = FindBarIndexAtOrBefore(tfBars, GetSecurityAlignmentTime(idx));
             if (i < 2)
                 return;
 
@@ -525,7 +521,6 @@ namespace cAlgo
             b.IsFilled = true;
             b.IsInteractive = false;
             b.Color = fillColor;
-            b.BorderColor = isUp ? UpBorderColor : DownBorderColor;
             b.LineStyle = LineStyle.Solid;
 
             var t = ShowTopLine ? Chart.DrawTrendLine(id + "_t", left, top, right, top, OverlayLineColor) : null;
@@ -560,7 +555,7 @@ namespace cAlgo
 
                 if (filled && ExtendTillFilled)
                 {
-                    _overlayZones.RemoveAt(i);
+                    RemoveOverlayAt(i);
                     continue;
                 }
 
@@ -575,7 +570,7 @@ namespace cAlgo
 
                 if (!filled && !ExtendTillFilled)
                 {
-                    _overlayZones.RemoveAt(i);
+                    RemoveOverlayAt(i);
                     continue;
                 }
             }
@@ -756,6 +751,7 @@ namespace cAlgo
 
             return last + TimeSpan.FromTicks(span.Ticks * barsToRight);
         }
+
 
         private static int FindBarIndexAtOrBefore(Bars bars, DateTime t)
         {
