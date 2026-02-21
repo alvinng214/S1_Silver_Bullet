@@ -725,30 +725,63 @@ namespace cAlgo
 
         private void VisualizeTurtleSoups(List<Pivot> pivots, List<TurtleSoup> turtleSoups, int index)
         {
-            if (index < 1) return;
+            if (index < 2)
+                return;
+
             foreach (var pivot in pivots)
             {
-                if (pivot.LiquidityBroken) continue;
-                bool confirmed;
-                if (pivot.Type == -1)
-                    confirmed = Bars.LowPrices[index] > pivot.Price && Bars.LowPrices[index - 1] <= pivot.Price;
-                else
-                    confirmed = Bars.HighPrices[index] < pivot.Price && Bars.HighPrices[index - 1] >= pivot.Price;
+                if (pivot.LiquidityBroken)
+                    continue;
 
-                if (!confirmed) continue;
+                var confirmed = pivot.Type == -1
+                    ? Bars.LowPrices[index] > pivot.Price && Bars.LowPrices[index - 1] <= pivot.Price
+                    : Bars.HighPrices[index] < pivot.Price && Bars.HighPrices[index - 1] >= pivot.Price;
+                if (!confirmed)
+                    continue;
+
+                var i = 2;
+                var deepest = pivot.Type == -1 ? Bars.LowPrices[index - 1] : Bars.HighPrices[index - 1];
+                while (true)
+                {
+                    var probeIndex = index - i;
+                    if (probeIndex < 0)
+                        break;
+
+                    var price = pivot.Type == -1 ? Bars.LowPrices[probeIndex] : Bars.HighPrices[probeIndex];
+                    var swept = pivot.Type == -1 ? price <= pivot.Price : price >= pivot.Price;
+                    if (!swept)
+                        break;
+
+                    i++;
+                    if (pivot.Type == -1)
+                    {
+                        if (price < deepest)
+                            deepest = price;
+                    }
+                    else
+                    {
+                        if (price > deepest)
+                            deepest = price;
+                    }
+                }
+
+                if (i == 2)
+                    continue;
 
                 pivot.LiquidityBroken = true;
-                var deepest = pivot.Type == -1 ? Bars.LowPrices[index - 1] : Bars.HighPrices[index - 1];
-                var ts = new TurtleSoup { Start = index - 1, End = index, Pivot = pivot, Deepest = deepest };
+                var start = index - i;
+                var end = index - 1;
+                var ts = new TurtleSoup { Start = start, End = end, Pivot = pivot, Deepest = deepest };
                 turtleSoups.Insert(0, ts);
 
                 var id = $"ts_{pivot.BarIndex}_{index}";
-                var box = Chart.DrawRectangle(id + "_b", ts.Start, Math.Max(pivot.Price, deepest), ts.End, Math.Min(pivot.Price, deepest), TurtleColor);
+                var drawColor = TurtleConfirmation ? Color.FromArgb(0, 0, 0, 0) : TurtleColor;
+                var box = Chart.DrawRectangle(id + "_b", start, Math.Max(pivot.Price, deepest), end, Math.Min(pivot.Price, deepest), drawColor);
                 box.IsFilled = true;
                 box.IsInteractive = false;
                 ts.Box = box;
-                ts.Line = Chart.DrawTrendLine(id + "_l", ts.Start, pivot.Price, ts.End, pivot.Price, TurtleColor, 1, ResolvedLineStyle);
-                Chart.DrawText(id + "_t", "$$$", index, pivot.Price, TurtleColor).FontSize = LiquidityFontSize;
+                ts.Line = Chart.DrawTrendLine(id + "_l", start, pivot.Price, end, pivot.Price, drawColor, 1, ResolvedLineStyle);
+                Chart.DrawText(id + "_t", "$$$", end, pivot.Price, TurtleColor).FontSize = LiquidityFontSize;
                 break;
             }
         }
@@ -811,11 +844,38 @@ namespace cAlgo
             }
         }
 
+        private bool IsEqualPairBroken(Pivot latest, Pivot prior, int type)
+        {
+            var distance = latest.BarIndex - prior.BarIndex;
+            if (distance < 2)
+                return false;
+
+            var step = (prior.Price - latest.Price) / distance;
+            for (var offset = 1; offset < distance; offset++)
+            {
+                var barIndex = latest.BarIndex - offset;
+                var linePrice = latest.Price + (step * offset);
+                if (type == 1)
+                {
+                    if (Bars.HighPrices[barIndex] > linePrice)
+                        return true;
+                }
+                else
+                {
+                    if (Bars.LowPrices[barIndex] < linePrice)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private void CheckEqualPair(Pivot latest, Pivot prior, int type, double atr, int index)
         {
             if (double.IsNaN(atr) || atr <= 0) return;
             var tol = atr * EqualAtrFactor;
             if (Math.Abs(latest.Price - prior.Price) > tol) return;
+            if (IsEqualPairBroken(latest, prior, type)) return;
 
             var trendInducement = (type == 1 && _structureTrend == -1) || (type == -1 && _structureTrend == 1);
             var text = trendInducement ? "IDM" : "$$$";
