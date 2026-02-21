@@ -212,6 +212,10 @@ namespace cAlgo
         private readonly Dictionary<string, int> _maxByTf = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _lastBullTfIndex = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _lastBearTfIndex = new Dictionary<string, int>();
+        private readonly Dictionary<string, double> _prevBullHigh2ByTf = new Dictionary<string, double>();
+        private readonly Dictionary<string, double> _prevBullLowByTf = new Dictionary<string, double>();
+        private readonly Dictionary<string, double> _prevBearLow2ByTf = new Dictionary<string, double>();
+        private readonly Dictionary<string, double> _prevBearHighByTf = new Dictionary<string, double>();
 
         private readonly List<OverlayZone> _overlayZones = new List<OverlayZone>();
         private int _id;
@@ -265,6 +269,10 @@ namespace cAlgo
             _maxByTf[key] = max;
             _lastBullTfIndex[key] = -1;
             _lastBearTfIndex[key] = -1;
+            _prevBullHigh2ByTf[key] = double.NaN;
+            _prevBullLowByTf[key] = double.NaN;
+            _prevBearLow2ByTf[key] = double.NaN;
+            _prevBearHighByTf[key] = double.NaN;
         }
 
         private MitigationMode GetMitigationMode() => MitigationActionInput;
@@ -301,12 +309,20 @@ namespace cAlgo
                 var newBull = IsFvgBull(l, h2, close1, open1);
                 var newBear = IsFvgBear(l2, h, close1, open1);
 
+                var prevH2 = _prevBullHigh2ByTf[tfKey];
+                var prevL = _prevBullLowByTf[tfKey];
+                var prevL2 = _prevBearLow2ByTf[tfKey];
+                var prevH = _prevBearHighByTf[tfKey];
+
+                var bullDistinct = !double.IsNaN(prevH2) && !double.IsNaN(prevL) && h2 != prevH2 && l != prevL;
+                var bearDistinct = !double.IsNaN(prevL2) && !double.IsNaN(prevH) && l2 != prevL2 && h != prevH;
+
                 if (newBull && _lastBullTfIndex[tfKey] != i)
                 {
                     if (_bullByTf[tfKey].Count > _maxByTf[tfKey])
                         RemoveFvgAt(_bullByTf[tfKey], 0);
 
-                    if (i >= 4 && h2 != tfBars.HighPrices[i - 4] && l != tfBars.LowPrices[i - 2])
+                    if (bullDistinct)
                     {
                         AddFvg(tfKey, true, l, h2);
                         _lastBullTfIndex[tfKey] = i;
@@ -318,12 +334,17 @@ namespace cAlgo
                     if (_bearByTf[tfKey].Count > _maxByTf[tfKey])
                         RemoveFvgAt(_bearByTf[tfKey], 0);
 
-                    if (i >= 4 && l2 != tfBars.LowPrices[i - 4] && h != tfBars.HighPrices[i - 2])
+                    if (bearDistinct)
                     {
                         AddFvg(tfKey, false, l2, h);
                         _lastBearTfIndex[tfKey] = i;
                     }
                 }
+
+                _prevBullHigh2ByTf[tfKey] = h2;
+                _prevBullLowByTf[tfKey] = l;
+                _prevBearLow2ByTf[tfKey] = l2;
+                _prevBearHighByTf[tfKey] = h;
 
                 UpdateExistingFvgs(_bullByTf[tfKey], true, tfKey, chartIndex);
                 UpdateExistingFvgs(_bearByTf[tfKey], false, tfKey, chartIndex);
