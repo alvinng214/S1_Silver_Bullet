@@ -28,13 +28,16 @@ namespace cAlgo
         private sealed class OverlayZone
         {
             public string Id;
-            public ChartRectangle Box;
+            public ChartRectangle FillRect;
+            public ChartRectangle BorderRect;
+            public ChartText Text;
             public ChartTrendLine TopLine;
             public ChartTrendLine MidLine;
             public ChartTrendLine BottomLine;
             public bool IsUp;
         }
 
+        // Enable/Disable
         [Parameter("MTF FVGs (display to right)", DefaultValue = true, Group = "Enable/Disable")]
         public bool MtfImb { get; set; }
 
@@ -44,6 +47,7 @@ namespace cAlgo
         [Parameter("Timeframe", DefaultValue = "Hour", Group = "Enable/Disable")]
         public TimeFrame TfInput { get; set; }
 
+        // MTF Fair Value Gaps
         [Parameter("Only Market Hours", DefaultValue = false, Group = "MTF Fair Value Gaps")]
         public bool OnlyMktHrs { get; set; }
 
@@ -77,6 +81,7 @@ namespace cAlgo
         [Parameter("Show Labels", DefaultValue = true, Group = "MTF Fair Value Gaps")]
         public bool ShowLabels { get; set; }
 
+        // FVG Box Border
         [Parameter("Bull FVG Color", DefaultValue = "#4DFFFF00", Group = "FVG Box Border")]
         public Color BullFvgColor { get; set; }
 
@@ -86,123 +91,181 @@ namespace cAlgo
         [Parameter("Label Color", DefaultValue = "#000000", Group = "FVG Box Border")]
         public Color LabelColor { get; set; }
 
+        // Enabled Timeframes
         [Parameter("Enable Chart TF", DefaultValue = false, Group = "Enabled Timeframes")]
         public bool EnableChartTf { get; set; }
+
         [Parameter("Enable 5m", DefaultValue = false, Group = "Enabled Timeframes")]
         public bool Enable5m { get; set; }
+
         [Parameter("Enable 10m", DefaultValue = false, Group = "Enabled Timeframes")]
         public bool Enable10m { get; set; }
+
         [Parameter("Enable 15m", DefaultValue = true, Group = "Enabled Timeframes")]
         public bool Enable15m { get; set; }
+
         [Parameter("Enable 30m", DefaultValue = false, Group = "Enabled Timeframes")]
         public bool Enable30m { get; set; }
+
         [Parameter("Enable 1h", DefaultValue = true, Group = "Enabled Timeframes")]
         public bool Enable1h { get; set; }
+
         [Parameter("Enable 4h", DefaultValue = true, Group = "Enabled Timeframes")]
         public bool Enable4h { get; set; }
+
         [Parameter("Enable 8h", DefaultValue = false, Group = "Enabled Timeframes")]
         public bool Enable8h { get; set; }
+
         [Parameter("Enable 12h", DefaultValue = false, Group = "Enabled Timeframes")]
         public bool Enable12h { get; set; }
+
         [Parameter("Enable Daily", DefaultValue = true, Group = "Enabled Timeframes")]
         public bool EnableDaily { get; set; }
+
         [Parameter("Enable Weekly", DefaultValue = true, Group = "Enabled Timeframes")]
         public bool EnableWeekly { get; set; }
+
         [Parameter("Enable Monthly", DefaultValue = true, Group = "Enabled Timeframes")]
         public bool EnableMonthly { get; set; }
 
+        // Visibility
         [Parameter("15m Min", DefaultValue = 1, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MinTf15 { get; set; }
+
         [Parameter("15m Max", DefaultValue = 4, MinValue = 1, MaxValue = 240, Group = "Visibility")]
         public int MaxTf15 { get; set; }
+
         [Parameter("1h Min", DefaultValue = 5, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MinTf60 { get; set; }
+
         [Parameter("1h Max", DefaultValue = 5, MinValue = 1, MaxValue = 240, Group = "Visibility")]
         public int MaxTf60Visible { get; set; }
+
         [Parameter("4h Min", DefaultValue = 15, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MinTf240 { get; set; }
+
         [Parameter("4h Max", DefaultValue = 15, MinValue = 1, MaxValue = 240, Group = "Visibility")]
         public int MaxTf240Visible { get; set; }
+
         [Parameter("Daily Min", DefaultValue = 60, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MinTfD { get; set; }
+
         [Parameter("Daily Max", DefaultValue = 60, MinValue = 1, MaxValue = 240, Group = "Visibility")]
         public int MaxTfDVisible { get; set; }
+
         [Parameter("Weekly Min", DefaultValue = 240, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MinTfW { get; set; }
+
         [Parameter("Weekly Max", DefaultValue = 240, MinValue = 1, MaxValue = 240, Group = "Visibility")]
         public int MaxTfWVisible { get; set; }
+
         [Parameter("Monthly Min", DefaultValue = 1440, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MinTfM { get; set; }
+
         [Parameter("Monthly Max", DefaultValue = 1440, MinValue = 1, MaxValue = 1440, Group = "Visibility")]
         public int MaxTfMVisible { get; set; }
 
+        // Max FVG Settings
         [Parameter("Max Chart", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int MaxChart { get; set; }
+
         [Parameter("Max 5m", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max5m { get; set; }
+
         [Parameter("Max 10m", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max10m { get; set; }
+
         [Parameter("Max 15m", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max15m { get; set; }
+
         [Parameter("Max 30m", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max30m { get; set; }
+
         [Parameter("Max 1h", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max1h { get; set; }
+
         [Parameter("Max 4h", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max4h { get; set; }
+
         [Parameter("Max 8h", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max8h { get; set; }
+
         [Parameter("Max 12h", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int Max12h { get; set; }
+
         [Parameter("Max Daily", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int MaxDaily { get; set; }
+
         [Parameter("Max Weekly", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int MaxWeekly { get; set; }
+
         [Parameter("Max Monthly", DefaultValue = 8, MinValue = 1, Group = "Max FVG Settings")]
         public int MaxMonthly { get; set; }
 
+        // FVG Price Overlay
         [Parameter("Boxtype", DefaultValue = OverlayBoxType.Imbalance, Group = "FVG Price Overlay")]
         public OverlayBoxType BoxType { get; set; }
+
         [Parameter("Show Up", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ShowUp { get; set; }
+
         [Parameter("Show Down", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ShowDown { get; set; }
+
         [Parameter("Up Color", DefaultValue = "#4DFFFF00", Group = "FVG Price Overlay")]
         public Color UpColor { get; set; }
+
         [Parameter("Down Color", DefaultValue = "#4DFFFF00", Group = "FVG Price Overlay")]
         public Color DownColor { get; set; }
+
         [Parameter("Up Border", DefaultValue = "#004CAF4F", Group = "FVG Price Overlay")]
         public Color UpBorderColor { get; set; }
+
         [Parameter("Down Border", DefaultValue = "#00FF5252", Group = "FVG Price Overlay")]
         public Color DownBorderColor { get; set; }
+
         [Parameter("Show Middle Line", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ShowMiddleLine { get; set; }
+
         [Parameter("Show Bottom Line", DefaultValue = false, Group = "FVG Price Overlay")]
         public bool ShowBottomLine { get; set; }
+
         [Parameter("Show Top Line", DefaultValue = false, Group = "FVG Price Overlay")]
         public bool ShowTopLine { get; set; }
+
         [Parameter("Extend Till Filled", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ExtendTillFilled { get; set; }
+
         [Parameter("Fill Condition", DefaultValue = FillCondition.FullFill, Group = "FVG Price Overlay")]
         public FillCondition FilledType { get; set; }
+
         [Parameter("Lookback", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool Lookback { get; set; }
+
         [Parameter("Lookback Days", DefaultValue = 5.0, Group = "FVG Price Overlay")]
         public double DaysBack { get; set; }
+
         [Parameter("Hide Filled", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool HideFilled { get; set; }
+
         [Parameter("Show Boxes", DefaultValue = true, Group = "FVG Price Overlay")]
         public bool ShowBoxes { get; set; }
+
         [Parameter("Condition Type", DefaultValue = OverlayConditionType.None, Group = "FVG Price Overlay")]
         public OverlayConditionType ConditionType { get; set; }
+
         [Parameter("ATR Length", DefaultValue = 30, Group = "FVG Price Overlay")]
         public int AtrLength { get; set; }
+
         [Parameter("ATR Mult", DefaultValue = 1.0, Group = "FVG Price Overlay")]
         public double AtrMult { get; set; }
+
         [Parameter("Pct Cond", DefaultValue = 0.30, Group = "FVG Price Overlay")]
         public double PctCond { get; set; }
+
         [Parameter("Pct Mult", DefaultValue = 1.0, Group = "FVG Price Overlay")]
         public double PctMult { get; set; }
+
         [Parameter("Max Overlay Boxes", DefaultValue = 499, MinValue = 1, Group = "FVG Price Overlay")]
         public int MaxOverlayBoxes { get; set; }
 
@@ -221,6 +284,7 @@ namespace cAlgo
         private int _id;
         private int _lastOverlayTfIndex = -1;
         private string _chartTfKey;
+
         private static readonly Color OverlayLineColor = Color.FromArgb(176, 178, 181, 190);
         private static readonly Color HiddenFvgBorder = Color.FromArgb(0, 128, 128, 128);
 
@@ -246,29 +310,32 @@ namespace cAlgo
 
         public override void Calculate(int index)
         {
-            if (MtfImb)
-                ProcessMtfSubsystem(index);
-            if (MtfPo)
-                ProcessOverlaySubsystem(index);
+            if (MtfImb) ProcessMtfSubsystem(index);
+            if (MtfPo) ProcessOverlaySubsystem(index);
         }
 
         private void ValidateMaxFvgCount()
         {
-            var total = MaxChart + Max5m + Max10m + Max15m + Max1h + Max4h + Max8h + MaxDaily + MaxWeekly + MaxMonthly;
+            var total = MaxChart + Max5m + Max10m + Max15m + Max30m + Max1h + Max4h + Max8h + Max12h + MaxDaily + MaxWeekly + MaxMonthly;
             if (total > 500)
-                Chart.DrawStaticText("mk_error", "MTF FVG INDICATOR ERROR\n\nMax Number of FVGs exceeded, please change settings.", VerticalAlignment.Bottom, HorizontalAlignment.Right, Color.Red);
+                Chart.DrawStaticText("mk_error",
+                    "MTF FVG INDICATOR ERROR\n\nMax Number of FVGs exceeded, please change settings.",
+                    VerticalAlignment.Bottom, HorizontalAlignment.Right, Color.Red);
         }
 
         private void RegisterTf(string key, TimeFrame tf, bool enabled, int max)
         {
             if (!enabled)
                 return;
-            _barsByTf[key] = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
+
+            _barsByTf[key] = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf); // MarketData.GetBars(TimeFrame)  [oai_citation:1‡cTrader](https://help.ctrader.com/ctrader-algo/references/MarketData/MarketData/?utm_source=chatgpt.com)
             _bullByTf[key] = new List<FvgZone>();
             _bearByTf[key] = new List<FvgZone>();
             _maxByTf[key] = max;
+
             _lastBullTfIndex[key] = -1;
             _lastBearTfIndex[key] = -1;
+
             _prevBullHigh2ByTf[key] = double.NaN;
             _prevBullLowByTf[key] = double.NaN;
             _prevBearLow2ByTf[key] = double.NaN;
@@ -303,6 +370,7 @@ namespace cAlgo
                 var h2 = tfBars.HighPrices[i - 3];
                 var l = tfBars.LowPrices[i - 1];
                 var l2 = tfBars.LowPrices[i - 3];
+
                 var close1 = tfBars.ClosePrices[i - 2];
                 var open1 = tfBars.OpenPrices[i - 2];
 
@@ -314,8 +382,10 @@ namespace cAlgo
                 var prevL2 = _prevBearLow2ByTf[tfKey];
                 var prevH = _prevBearHighByTf[tfKey];
 
-                var bullDistinct = !double.IsNaN(prevH2) && !double.IsNaN(prevL) && h2 != prevH2 && l != prevL;
-                var bearDistinct = !double.IsNaN(prevL2) && !double.IsNaN(prevH) && l2 != prevL2 && h != prevH;
+                // Pine: (_highback2 != _highback2[1]) and (_low != _low[1])
+                // Allow first valid detection (prev NaN) and require BOTH to differ.
+                var bullDistinct = (double.IsNaN(prevH2) || h2 != prevH2) && (double.IsNaN(prevL) || l != prevL);
+                var bearDistinct = (double.IsNaN(prevL2) || l2 != prevL2) && (double.IsNaN(prevH) || h != prevH);
 
                 if (newBull && _lastBullTfIndex[tfKey] != i)
                 {
@@ -358,6 +428,7 @@ namespace cAlgo
         {
             var id = $"mk_fvg_{tfKey}_{(bull ? 'b' : 's')}_{_id++}";
             var c = bull ? BullFvgColor : BearFvgColor;
+
             var rect = Chart.DrawRectangle(id, ShiftFromCurrentBar(5), top, ShiftFromCurrentBar(15), bottom, c);
             rect.IsFilled = true;
             rect.IsInteractive = false;
@@ -367,7 +438,17 @@ namespace cAlgo
             if (ShowLabels)
                 label = Chart.DrawText(id + "_lbl", tfKey, ShiftFromCurrentBar(LabelShift), (top + bottom) / 2.0, LabelColor);
 
-            var z = new FvgZone { Id = id, IsBull = bull, Top = top, Bottom = bottom, Rect = rect, Label = label, TimeframeLabel = tfKey };
+            var z = new FvgZone
+            {
+                Id = id,
+                IsBull = bull,
+                Top = top,
+                Bottom = bottom,
+                Rect = rect,
+                Label = label,
+                TimeframeLabel = tfKey
+            };
+
             (bull ? _bullByTf[tfKey] : _bearByTf[tfKey]).Add(z);
         }
 
@@ -375,13 +456,19 @@ namespace cAlgo
         {
             if (idx < 1)
                 return;
+
             var mode = GetMitigationMode();
             var intrPct = IncursionPct / 100.0;
+
             for (var i = zones.Count - 1; i >= 0; i--)
             {
                 var z = zones[i];
                 var mid = (z.Top + z.Bottom) / 2.0;
-                var threshold = bull ? z.Top - intrPct * (z.Top - z.Bottom) : z.Bottom + intrPct * (z.Top - z.Bottom);
+
+                var threshold = bull
+                    ? z.Top - intrPct * (z.Top - z.Bottom)
+                    : z.Bottom + intrPct * (z.Top - z.Bottom);
+
                 var intrusion = bull
                     ? Bars.LowPrices[idx] < threshold && Bars.LowPrices[idx - 1] > threshold
                     : Bars.HighPrices[idx] > threshold && Bars.HighPrices[idx - 1] < threshold;
@@ -416,8 +503,10 @@ namespace cAlgo
                 var removeFull = bull
                     ? (UseBodyMitigation ? Bars.ClosePrices[idx] < z.Bottom : Bars.LowPrices[idx] < z.Bottom)
                     : (UseBodyMitigation ? Bars.ClosePrices[idx] > z.Top : Bars.HighPrices[idx] > z.Top);
+
+                // Pine: Half mitigation uses Close < mid for bulls when Body mitigation is enabled
                 var removeHalf = bull
-                    ? (UseBodyMitigation ? Bars.LowPrices[idx] < mid : Bars.LowPrices[idx] < mid)
+                    ? (UseBodyMitigation ? Bars.ClosePrices[idx] < mid : Bars.LowPrices[idx] < mid)
                     : (UseBodyMitigation ? Bars.ClosePrices[idx] > mid : Bars.HighPrices[idx] > mid);
 
                 if (((mode == MitigationMode.Normal || mode == MitigationMode.Dynamic) && removeFull) ||
@@ -431,6 +520,7 @@ namespace cAlgo
                 z.Rect.Y2 = z.Bottom;
                 z.Rect.Time1 = ShiftFromCurrentBar(LabelShift);
                 z.Rect.Time2 = ShiftFromCurrentBar(LabelShiftRight);
+
                 if (ShowLabels && z.Label != null)
                 {
                     z.Label.Time = ShiftFromCurrentBar(LabelShift);
@@ -441,7 +531,9 @@ namespace cAlgo
 
         private void RemoveFvgAt(List<FvgZone> zones, int i)
         {
-            if (i < 0 || i >= zones.Count) return;
+            if (i < 0 || i >= zones.Count)
+                return;
+
             var z = zones[i];
             Chart.RemoveObject(z.Id);
             Chart.RemoveObject(z.Id + "_lbl");
@@ -450,17 +542,19 @@ namespace cAlgo
 
         private void ProcessOverlaySubsystem(int idx)
         {
-            var tfBars = MarketData.GetBars(TfInput);
+            var tfBars = MarketData.GetBars(TfInput); //  [oai_citation:2‡cTrader](https://help.ctrader.com/ctrader-algo/references/MarketData/MarketData/?utm_source=chatgpt.com)
             var i = FindBarIndexAtOrBefore(tfBars, GetSecurityAlignmentTime(idx));
             if (i < 2)
                 return;
 
             var h0 = tfBars.HighPrices[i];
             var l0 = tfBars.LowPrices[i];
+
             var o1 = tfBars.OpenPrices[i - 1];
             var h1 = tfBars.HighPrices[i - 1];
             var l1 = tfBars.LowPrices[i - 1];
             var c1 = tfBars.ClosePrices[i - 1];
+
             var h2 = tfBars.HighPrices[i - 2];
             var l2 = tfBars.LowPrices[i - 2];
             var t = tfBars.OpenTimes;
@@ -471,7 +565,9 @@ namespace cAlgo
                 var daysLeft = Math.Abs(Math.Floor((Server.Time - Bars.OpenTimes[idx]).TotalDays));
                 inRange = daysLeft < DaysBack;
             }
-            if (!inRange) return;
+
+            if (!inRange)
+                return;
 
             var upImbDist = (l0 - h2) / Math.Max(Math.Abs(h2), Symbol.TickSize) * 100.0;
             var downImbDist = (l2 - h0) / Math.Max(Math.Abs(h0), Symbol.TickSize) * 100.0;
@@ -479,11 +575,13 @@ namespace cAlgo
             var downGapDist = (l1 - h0) / Math.Max(Math.Abs(h0), Symbol.TickSize) * 100.0;
             var upWickDist = (h1 - Math.Max(o1, c1)) / Math.Max(Math.Abs(Math.Max(o1, c1)), Symbol.TickSize) * 100.0;
             var downWickDist = (Math.Min(o1, c1) - l1) / Math.Max(Math.Abs(l1), Symbol.TickSize) * 100.0;
+
             var bodySize = Math.Abs(o1 - c1);
             var upperWick = h1 - Math.Max(o1, c1);
             var lowerWick = Math.Min(o1, c1) - l1;
 
             var atr = GetAtrOnTf(tfBars, i, AtrLength);
+
             bool c1ok, c2ok, c3ok, c4ok, c5ok, c6ok;
             if (ConditionType == OverlayConditionType.Percentage)
             {
@@ -516,16 +614,19 @@ namespace cAlgo
             {
                 if (BoxType == OverlayBoxType.Imbalance && ShowUp && l0 > h2 && c1ok)
                     AddOverlay(t[i - 2], l0, Bars.OpenTimes[idx], h2, upColor, true);
+
                 if (BoxType == OverlayBoxType.Imbalance && ShowDown && h0 < l2 && c2ok)
                     AddOverlay(t[i - 2], l2, Bars.OpenTimes[idx], h0, downColor, false);
 
                 if (BoxType == OverlayBoxType.Gap && ShowUp && l0 > h1 && c3ok)
                     AddOverlay(t[i - 1], l0, Bars.OpenTimes[idx], h1, upColor, true);
+
                 if (BoxType == OverlayBoxType.Gap && ShowDown && h0 < l1 && c4ok)
                     AddOverlay(t[i - 1], l1, Bars.OpenTimes[idx], h0, downColor, false);
 
                 if (BoxType == OverlayBoxType.Wick && ShowUp && upperWick > (bodySize / 6.0) && c5ok)
                     AddOverlay(t[i - 1], h1, Bars.OpenTimes[idx], Math.Max(o1, c1), upColor, true);
+
                 if (BoxType == OverlayBoxType.Wick && ShowDown && lowerWick > (bodySize / 6.0) && c6ok)
                     AddOverlay(t[i - 1], Math.Min(o1, c1), Bars.OpenTimes[idx], l1, downColor, false);
 
@@ -535,63 +636,164 @@ namespace cAlgo
             UpdateOverlayLifecycle(idx);
         }
 
+        private string FormatOverlayTimeframeLabel(TimeFrame tf)
+        {
+            if (tf == Bars.TimeFrame)
+            {
+                // Closest match to Pine's timeframe.period label
+                if (TryGetChartMinutes(out var mins))
+                {
+                    if (mins < 60)
+                        return mins + "m";
+                    if (mins % 60 == 0)
+                        return (mins / 60) + " Hr";
+                    return mins + "m";
+                }
+                return Bars.TimeFrame.ToString();
+            }
+
+            if (tf == TimeFrame.Minute) return "1m";
+            if (tf == TimeFrame.Minute2) return "2m";
+            if (tf == TimeFrame.Minute3) return "3m";
+            if (tf == TimeFrame.Minute4) return "4m";
+            if (tf == TimeFrame.Minute5) return "5m";
+            if (tf == TimeFrame.Minute10) return "10m";
+            if (tf == TimeFrame.Minute15) return "15m";
+            if (tf == TimeFrame.Minute30) return "30m";
+            if (tf == TimeFrame.Hour) return "1 Hr";
+            if (tf == TimeFrame.Hour2) return "2 Hr";
+            if (tf == TimeFrame.Hour4) return "4 Hr";
+            if (tf == TimeFrame.Hour8) return "8 Hr";
+            if (tf == TimeFrame.Hour12) return "12 Hr";
+            if (tf == TimeFrame.Daily) return "Daily";
+            if (tf == TimeFrame.Weekly) return "Weekly";
+            if (tf == TimeFrame.Monthly) return "Monthly";
+
+            return tf.ToString();
+        }
+
+        private string GetOverlayBoxText()
+        {
+            var tfLabel = FormatOverlayTimeframeLabel(TfInput);
+            switch (BoxType)
+            {
+                case OverlayBoxType.Gap:
+                    return "GAP • " + tfLabel;
+                case OverlayBoxType.Wick:
+                    return "WICK • " + tfLabel;
+                default:
+                    // Imbalance: Pine default imbtext is empty, so the label is essentially the timeframe
+                    return tfLabel;
+            }
+        }
+
         private void AddOverlay(DateTime left, double top, DateTime right, double bottom, Color fillColor, bool isUp)
         {
             var id = $"mk_overlay_{_id++}";
-            var b = Chart.DrawRectangle(id, left, top, right, bottom, fillColor);
-            b.IsFilled = true;
-            b.IsInteractive = false;
-            b.Color = fillColor;
-            b.LineStyle = LineStyle.Solid;
+
+            // Filled rectangle (bgcolor in Pine)
+            var fill = Chart.DrawRectangle(id, left, top, right, bottom, fillColor);
+            fill.IsFilled = true;
+            fill.IsInteractive = false;
+            fill.Thickness = 1;
+            fill.LineStyle = LineStyle.Solid;
+
+            // Border rectangle (border_color in Pine)
+            var borderColor = isUp ? UpBorderColor : DownBorderColor;
+            var border = Chart.DrawRectangle(id + "_bd", left, top, right, bottom, borderColor);
+            border.IsFilled = false;
+            border.IsInteractive = false;
+            border.Thickness = 1;
+            border.LineStyle = LineStyle.Solid;
+
+            // Box text (approximation of Pine's box text)
+            var txt = Chart.DrawText(id + "_txt", GetOverlayBoxText(), right, (top + bottom) / 2.0, LabelColor);
+            txt.IsInteractive = false;
 
             var t = ShowTopLine ? Chart.DrawTrendLine(id + "_t", left, top, right, top, OverlayLineColor) : null;
             var m = ShowMiddleLine ? Chart.DrawTrendLine(id + "_m", left, (top + bottom) / 2.0, right, (top + bottom) / 2.0, OverlayLineColor) : null;
             var bt = ShowBottomLine ? Chart.DrawTrendLine(id + "_b", left, bottom, right, bottom, OverlayLineColor) : null;
+
+            // Pine default is "Dotted"
             if (t != null) t.LineStyle = LineStyle.Dots;
             if (m != null) m.LineStyle = LineStyle.Dots;
             if (bt != null) bt.LineStyle = LineStyle.Dots;
-            _overlayZones.Add(new OverlayZone { Id = id, Box = b, TopLine = t, MidLine = m, BottomLine = bt, IsUp = isUp });
+
+            _overlayZones.Add(new OverlayZone
+            {
+                Id = id,
+                FillRect = fill,
+                BorderRect = border,
+                Text = txt,
+                TopLine = t,
+                MidLine = m,
+                BottomLine = bt,
+                IsUp = isUp
+            });
         }
 
         private void UpdateOverlayLifecycle(int idx)
         {
+            bool Cross(double level) => Bars.HighPrices[idx] > level && Bars.LowPrices[idx] < level;
+            var right = Bars.OpenTimes[idx].AddMilliseconds(1);
+
             for (var i = _overlayZones.Count - 1; i >= 0; i--)
             {
                 var z = _overlayZones[i];
-                var top = z.Box.Y1;
-                var bottom = z.Box.Y2;
-                var mid = (top + bottom) / 2.0;
 
-                var filled = FilledType == FillCondition.Touch
-                    ? (Bars.HighPrices[idx] > bottom && Bars.LowPrices[idx] < bottom) || (Bars.HighPrices[idx] > top && Bars.LowPrices[idx] < top)
-                    : FilledType == FillCondition.HalfFill
-                        ? (Bars.HighPrices[idx] > mid && Bars.LowPrices[idx] < mid)
-                        : (Bars.HighPrices[idx] > bottom && Bars.LowPrices[idx] < bottom);
+                // Normalize top/bottom (Pine uses box.get_top / box.get_bottom)
+                var y1 = z.FillRect.Y1;
+                var y2 = z.FillRect.Y2;
+                var upper = Math.Max(y1, y2);
+                var lower = Math.Min(y1, y2);
+                var mid = (upper + lower) / 2.0;
 
+                bool filled;
+                if (FilledType == FillCondition.Touch)
+                {
+                    filled = Cross(upper) || Cross(lower);
+                }
+                else if (FilledType == FillCondition.HalfFill)
+                {
+                    filled = Cross(mid);
+                }
+                else
+                {
+                    // Full Fill: Pine script's current implementation effectively checks the LOWER boundary (box.get_bottom) for all box types
+                    filled = Cross(lower);
+                }
+
+                // Pine: if hidefilled and filled => delete objects
                 if (HideFilled && filled)
                 {
                     RemoveOverlayAt(i);
                     continue;
                 }
 
+                // Pine: if filled and extendtilfilled => stop extending (keep objects)
                 if (filled && ExtendTillFilled)
                 {
-                    RemoveOverlayAt(i);
+                    DetachOverlayAt(i);
                     continue;
                 }
 
+                // Extend right edges while still managed
+                z.FillRect.Time2 = right;
+                z.BorderRect.Time2 = right;
+                if (z.TopLine != null) z.TopLine.Time2 = right;
+                if (z.MidLine != null) z.MidLine.Time2 = right;
+                if (z.BottomLine != null) z.BottomLine.Time2 = right;
 
-                z.Box.Time2 = Bars.OpenTimes[idx].AddMilliseconds(1);
-                if (z.TopLine != null)
-                    z.TopLine.Time2 = Bars.OpenTimes[idx].AddMilliseconds(1);
-                if (z.MidLine != null)
-                    z.MidLine.Time2 = Bars.OpenTimes[idx].AddMilliseconds(1);
-                if (z.BottomLine != null)
-                    z.BottomLine.Time2 = Bars.OpenTimes[idx].AddMilliseconds(1);
+                if (z.Text != null)
+                {
+                    z.Text.Time = right;
+                    z.Text.Y = mid;
+                }
 
+                // Pine: if not filled and not extend => stop extending (keep objects)
                 if (!filled && !ExtendTillFilled)
                 {
-                    RemoveOverlayAt(i);
+                    DetachOverlayAt(i);
                     continue;
                 }
             }
@@ -603,31 +805,41 @@ namespace cAlgo
         private void RemoveOverlayAt(int i)
         {
             if (i < 0 || i >= _overlayZones.Count) return;
+
             var z = _overlayZones[i];
+
             Chart.RemoveObject(z.Id);
+            Chart.RemoveObject(z.Id + "_bd");
+            Chart.RemoveObject(z.Id + "_txt");
             Chart.RemoveObject(z.Id + "_t");
             Chart.RemoveObject(z.Id + "_m");
             Chart.RemoveObject(z.Id + "_b");
+
             _overlayZones.RemoveAt(i);
         }
 
+        private void DetachOverlayAt(int i)
+        {
+            if (i < 0 || i >= _overlayZones.Count) return;
+            _overlayZones.RemoveAt(i);
+        }
 
         private bool IsChartTfDuplicatedByEnabledFixedTf()
         {
             if (string.IsNullOrEmpty(_chartTfKey))
                 return false;
 
-            return (_chartTfKey == "5m" && Enable5m)
-                   || (_chartTfKey == "10m" && Enable10m)
-                   || (_chartTfKey == "15m" && Enable15m)
-                   || (_chartTfKey == "30m" && Enable30m)
-                   || (_chartTfKey == "1hr" && Enable1h)
-                   || (_chartTfKey == "4hr" && Enable4h)
-                   || (_chartTfKey == "8hr" && Enable8h)
-                   || (_chartTfKey == "12hr" && Enable12h)
-                   || (_chartTfKey == "Daily" && EnableDaily)
-                   || (_chartTfKey == "Weekly" && EnableWeekly)
-                   || (_chartTfKey == "Monthly" && EnableMonthly);
+            return (_chartTfKey == "5m" && Enable5m) ||
+                   (_chartTfKey == "10m" && Enable10m) ||
+                   (_chartTfKey == "15m" && Enable15m) ||
+                   (_chartTfKey == "30m" && Enable30m) ||
+                   (_chartTfKey == "1hr" && Enable1h) ||
+                   (_chartTfKey == "4hr" && Enable4h) ||
+                   (_chartTfKey == "8hr" && Enable8h) ||
+                   (_chartTfKey == "12hr" && Enable12h) ||
+                   (_chartTfKey == "Daily" && EnableDaily) ||
+                   (_chartTfKey == "Weekly" && EnableWeekly) ||
+                   (_chartTfKey == "Monthly" && EnableMonthly);
         }
 
         private string BuildChartTfKey()
@@ -641,37 +853,27 @@ namespace cAlgo
             }
 
             var tf = Bars.TimeFrame.ToString();
-            if (tf.IndexOf("Daily", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "Daily";
-            if (tf.IndexOf("Weekly", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "Weekly";
-            if (tf.IndexOf("Monthly", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "Monthly";
-
+            if (tf.IndexOf("Daily", StringComparison.OrdinalIgnoreCase) >= 0) return "Daily";
+            if (tf.IndexOf("Weekly", StringComparison.OrdinalIgnoreCase) >= 0) return "Weekly";
+            if (tf.IndexOf("Monthly", StringComparison.OrdinalIgnoreCase) >= 0) return "Monthly";
             return "Chart";
         }
 
         private bool IsTfVisible(string tfKey)
         {
-            if (tfKey == "15m")
-                return IsVisibilityEnabled(MinTf15, MaxTf15, monthlyRule: false);
-            if (tfKey == "1hr")
-                return IsVisibilityEnabled(MinTf60, MaxTf60Visible, monthlyRule: false);
-            if (tfKey == "4hr")
-                return IsVisibilityEnabled(MinTf240, MaxTf240Visible, monthlyRule: false);
-            if (tfKey == "Daily")
-                return IsVisibilityEnabled(MinTfD, MaxTfDVisible, monthlyRule: false);
-            if (tfKey == "Weekly")
-                return IsVisibilityEnabled(MinTfW, MaxTfWVisible, monthlyRule: false);
-            if (tfKey == "Monthly")
-                return IsVisibilityEnabled(MinTfM, MaxTfMVisible, monthlyRule: true);
-
+            if (tfKey == "15m") return IsVisibilityEnabled(MinTf15, MaxTf15, monthlyRule: false);
+            if (tfKey == "1hr") return IsVisibilityEnabled(MinTf60, MaxTf60Visible, monthlyRule: false);
+            if (tfKey == "4hr") return IsVisibilityEnabled(MinTf240, MaxTf240Visible, monthlyRule: false);
+            if (tfKey == "Daily") return IsVisibilityEnabled(MinTfD, MaxTfDVisible, monthlyRule: false);
+            if (tfKey == "Weekly") return IsVisibilityEnabled(MinTfW, MaxTfWVisible, monthlyRule: false);
+            if (tfKey == "Monthly") return IsVisibilityEnabled(MinTfM, MaxTfMVisible, monthlyRule: true);
             return true;
         }
 
         private bool IsVisibilityEnabled(int minTf, int maxTf, bool monthlyRule)
         {
             var isDwm = IsDailyOrHigherChart();
+
             if (TryGetChartMinutes(out var mins))
             {
                 var dispMin = mins >= minTf;
@@ -682,82 +884,89 @@ namespace cAlgo
             if (!isDwm)
                 return false;
 
-            // Pine logic: for D/W/M charts, disp_mintf_* is true, but disp_* is false except Monthly.
+            // Pine logic for D/W/M charts: allow only monthly if monthlyRule, otherwise block.
             return monthlyRule;
         }
 
-        private bool IsDailyOrHigherChart() => !TryGetChartMinutes(out _);
-
-        private bool TryGetChartMinutes(out int minutes)
+        private bool IsDailyOrHigherChart()
         {
-            minutes = 0;
-            var tf = Bars.TimeFrame.ToString();
-            if (tf.Equals("Minute", StringComparison.OrdinalIgnoreCase))
+            var tf = Bars.TimeFrame.ToString().ToLowerInvariant();
+            return tf.Contains("daily") || tf.Contains("weekly") || tf.Contains("monthly");
+        }
+
+        private bool TryGetChartMinutes(out int mins)
+        {
+            mins = 0;
+            var tf = Bars.TimeFrame.ToString().ToLowerInvariant();
+
+            if (tf.Contains("minute"))
             {
-                minutes = 1;
+                // e.g., "Minute5"
+                var num = ExtractTrailingInt(tf);
+                if (num > 0)
+                {
+                    mins = num;
+                    return true;
+                }
+            }
+
+            if (tf.Contains("hour"))
+            {
+                var num = ExtractTrailingInt(tf);
+                mins = num > 0 ? num * 60 : 60;
                 return true;
             }
-            if (tf.StartsWith("Minute", StringComparison.OrdinalIgnoreCase) && int.TryParse(tf.Substring("Minute".Length), out var m))
-            {
-                minutes = m;
-                return true;
-            }
-            if (tf.Equals("Hour", StringComparison.OrdinalIgnoreCase))
-            {
-                minutes = 60;
-                return true;
-            }
-            if (tf.StartsWith("Hour", StringComparison.OrdinalIgnoreCase) && int.TryParse(tf.Substring("Hour".Length), out var h))
-            {
-                minutes = h * 60;
-                return true;
-            }
+
             return false;
         }
 
-        private static double GetAtrOnTf(Bars bars, int endIndex, int length)
+        private static int ExtractTrailingInt(string s)
         {
-            if (bars == null || bars.Count < 2 || endIndex <= 0)
-                return double.NaN;
-
-            var cappedEnd = Math.Min(endIndex, bars.Count - 1);
-            var maxLen = Math.Max(1, length);
-            var available = cappedEnd;
-
-            if (available < maxLen)
-                return double.NaN;
-
-            if (available == maxLen)
+            var n = 0;
+            var mul = 1;
+            for (var i = s.Length - 1; i >= 0; i--)
             {
-                var sum = 0.0;
-                for (var k = 1; k <= maxLen; k++)
-                    sum += TrueRange(bars, k);
-                return sum / maxLen;
+                var ch = s[i];
+                if (ch < '0' || ch > '9')
+                    break;
+
+                n += (ch - '0') * mul;
+                mul *= 10;
             }
-
-            var seedSum = 0.0;
-            for (var k = 1; k <= maxLen; k++)
-                seedSum += TrueRange(bars, k);
-            var atr = seedSum / maxLen;
-
-            for (var k = maxLen + 1; k <= cappedEnd; k++)
-            {
-                var tr = TrueRange(bars, k);
-                atr = ((atr * (maxLen - 1)) + tr) / maxLen;
-            }
-
-            return atr;
+            return n;
         }
 
-        private static double TrueRange(Bars bars, int idx)
+        private double GetAtrOnTf(Bars tfBars, int tfIndex, int length)
         {
-            var high = bars.HighPrices[idx];
-            var low = bars.LowPrices[idx];
-            var prevClose = bars.ClosePrices[idx - 1];
-            var a = high - low;
-            var b = Math.Abs(high - prevClose);
-            var c = Math.Abs(low - prevClose);
-            return Math.Max(a, Math.Max(b, c));
+            if (length <= 0) return 0;
+            var start = Math.Max(1, tfIndex - length + 1);
+            var sum = 0.0;
+            var cnt = 0;
+
+            for (var i = start; i <= tfIndex; i++)
+            {
+                var tr = GetTrueRange(tfBars, i);
+                sum += tr;
+                cnt++;
+            }
+
+            return cnt > 0 ? sum / cnt : 0.0;
+        }
+
+        private static double GetTrueRange(Bars bars, int i)
+        {
+            if (i <= 0)
+                return bars.HighPrices[i] - bars.LowPrices[i];
+
+            var high = bars.HighPrices[i];
+            var low = bars.LowPrices[i];
+            var prevClose = bars.ClosePrices[i - 1];
+
+            var tr1 = high - low;
+            var tr2 = Math.Abs(high - prevClose);
+            var tr3 = Math.Abs(low - prevClose);
+
+            return Math.Max(tr1, Math.Max(tr2, tr3));
         }
 
         private DateTime ShiftFromCurrentBar(int barsToRight)
@@ -773,8 +982,6 @@ namespace cAlgo
             return last + TimeSpan.FromTicks(span.Ticks * barsToRight);
         }
 
-
-
         private DateTime GetSecurityAlignmentTime(int chartIndex)
         {
             return Bars.OpenTimes[chartIndex];
@@ -785,6 +992,7 @@ namespace cAlgo
             var lo = 0;
             var hi = bars.Count - 1;
             var ans = -1;
+
             while (lo <= hi)
             {
                 var mid = (lo + hi) / 2;
@@ -798,6 +1006,7 @@ namespace cAlgo
                     hi = mid - 1;
                 }
             }
+
             return ans;
         }
     }
