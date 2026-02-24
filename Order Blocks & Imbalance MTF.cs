@@ -168,7 +168,6 @@ namespace cAlgo
                 if (zone.Mitigated)
                 {
                     zone.Box.Color = Color.FromArgb(90, baseCol);
-                    zone.Box.BorderColor = baseCol;
                     zone.Box.LineStyle = LineStyle.DotsRare;
                     if (zone.Label != null)
                         zone.Label.Color = Color.White;
@@ -176,7 +175,6 @@ namespace cAlgo
                 else
                 {
                     zone.Box.Color = Color.FromArgb(70, baseCol);
-                    zone.Box.BorderColor = baseCol;
                     zone.Box.LineStyle = LineStyle.Solid;
                     if (zone.Label != null)
                         zone.Label.Color = Color.White;
@@ -186,7 +184,6 @@ namespace cAlgo
             {
                 var hide = Color.FromArgb(0, Color.White);
                 zone.Box.Color = hide;
-                zone.Box.BorderColor = hide;
                 if (zone.Label != null)
                     zone.Label.Color = hide;
             }
