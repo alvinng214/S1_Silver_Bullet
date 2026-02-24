@@ -1,11 +1,6 @@
 // Fibonacci Optimal Entry Zone [OTE] (Zeiierman).cs
-// cTrader indicator translation from TradingView Pine Script:
-// "Fibonacci Optimal Entry Zone [OTE] (Zeiierman)"
-//
-// Notes / limitations (cTrader vs Pine):
-// - TradingView label styles (label_up/label_down bubble/arrow) are approximated with Chart.DrawText alignment.
-// - TradingView linefill between two lines is approximated with a filled ChartRectangle between those levels.
-// - This implementation mirrors the pivot/state machine + fib level updates as closely as possible.
+// FIX: ChartRectangle in your cTrader build has NO FillColor property.
+//      Golden zone fill is implemented as a filled rectangle using .Color and .IsFilled=true.
 
 using System;
 using System.Collections.Generic;
@@ -67,7 +62,7 @@ namespace cAlgo
         [Parameter("Golden Zone Color", DefaultValue = "#80009688", Group = "Fibonacci")]
         public Color goldZone { get; set; }
 
-        // Levels (Pine has 2 configurable levels)
+        // Levels
         [Parameter("L1 Enabled", DefaultValue = true, Group = "Levels")]
         public bool level1Enabled { get; set; }
 
@@ -110,8 +105,8 @@ namespace cAlgo
         private readonly List<double> _levels = new();
         private readonly List<Color> _colors = new();
 
-        private readonly List<ChartTrendLine> _flevels = new();      // active fib levels (order mirrors Pine usage)
-        private readonly List<string> _flevelNames = new();          // names for deletion when showOld == false
+        private readonly List<ChartTrendLine> _flevels = new();
+        private readonly List<string> _flevelNames = new();
 
         private ChartTrendLine _trend;
         private string _trendName;
@@ -137,18 +132,14 @@ namespace cAlgo
             if (index < prd * 2 + 2)
                 return;
 
-            // Cache previous series values
             double UpPrev = _Up;
             double DnPrev = _Dn;
             int iUpPrev = _iUp;
             int iDnPrev = _iDn;
 
-            // Up := math.max(Up[1], high)
-            // Dn := math.min(Dn[1], low)
             double Up = double.IsNaN(UpPrev) ? double.NaN : Math.Max(UpPrev, Bars.HighPrices[index]);
             double Dn = double.IsNaN(DnPrev) ? double.NaN : Math.Min(DnPrev, Bars.LowPrices[index]);
 
-            // Pivot detection (ta.pivothigh/low) affects Up/Dn only when pos gate matches
             if (TryPivotHigh(index, prd, out _, out var ph) && _pos <= 0)
                 Up = ph;
 
@@ -158,9 +149,7 @@ namespace cAlgo
             _Up = Up;
             _Dn = Dn;
 
-            // =========================
-            // Bullish structure block
-            // =========================
+            // ---------- Bullish ----------
             if (!double.IsNaN(_Up) && !double.IsNaN(UpPrev) && _Up > UpPrev)
             {
                 _iUp = index;
@@ -168,30 +157,22 @@ namespace cAlgo
 
                 if (_pos <= 0)
                 {
-                    // New bullish leg
                     ClearActiveSet(deleteDrawings: !showOld);
 
                     if (bull)
                     {
-                        // CHoCH label at centerBull, Up[1]
                         if (centerBull.HasValue)
                             DrawChoch(centerBull.Value, UpPrev, "CHoCH", bull2, labelDown: true);
 
-                        // BoS line at Up[1] from iUp[1] to b
                         if (iUpPrev != int.MinValue)
                             DrawBos(iUpPrev, index, UpPrev, bull2);
 
-                        // Fib levels (anchored by iDn < iUp)
                         if (_iDn != int.MinValue && !double.IsNaN(_Dn))
-                        {
                             BuildFibLevelsForCurrentLeg(isBull: true, index: index);
-                        }
 
-                        // Swing trendline
                         if (swingline && _iDn != int.MinValue && !double.IsNaN(_Dn))
-                            CreateSwingTrend(isBull: true, x1: _iDn, y1: _Dn, x2: index, y2: _Up, c: bull2);
+                            CreateSwingTrend(x1: _iDn, y1: _Dn, x2: index, y2: _Up, c: bull2);
 
-                        // End label
                         if (swinglab)
                         {
                             RemoveIfExists(_endUpLabelName);
@@ -206,7 +187,6 @@ namespace cAlgo
                 }
                 else if (_pos == 1)
                 {
-                    // First continuation update
                     if (bull)
                         UpdateFibAndSwing(isBull: true, index: index);
 
@@ -214,12 +194,10 @@ namespace cAlgo
                 }
                 else
                 {
-                    // Further continuation
                     if (bull)
                     {
                         UpdateFibAndSwing(isBull: true, index: index);
 
-                        // Start label (at iDn)
                         if (swinglab && (follow ? _iDn : _iSwingLow) != int.MinValue)
                         {
                             int sx = follow ? _iDn : _iSwingLow;
@@ -236,13 +214,10 @@ namespace cAlgo
             }
             else if (!double.IsNaN(_Up) && !double.IsNaN(UpPrev) && _Up < UpPrev)
             {
-                // iUp := b - prd
                 _iUp = index - prd;
             }
 
-            // =========================
-            // Bearish structure block
-            // =========================
+            // ---------- Bearish ----------
             if (!double.IsNaN(_Dn) && !double.IsNaN(DnPrev) && _Dn < DnPrev)
             {
                 _iDn = index;
@@ -261,12 +236,10 @@ namespace cAlgo
                             DrawBos(iDnPrev, index, DnPrev, bear2);
 
                         if (_iUp != int.MinValue && !double.IsNaN(_Up))
-                        {
                             BuildFibLevelsForCurrentLeg(isBull: false, index: index);
-                        }
 
                         if (swingline && _iUp != int.MinValue && !double.IsNaN(_Up))
-                            CreateSwingTrend(isBull: false, x1: _iUp, y1: _Up, x2: index, y2: _Dn, c: bear2);
+                            CreateSwingTrend(x1: _iUp, y1: _Up, x2: index, y2: _Dn, c: bear2);
 
                         if (swinglab)
                         {
@@ -312,10 +285,11 @@ namespace cAlgo
                 _iDn = index - prd;
             }
 
-            // Extend lines if enabled (Pine l.set_x2 each bar)
-            if (extend && _flevels.Count > 0)
+            // Extend
+            if (extend)
             {
-                var t2 = TimeOf(index);
+                DateTime t2 = TimeOf(index);
+
                 for (int i = 0; i < _flevels.Count; i++)
                     _flevels[i].Time2 = t2;
 
@@ -326,7 +300,7 @@ namespace cAlgo
                     _goldRect.Time2 = t2;
             }
 
-            // Golden zone fill
+            // Golden fill (fixed for your API)
             if (golden && _flevels.Count > 1)
                 UpdateGoldenFill(index);
             else
@@ -334,7 +308,7 @@ namespace cAlgo
         }
 
         // =========================
-        // Level list build (Pine: levels.push, colors.unshift)
+        // Levels build (Pine: levels.push, colors.unshift)
         // =========================
         private void RebuildLevels()
         {
@@ -357,16 +331,16 @@ namespace cAlgo
         // =========================
         // Pivot logic (strict)
         // =========================
-        private bool TryPivotHigh(int index, int prd, out int pivotIndex, out double pivotHigh)
+        private bool TryPivotHigh(int index, int p, out int pivotIndex, out double pivotHigh)
         {
-            pivotIndex = index - prd;
+            pivotIndex = index - p;
             pivotHigh = double.NaN;
 
-            if (pivotIndex - prd < 0) return false;
-            if (pivotIndex + prd > index) return false;
+            if (pivotIndex - p < 0) return false;
+            if (pivotIndex + p > index) return false;
 
             double ph = Bars.HighPrices[pivotIndex];
-            for (int i = pivotIndex - prd; i <= pivotIndex + prd; i++)
+            for (int i = pivotIndex - p; i <= pivotIndex + p; i++)
             {
                 if (i == pivotIndex) continue;
                 if (Bars.HighPrices[i] >= ph) return false;
@@ -376,16 +350,16 @@ namespace cAlgo
             return true;
         }
 
-        private bool TryPivotLow(int index, int prd, out int pivotIndex, out double pivotLow)
+        private bool TryPivotLow(int index, int p, out int pivotIndex, out double pivotLow)
         {
-            pivotIndex = index - prd;
+            pivotIndex = index - p;
             pivotLow = double.NaN;
 
-            if (pivotIndex - prd < 0) return false;
-            if (pivotIndex + prd > index) return false;
+            if (pivotIndex - p < 0) return false;
+            if (pivotIndex + p > index) return false;
 
             double pl = Bars.LowPrices[pivotIndex];
-            for (int i = pivotIndex - prd; i <= pivotIndex + prd; i++)
+            for (int i = pivotIndex - p; i <= pivotIndex + p; i++)
             {
                 if (i == pivotIndex) continue;
                 if (Bars.LowPrices[i] <= pl) return false;
@@ -419,14 +393,10 @@ namespace cAlgo
         }
 
         // =========================
-        // Build fib levels for current leg
+        // Fib lines
         // =========================
         private void BuildFibLevelsForCurrentLeg(bool isBull, int index)
         {
-            // In Pine, lines are created with flevels.unshift(...) while iterating levels in order.
-            // That means the final list order matches "reverse insertion".
-            // Here we replicate by inserting at 0 each time.
-
             _flevels.Clear();
             _flevelNames.Clear();
 
@@ -435,20 +405,15 @@ namespace cAlgo
                 double level = _levels[i];
                 Color col = _colors[i];
 
-                double val;
-
-                if (isBull)
-                    val = Fibb(level, _Up, _Dn, _iUp, _iDn);
-                else
-                    val = Fibb(level, _Dn, _Up, _iDn, _iUp);
+                double val = isBull
+                    ? Fibb(level, _Up, _Dn, _iUp, _iDn)
+                    : Fibb(level, _Dn, _Up, _iDn, _iUp);
 
                 if (double.IsNaN(val))
                     continue;
 
                 int x1 = isBull ? _iDn : _iUp;
-                int x2 = index;
-
-                var ln = DrawHorizontalLine(NextName("fib"), x1, x2, val, col, fibb_width);
+                var ln = DrawHorizontalLine(NextName("fib"), x1, index, val, col, fibb_width);
 
                 _flevels.Insert(0, ln);
                 _flevelNames.Insert(0, ln.Name);
@@ -536,7 +501,7 @@ namespace cAlgo
         }
 
         // =========================
-        // Draw helpers
+        // Drawing helpers
         // =========================
         private string NextName(string prefix) => $"ote_zei_{prefix}_{_id++}";
 
@@ -559,22 +524,20 @@ namespace cAlgo
         private void DrawBos(int x1, int x2, double y, Color col)
         {
             var ln = DrawHorizontalLine(NextName("bos"), x1, x2, y, col, s_width);
-            // Pine uses line style solid by default for structure lines; keep Solid.
             ln.LineStyle = LineStyle.Solid;
         }
 
-        private void CreateSwingTrend(bool isBull, int x1, double y1, int x2, double y2, Color c)
+        private void CreateSwingTrend(int x1, double y1, int x2, double y2, Color c)
         {
             _trendName = NextName("trend");
             _trend = Chart.DrawTrendLine(_trendName, TimeOf(x1), y1, TimeOf(x2), y2, c);
             _trend.IsInteractive = false;
             _trend.Thickness = swline_width;
-            _trend.LineStyle = LineStyle.Dots; // Pine uses dotted for swing line
+            _trend.LineStyle = LineStyle.Dots;
         }
 
         private void DrawPriceLabel(string name, int xIndex, double y, bool downStyle)
         {
-            // Pine uses chart.fg_color; cTrader closest is ForegroundColor
             var col = Chart.ColorSettings.ForegroundColor;
             var txt = y.ToString("0.#####", CultureInfo.InvariantCulture);
 
@@ -617,7 +580,7 @@ namespace cAlgo
         }
 
         // =========================
-        // Golden zone fill
+        // Golden zone fill (FIXED: no FillColor)
         // =========================
         private void UpdateGoldenFill(int index)
         {
@@ -631,19 +594,19 @@ namespace cAlgo
             double top = Math.Max(yA, yB);
             double bot = Math.Min(yA, yB);
 
-            // Use the later of the two start times as left edge (close to Pine’s linefill semantics)
             DateTime left = a.Time1 > b.Time1 ? a.Time1 : b.Time1;
             DateTime right = TimeOf(index);
 
             if (_goldRect == null)
             {
                 _goldRectName = NextName("gold");
-                _goldRect = Chart.DrawRectangle(_goldRectName, left, top, right, bot, Color.Transparent);
+                _goldRect = Chart.DrawRectangle(_goldRectName, left, top, right, bot, goldZone);
                 _goldRect.IsInteractive = false;
                 _goldRect.IsFilled = true;
-                _goldRect.FillColor = goldZone;
+
+                // Your API has no FillColor, so we use Color as the fill.
+                _goldRect.Color = goldZone;
                 _goldRect.Thickness = 0;
-                _goldRect.Color = Color.Transparent;
             }
             else
             {
@@ -651,7 +614,10 @@ namespace cAlgo
                 _goldRect.Time2 = right;
                 _goldRect.Y1 = top;
                 _goldRect.Y2 = bot;
-                _goldRect.FillColor = goldZone;
+
+                _goldRect.IsFilled = true;
+                _goldRect.Color = goldZone;
+                _goldRect.Thickness = 0;
             }
         }
 
@@ -685,7 +651,6 @@ namespace cAlgo
             }
             else
             {
-                // Keep drawings (showOld == true) but detach references
                 RemoveGoldenFill();
             }
 
