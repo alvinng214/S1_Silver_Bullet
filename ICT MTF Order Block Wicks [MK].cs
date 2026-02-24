@@ -1,10 +1,31 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using cAlgo.API;
 using cAlgo.API.Internals;
 
 namespace cAlgo
 {
+    internal static class TimeFrameCompatExtensions
+    {
+        public static TimeSpan ToTimeSpan(this TimeFrame tf)
+        {
+            if (tf == TimeFrame.Minute) return TimeSpan.FromMinutes(1);
+            if (tf == TimeFrame.Minute5) return TimeSpan.FromMinutes(5);
+            if (tf == TimeFrame.Minute10) return TimeSpan.FromMinutes(10);
+            if (tf == TimeFrame.Minute15) return TimeSpan.FromMinutes(15);
+            if (tf == TimeFrame.Minute30) return TimeSpan.FromMinutes(30);
+            if (tf == TimeFrame.Hour) return TimeSpan.FromHours(1);
+            if (tf == TimeFrame.Hour4) return TimeSpan.FromHours(4);
+            if (tf == TimeFrame.Hour8) return TimeSpan.FromHours(8);
+            if (tf == TimeFrame.Hour12) return TimeSpan.FromHours(12);
+            if (tf == TimeFrame.Daily) return TimeSpan.FromDays(1);
+            if (tf == TimeFrame.Weekly) return TimeSpan.FromDays(7);
+            if (tf == TimeFrame.Monthly) return TimeSpan.FromDays(30);
+            return TimeSpan.FromMinutes(1);
+        }
+    }
+
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class ICTMTFOrderBlockWicksMK : Indicator
     {
@@ -199,8 +220,9 @@ namespace cAlgo
             RegisterTf("W", "Weekly", TimeFrame.Weekly, EnableWeekly, MaxWeekly, false);
             RegisterTf("M", "Monthly", TimeFrame.Monthly, EnableMonthly, MaxMonthly, false);
 
-            // Keep parity with source's total calculation (it omits 30m and 12h).
-            var totalMax = MaxChart + Max5m + Max10m + Max15m + Max1h + Max4h + Max8h + MaxDaily + MaxWeekly + MaxMonthly;
+            // Keep parity with source's total calculation (it omits 30m and 12h),
+            // but only include enabled timeframes that are actually registered.
+            var totalMax = _tfs.Where(tf => tf.Key != "30" && tf.Key != "720").Sum(tf => tf.MaxCount);
             if (totalMax > 500)
                 Chart.DrawStaticText("mk_ob_error", "MTF OB INDICATOR ERROR\n\nMax Number of OBs exceeded, please change settings.", VerticalAlignment.Bottom, HorizontalAlignment.Right, Color.Red);
         }
@@ -228,16 +250,21 @@ namespace cAlgo
                 tf.NewBear = false;
 
                 var srcIdx = FindBarIndexAtOrBefore(tf.SourceBars, now);
-                if (srcIdx < 2)
+                var currClosedIdx = srcIdx - 1;
+                var prevIdx = currClosedIdx - 1;
+                var prev2Idx = currClosedIdx - 2;
+                if (prev2Idx < 0)
                     continue;
 
-                var open1 = tf.SourceBars.OpenPrices[srcIdx - 1];
-                var close1 = tf.SourceBars.ClosePrices[srcIdx - 1];
-                var op = tf.SourceBars.OpenPrices[srcIdx];
-                var cl = tf.SourceBars.ClosePrices[srcIdx];
-                var high1 = tf.SourceBars.HighPrices[srcIdx - 1];
-                var low1 = tf.SourceBars.LowPrices[srcIdx - 1];
-                var high2 = tf.SourceBars.HighPrices[srcIdx - 2];
+                // Pine request.security(..., lookahead_off) relies on closed HTF bars.
+                // Use the last two CLOSED source candles for detection parity.
+                var open1 = tf.SourceBars.OpenPrices[prevIdx];
+                var close1 = tf.SourceBars.ClosePrices[prevIdx];
+                var op = tf.SourceBars.OpenPrices[currClosedIdx];
+                var cl = tf.SourceBars.ClosePrices[currClosedIdx];
+                var high1 = tf.SourceBars.HighPrices[prevIdx];
+                var low1 = tf.SourceBars.LowPrices[prevIdx];
+                var high2 = tf.SourceBars.HighPrices[prev2Idx];
 
                 bool canDetect = (OnlyMktHrs && inSession) || !OnlyMktHrs;
                 var isNewBull = canDetect && IsBullDetected(open1, close1, op, cl, high1);
@@ -293,9 +320,10 @@ namespace cAlgo
             // Parity with Pine alertcondition section: 30m and 12h are not included there.
             var anyBull = newBullChart || newBull5 || newBull10 || newBull15 || newBull1h || newBull4h || newBull8h || newBullD || newBullW || newBullM;
             var anyBear = newBearChart || newBear5 || newBear10 || newBear15 || newBear1h || newBear4h || newBear8h || newBearD || newBearW || newBearM;
-            BullCreationAlert[index] = anyBull ? 1.0 : double.NaN;
-            BearCreationAlert[index] = anyBear ? 1.0 : double.NaN;
-            BothCreationAlert[index] = (anyBull || anyBear) ? 1.0 : double.NaN;
+            var markerPrice = (high + low) / 2.0;
+            BullCreationAlert[index] = anyBull ? markerPrice : double.NaN;
+            BearCreationAlert[index] = anyBear ? markerPrice : double.NaN;
+            BothCreationAlert[index] = (anyBull || anyBear) ? markerPrice : double.NaN;
         }
 
         private void RegisterTf(string key, string label, TimeFrame timeframe, bool enabled, int maxCount, bool isChartTf)
@@ -308,15 +336,40 @@ namespace cAlgo
             if (isChartTf && !NotCurrentTimeframeEqualEnabledTfs())
                 return;
 
-            _tfs.Add(new TfConfig
+            var cfg = new TfConfig
             {
                 Key = key,
                 Label = label,
                 SourceBars = timeframe == Bars.TimeFrame ? Bars : MarketData.GetBars(timeframe),
                 MaxCount = maxCount
-            });
+            };
+
+            EnsureSourceHistory(cfg.SourceBars);
+            _tfs.Add(cfg);
         }
 
+
+        private void EnsureSourceHistory(Bars sourceBars)
+        {
+            if (sourceBars == null || sourceBars == Bars)
+                return;
+
+            // Pine doesn't clamp historical lookback in this script declaration,
+            // so we load as much HTF history as the cTrader provider exposes.
+            // Keep a hard iteration cap as a safety guard for initialization time.
+            const int maxHistoryLoadIterations = 40;
+            var lastCount = sourceBars.Count;
+            for (int i = 0; i < maxHistoryLoadIterations; i++)
+            {
+                var loaded = sourceBars.LoadMoreHistory();
+                if (loaded <= 0)
+                    break;
+
+                if (sourceBars.Count <= lastCount)
+                    break;
+                lastCount = sourceBars.Count;
+            }
+        }
         private bool NotCurrentTimeframeEqualEnabledTfs()
         {
             if (Bars.TimeFrame == TimeFrame.Minute5)
@@ -367,10 +420,15 @@ namespace cAlgo
 
             var leftTime = ShiftTime(index, 20);
             var rightTime = ShiftTime(index, 200);
+            var zoneTop = Math.Max(top, bottom);
+            var zoneBottom = Math.Min(top, bottom);
+            if (double.IsNaN(zoneTop) || double.IsNaN(zoneBottom) || double.IsInfinity(zoneTop) || double.IsInfinity(zoneBottom))
+                return;
+
             var borderColor = isBull ? Color.FromArgb(0, Color.Yellow) : Color.FromArgb(0, Color.Blue);
             var fillColor = isBull ? BullObColor : BearObColor;
 
-            var rect = Chart.DrawRectangle(id, leftTime, top, rightTime, bottom, borderColor, 1, LineStyle.DotsRare);
+            var rect = Chart.DrawRectangle(id, leftTime, zoneTop, rightTime, zoneBottom, borderColor, 1, LineStyle.DotsRare);
             rect.IsFilled = true;
             rect.Color = fillColor;
 
@@ -392,8 +450,8 @@ namespace cAlgo
                 LabelId = labelId,
                 TfLabel = tf.Label,
                 IsBull = isBull,
-                Top = top,
-                Bottom = bottom,
+                Top = zoneTop,
+                Bottom = zoneBottom,
                 Box = rect,
                 Label = label
             };
@@ -635,8 +693,8 @@ namespace cAlgo
         private DateTime ShiftTime(int chartIndex, int barsForward)
         {
             var baseTime = Bars.OpenTimes[chartIndex];
-            var step = Bars.TimeFrame.ToTimeSpan();
-            return baseTime.Add(TimeSpan.FromTicks(step.Ticks * barsForward));
+            var stepSeconds = GetChartSeconds();
+            return baseTime.AddSeconds(stepSeconds * barsForward);
         }
 
         private bool IsInSession(DateTime dt)
@@ -654,10 +712,23 @@ namespace cAlgo
             if (Bars.TimeFrame == TimeFrame.Monthly)
                 return "Monthly";
 
-            var minutes = Bars.TimeFrame.ToTimeSpan().TotalMinutes;
+            var seconds = GetChartSeconds();
+            var minutes = seconds / 60.0;
             if (minutes > 59)
                 return (minutes / 60.0).ToString("0.#") + " Hr";
             return minutes.ToString("0") + " Min";
+        }
+
+        private double GetChartSeconds()
+        {
+            if (Bars.Count > 1)
+            {
+                var delta = (Bars.OpenTimes[Bars.Count - 1] - Bars.OpenTimes[Bars.Count - 2]).TotalSeconds;
+                if (delta > 0)
+                    return delta;
+            }
+
+            return Bars.TimeFrame.ToTimeSpan().TotalSeconds;
         }
     }
 }
