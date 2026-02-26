@@ -69,6 +69,12 @@ namespace cAlgo.Robots
         [Parameter("Max Open Positions", DefaultValue = 1, MinValue = 1, MaxValue = 5, Group = "Risk Management")]
         public int MaxOpenPositions { get; set; }
 
+        [Parameter("Mirror ICT Signals Exactly", DefaultValue = true, Group = "Signal Execution")]
+        public bool MirrorIctSignalsExactly { get; set; }
+
+        [Parameter("Close Opposite Positions", DefaultValue = true, Group = "Signal Execution")]
+        public bool CloseOppositePositions { get; set; }
+
         [Parameter("Min SL Distance (pips)", DefaultValue = 5.0, MinValue = 1.0, Group = "Risk Management")]
         public double MinSlPips { get; set; }
 
@@ -145,6 +151,8 @@ namespace cAlgo.Robots
         private readonly List<LiquidityLevel> _sslLevels = new List<LiquidityLevel>();  // Sellside (pivot lows)
 
         private int _lastProcessedBarIndex = -1;
+        private int _lastLongTradeSignalBar = -1;
+        private int _lastShortTradeSignalBar = -1;
 
         // =====================================================================
         // Lifecycle
@@ -627,20 +635,59 @@ namespace cAlgo.Robots
 
         private void ExecuteTradeLogic(int index)
         {
-            // Count open positions from this bot
-            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
-            if (openCount >= MaxOpenPositions)
+            if (_lastProcessedBarIndex == index)
                 return;
 
-            double entryPrice = Bars.ClosePrices[index]; // approximate entry at bar close
+            _lastProcessedBarIndex = index;
 
-            if (_isLongSignal)
+            // Count open positions from this bot
+            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+
+            if (!MirrorIctSignalsExactly && openCount >= MaxOpenPositions)
+                return;
+
+            // Signal is computed on the completed bar (index), entry must mirror execution at next bar open.
+            int entryBarIndex = Math.Min(index + 1, Bars.Count - 1);
+            double entryPrice = Bars.OpenPrices[entryBarIndex];
+
+            if (_isLongSignal && (!MirrorIctSignalsExactly || _lastLongTradeSignalBar != index))
             {
+                if (CloseOppositePositions)
+                    CloseBotPositions(TradeType.Sell);
+
+                if (!MirrorIctSignalsExactly)
+                {
+                    openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+                    if (openCount >= MaxOpenPositions)
+                        return;
+                }
+
                 TryEnterLong(entryPrice, index);
+                _lastLongTradeSignalBar = index;
             }
-            else if (_isShortSignal)
+
+            if (_isShortSignal && (!MirrorIctSignalsExactly || _lastShortTradeSignalBar != index))
             {
+                if (CloseOppositePositions)
+                    CloseBotPositions(TradeType.Buy);
+
+                if (!MirrorIctSignalsExactly)
+                {
+                    openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+                    if (openCount >= MaxOpenPositions)
+                        return;
+                }
+
                 TryEnterShort(entryPrice, index);
+                _lastShortTradeSignalBar = index;
+            }
+        }
+
+        private void CloseBotPositions(TradeType tradeType)
+        {
+            foreach (var position in Positions.FindAll(BotLabel, SymbolName, tradeType))
+            {
+                ClosePosition(position);
             }
         }
 
@@ -648,6 +695,13 @@ namespace cAlgo.Robots
         {
             // Find the nearest non-mitigated SSL below current price for stop loss
             double? sslLevel = GetNearestSslBelow(entryPrice);
+
+            if (!sslLevel.HasValue && MirrorIctSignalsExactly)
+            {
+                double fallback = _bullishDistalLevel[barIndex];
+                if (fallback > 0 && fallback < entryPrice)
+                    sslLevel = fallback;
+            }
 
             if (!sslLevel.HasValue)
             {
@@ -704,6 +758,13 @@ namespace cAlgo.Robots
         {
             // Find the nearest non-mitigated BSL above current price for stop loss
             double? bslLevel = GetNearestBslAbove(entryPrice);
+
+            if (!bslLevel.HasValue && MirrorIctSignalsExactly)
+            {
+                double fallback = _bearishDistalLevel[barIndex];
+                if (fallback > 0 && fallback > entryPrice)
+                    bslLevel = fallback;
+            }
 
             if (!bslLevel.HasValue)
             {
