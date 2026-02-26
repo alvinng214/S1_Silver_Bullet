@@ -1,7 +1,7 @@
 // =============================================================================
 // ICT Setup 01 cBot
 // =============================================================================
-// Signals   : IctSetup01FvgLiquidityHuntIndicator (ICT Setup 01 TFlab_ct.cs)
+// Signals   : ICT_01 indicator (ICT Setup 01 TFlab_ct.cs)
 //               LongSignal[bar]  == 1.0  → enter long
 //               ShortSignal[bar] == 1.0  → enter short
 //
