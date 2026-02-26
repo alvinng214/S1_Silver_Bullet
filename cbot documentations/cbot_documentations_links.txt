@@ -1,0 +1,9 @@
+https://help.ctrader.com/ctrader-algo/documentation/cbots/start-a-cbot/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/manage-instance-parameters/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/create-a-cbot/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/backtest-a-cbot/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/optimise-a-cbot/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/cloud-requirements/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/cbot-code-samples/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/cbot-advanced-operations/
+https://help.ctrader.com/ctrader-algo/documentation/cbots/cbot-bar-events/
