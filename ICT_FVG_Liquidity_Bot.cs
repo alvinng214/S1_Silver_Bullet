@@ -69,6 +69,12 @@ namespace cAlgo.Robots
         [Parameter("Max Open Positions", DefaultValue = 1, MinValue = 1, MaxValue = 5, Group = "Risk Management")]
         public int MaxOpenPositions { get; set; }
 
+        [Parameter("Mirror ICT Signals Exactly", DefaultValue = true, Group = "Signal Execution")]
+        public bool MirrorIctSignalsExactly { get; set; }
+
+        [Parameter("Close Opposite Positions", DefaultValue = true, Group = "Signal Execution")]
+        public bool CloseOppositePositions { get; set; }
+
         [Parameter("Min SL Distance (pips)", DefaultValue = 5.0, MinValue = 1.0, Group = "Risk Management")]
         public double MinSlPips { get; set; }
 
@@ -145,6 +151,8 @@ namespace cAlgo.Robots
         private readonly List<LiquidityLevel> _sslLevels = new List<LiquidityLevel>();  // Sellside (pivot lows)
 
         private int _lastProcessedBarIndex = -1;
+        private int _lastLongTradeSignalBar = -1;
+        private int _lastShortTradeSignalBar = -1;
 
         // =====================================================================
         // Lifecycle
@@ -245,15 +253,27 @@ namespace cAlgo.Robots
             _fvgArraySize = newSize;
         }
 
-        private void ResizeArray(ref double[] arr, int newSize, double fillValue = 0.0)
+        private void ResizeArray(ref double[] arr, int newSize)
+        {
+            ResizeArray(ref arr, newSize, false, 0.0);
+        }
+
+        private void ResizeArray(ref double[] arr, int newSize, double fillValue)
+        {
+            ResizeArray(ref arr, newSize, true, fillValue);
+        }
+
+        private void ResizeArray(ref double[] arr, int newSize, bool useFill, double fillValue)
         {
             var newArr = new double[newSize];
             Array.Copy(arr, newArr, arr.Length);
-            if (fillValue != 0.0)
+
+            if (useFill)
             {
                 for (int i = arr.Length; i < newSize; i++)
                     newArr[i] = fillValue;
             }
+
             arr = newArr;
         }
 
@@ -627,20 +647,67 @@ namespace cAlgo.Robots
 
         private void ExecuteTradeLogic(int index)
         {
-            // Count open positions from this bot
-            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
-            if (openCount >= MaxOpenPositions)
+            if (_lastProcessedBarIndex == index)
                 return;
 
-            double entryPrice = Bars.ClosePrices[index]; // approximate entry at bar close
+            _lastProcessedBarIndex = index;
 
-            if (_isLongSignal)
+            // Count open positions from this bot
+            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+
+            if (!MirrorIctSignalsExactly && openCount >= MaxOpenPositions)
+                return;
+
+            // Signal is computed on the completed bar (index), entry must mirror execution at next bar open.
+            int entryBarIndex = Math.Min(index + 1, Bars.Count - 1);
+            double nextBarBidOpen = Bars.OpenPrices[entryBarIndex];
+
+            if (_isLongSignal && (!MirrorIctSignalsExactly || _lastLongTradeSignalBar != index))
             {
-                TryEnterLong(entryPrice, index);
+                if (!MirrorIctSignalsExactly)
+                {
+                    if (CloseOppositePositions)
+                        CloseBotPositions(TradeType.Sell);
+
+                    openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+                    if (openCount >= MaxOpenPositions)
+                        return;
+                }
+
+                TryEnterLong(nextBarBidOpen, index);
+
+                if (MirrorIctSignalsExactly && CloseOppositePositions)
+                    CloseBotPositions(TradeType.Sell);
+
+                _lastLongTradeSignalBar = index;
             }
-            else if (_isShortSignal)
+
+            if (_isShortSignal && (!MirrorIctSignalsExactly || _lastShortTradeSignalBar != index))
             {
-                TryEnterShort(entryPrice, index);
+                if (!MirrorIctSignalsExactly)
+                {
+                    if (CloseOppositePositions)
+                        CloseBotPositions(TradeType.Buy);
+
+                    openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+                    if (openCount >= MaxOpenPositions)
+                        return;
+                }
+
+                TryEnterShort(nextBarBidOpen, index);
+
+                if (MirrorIctSignalsExactly && CloseOppositePositions)
+                    CloseBotPositions(TradeType.Buy);
+
+                _lastShortTradeSignalBar = index;
+            }
+        }
+
+        private void CloseBotPositions(TradeType tradeType)
+        {
+            foreach (var position in Positions.FindAll(BotLabel, SymbolName, tradeType))
+            {
+                ClosePosition(position);
             }
         }
 
@@ -648,6 +715,13 @@ namespace cAlgo.Robots
         {
             // Find the nearest non-mitigated SSL below current price for stop loss
             double? sslLevel = GetNearestSslBelow(entryPrice);
+
+            if (!sslLevel.HasValue && MirrorIctSignalsExactly)
+            {
+                double fallback = _bullishDistalLevel[barIndex];
+                if (fallback > 0 && fallback < entryPrice)
+                    sslLevel = fallback;
+            }
 
             if (!sslLevel.HasValue)
             {
@@ -704,6 +778,13 @@ namespace cAlgo.Robots
         {
             // Find the nearest non-mitigated BSL above current price for stop loss
             double? bslLevel = GetNearestBslAbove(entryPrice);
+
+            if (!bslLevel.HasValue && MirrorIctSignalsExactly)
+            {
+                double fallback = _bearishDistalLevel[barIndex];
+                if (fallback > 0 && fallback > entryPrice)
+                    bslLevel = fallback;
+            }
 
             if (!bslLevel.HasValue)
             {
