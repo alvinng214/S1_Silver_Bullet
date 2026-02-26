@@ -40,6 +40,12 @@ namespace cAlgo
         [Parameter("Label Y Offset (pips)", DefaultValue = 2.0, MinValue = 0.0, Group = "Display")]
         public double LabelOffsetPips { get; set; }
 
+        [Output("Current BSL", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries CurrentBSL { get; set; }
+
+        [Output("Current SSL", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries CurrentSSL { get; set; }
+
         private sealed class Pivot
         {
             public double Price;
@@ -88,6 +94,13 @@ namespace cAlgo
             AddExternalLiquidityFromNewPivot(index);
             ClearMitigated();
             ApplyShowRules();
+            UpdateOutputLevels(index);
+        }
+
+        private void UpdateOutputLevels(int index)
+        {
+            CurrentBSL[index] = _buysidePools.First != null ? _buysidePools.First.Value.Price : double.NaN;
+            CurrentSSL[index] = _sellsidePools.First != null ? _sellsidePools.First.Value.Price : double.NaN;
         }
 
         private void DetectAndStoreConfirmedPivots(int currentIndex)
