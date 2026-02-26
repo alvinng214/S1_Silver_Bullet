@@ -51,6 +51,14 @@ namespace cAlgo
         [Parameter("Short Position Message", DefaultValue = "Short Signal Position Based on ICT Setup 01 [FVG Hunts]", Group = "Alert")]
         public string ShortPositionMessage { get; set; }
 
+        // ── Signal outputs consumed by cBots ────────────────────────────────
+        // 1.0 on the bar where the signal fires, 0.0 otherwise.
+        [Output("Long Signal", LineColor = "Lime", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries LongSignal { get; set; }
+
+        [Output("Short Signal", LineColor = "Red", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries ShortSignal { get; set; }
+
         private const int AtrLength = 55;
         private const string LongSignalColorHex = "#008304";
         private const string ShortSignalColorHex = "#d30000";
@@ -129,6 +137,8 @@ namespace cAlgo
                 _bearishProximalLevel[index] = 0.0;
                 _bullishFvgPointSeries[index] = 0.0;
                 _bearishFvgPointSeries[index] = 0.0;
+                LongSignal[index] = 0.0;
+                ShortSignal[index] = 0.0;
                 return;
             }
 
@@ -320,6 +330,10 @@ namespace cAlgo
             DrawSignals(index);
             DrawCurrentZones(index);
             EmitAlerts(index);
+
+            // Expose signal state for cBot consumption
+            LongSignal[index] = _isLongSignal ? 1.0 : 0.0;
+            ShortSignal[index] = _isShortSignal ? 1.0 : 0.0;
         }
 
         private void CalculateAtr(int index)
