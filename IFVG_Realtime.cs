@@ -31,6 +31,12 @@ namespace cAlgo
         [Parameter("MA Type", DefaultValue = "EMA")]
         public string MaType { get; set; }
 
+        [Output("Long Signal", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries LongSignal { get; set; }
+
+        [Output("Short Signal", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries ShortSignal { get; set; }
+
         private const string BuySignalColorHex = "#008080"; // teal
         private const string SellSignalColorHex = "#800000"; // maroon
         private const string BuyAlertMessage = "IFVG Buy Signal (Realtime) | IFVG Signal Triggered";
@@ -71,6 +77,8 @@ namespace cAlgo
 
             DrawSignals(index, signalDir);
             EmitAlerts(index, signalDir);
+            LongSignal[index] = signalDir == 1 ? 1.0 : 0.0;
+            ShortSignal[index] = signalDir == -1 ? 1.0 : 0.0;
         }
 
         private bool TryProcessFvgCandidate(int index, int i, int fvgType, double minSizeValue, double maVal, out int signalDir)
