@@ -78,7 +78,7 @@ namespace cAlgo
 
         // ── Indicator references ─────────────────────────────────────────────
 
-        private IctSetup01FvgLiquidityHuntIndicator _ictIndicator;
+        private ICT_01  _ictIndicator;
         private BSL_SSL                             _bslSslIndicator;
 
         // ── State ────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ namespace cAlgo
             // 14  LongPositionMessage   (string)
             // 15  ShortPositionMessage  (string)
             // ------------------------------------------------------------------
-            _ictIndicator = Indicators.GetIndicator<IctSetup01FvgLiquidityHuntIndicator>(
+            _ictIndicator = Indicators.GetIndicator<ICT_01>(
                 FvgDetectorMultiplier,
                 FvgValidityPeriod,
                 UseDiscountAndPremium,

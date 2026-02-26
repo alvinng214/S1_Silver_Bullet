@@ -4,7 +4,7 @@ using cAlgo.API;
 namespace cAlgo
 {
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
-    public class IctSetup01FvgLiquidityHuntIndicator : Indicator
+    public class ICT_01 : Indicator
     {
         [Parameter("FVG Detector Multiplier Factor", DefaultValue = 1.0, MinValue = 1.0, Group = "FVGs Setting")]
         public double FvgDetectorMultiplier { get; set; }
