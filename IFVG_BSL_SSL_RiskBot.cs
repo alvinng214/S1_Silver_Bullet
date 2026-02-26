@@ -14,7 +14,7 @@ namespace cAlgo
         [Parameter("Reward Multiple", Group = "Risk", DefaultValue = 2.0, MinValue = 1.0)]
         public double RewardMultiple { get; set; }
 
-        [Parameter("Allow Multiple Positions", Group = "Execution", DefaultValue = false)]
+        [Parameter("Allow Multiple Positions", Group = "Execution", DefaultValue = true)]
         public bool AllowMultiplePositions { get; set; }
 
         [Parameter("Label", Group = "Execution", DefaultValue = "IFVG_BSL_SSL")]
@@ -73,19 +73,21 @@ namespace cAlgo
 
         protected override void OnBar()
         {
-            var index = Bars.Count - 1;
-            if (index < Math.Max(PivotLeft + PivotRight + 1, 3))
+            // OnBar is fired when a new bar opens. To act right after a signal bar closes,
+            // we must evaluate the just-closed bar at Bars.Count - 2.
+            var signalIndex = Bars.Count - 2;
+            if (signalIndex < Math.Max(PivotLeft + PivotRight + 1, 3))
                 return;
 
-            UpdateLiquidity(index);
+            UpdateLiquidity(signalIndex);
 
-            var maValue = CalculateMa(index);
-            var signalDir = DetectIfvgSignal(index, maValue);
+            var maValue = CalculateMa(signalIndex);
+            var signalDir = DetectIfvgSignal(signalIndex, maValue);
 
             if (signalDir == 1)
-                TryEnterLong(index);
+                TryEnterLong(signalIndex);
             else if (signalDir == -1)
-                TryEnterShort(index);
+                TryEnterShort(signalIndex);
         }
 
         private void UpdateLiquidity(int index)
@@ -284,47 +286,73 @@ namespace cAlgo
             return true;
         }
 
-        private void TryEnterLong(int index)
+        private void TryEnterLong(int signalIndex)
         {
             if (!AllowMultiplePositions && HasOpenPosition(TradeType.Buy))
+            {
+                Print("[LONG SKIP] Existing long position blocks new entry at bar {0}", signalIndex);
                 return;
+            }
 
             var sslPrice = CurrentSslPrice;
             if (double.IsNaN(sslPrice) || sslPrice <= 0)
+            {
+                Print("[LONG SKIP] SSL unavailable at bar {0}", signalIndex);
                 return;
+            }
 
-            var entry = Symbol.Bid;
+            var entry = Symbol.Ask;
             var slDistancePips = (entry - sslPrice) / Symbol.PipSize;
             if (slDistancePips <= 0)
+            {
+                Print("[LONG SKIP] Invalid SL distance at bar {0}. Entry={1}, SSL={2}", signalIndex, entry, sslPrice);
                 return;
+            }
 
             var volume = GetRiskVolume(slDistancePips);
             if (volume <= 0)
+            {
+                Print("[LONG SKIP] Volume <= 0 at bar {0}. SL pips={1}", signalIndex, slDistancePips);
                 return;
+            }
 
             var takeProfitPips = slDistancePips * RewardMultiple;
+            Print("[LONG FIRE] bar={0}, slPips={1}, tpPips={2}, vol={3}", signalIndex, slDistancePips, takeProfitPips, volume);
             ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slDistancePips, takeProfitPips);
         }
 
-        private void TryEnterShort(int index)
+        private void TryEnterShort(int signalIndex)
         {
             if (!AllowMultiplePositions && HasOpenPosition(TradeType.Sell))
+            {
+                Print("[SHORT SKIP] Existing short position blocks new entry at bar {0}", signalIndex);
                 return;
+            }
 
             var bslPrice = CurrentBslPrice;
             if (double.IsNaN(bslPrice) || bslPrice <= 0)
+            {
+                Print("[SHORT SKIP] BSL unavailable at bar {0}", signalIndex);
                 return;
+            }
 
-            var entry = Symbol.Ask;
+            var entry = Symbol.Bid;
             var slDistancePips = (bslPrice - entry) / Symbol.PipSize;
             if (slDistancePips <= 0)
+            {
+                Print("[SHORT SKIP] Invalid SL distance at bar {0}. Entry={1}, BSL={2}", signalIndex, entry, bslPrice);
                 return;
+            }
 
             var volume = GetRiskVolume(slDistancePips);
             if (volume <= 0)
+            {
+                Print("[SHORT SKIP] Volume <= 0 at bar {0}. SL pips={1}", signalIndex, slDistancePips);
                 return;
+            }
 
             var takeProfitPips = slDistancePips * RewardMultiple;
+            Print("[SHORT FIRE] bar={0}, slPips={1}, tpPips={2}, vol={3}", signalIndex, slDistancePips, takeProfitPips, volume);
             ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slDistancePips, takeProfitPips);
         }
 
