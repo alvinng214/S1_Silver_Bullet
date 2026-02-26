@@ -253,15 +253,27 @@ namespace cAlgo.Robots
             _fvgArraySize = newSize;
         }
 
-        private void ResizeArray(ref double[] arr, int newSize, double fillValue = 0.0)
+        private void ResizeArray(ref double[] arr, int newSize)
+        {
+            ResizeArray(ref arr, newSize, false, 0.0);
+        }
+
+        private void ResizeArray(ref double[] arr, int newSize, double fillValue)
+        {
+            ResizeArray(ref arr, newSize, true, fillValue);
+        }
+
+        private void ResizeArray(ref double[] arr, int newSize, bool useFill, double fillValue)
         {
             var newArr = new double[newSize];
             Array.Copy(arr, newArr, arr.Length);
-            if (fillValue != 0.0)
+
+            if (useFill)
             {
                 for (int i = arr.Length; i < newSize; i++)
                     newArr[i] = fillValue;
             }
+
             arr = newArr;
         }
 
