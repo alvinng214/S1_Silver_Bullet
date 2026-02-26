@@ -661,38 +661,44 @@ namespace cAlgo.Robots
             // Signal is computed on the completed bar (index), entry must mirror execution at next bar open.
             int entryBarIndex = Math.Min(index + 1, Bars.Count - 1);
             double nextBarBidOpen = Bars.OpenPrices[entryBarIndex];
-            // cTrader Buy orders are filled on Ask; chart bars are Bid. Model Ask-at-open for long sizing/logging.
-            double nextBarAskOpen = nextBarBidOpen + (Symbol.Spread * Symbol.PipSize);
 
             if (_isLongSignal && (!MirrorIctSignalsExactly || _lastLongTradeSignalBar != index))
             {
-                if (CloseOppositePositions)
-                    CloseBotPositions(TradeType.Sell);
-
                 if (!MirrorIctSignalsExactly)
                 {
+                    if (CloseOppositePositions)
+                        CloseBotPositions(TradeType.Sell);
+
                     openCount = Positions.FindAll(BotLabel, SymbolName).Length;
                     if (openCount >= MaxOpenPositions)
                         return;
                 }
 
-                TryEnterLong(nextBarAskOpen, index);
+                TryEnterLong(nextBarBidOpen, index);
+
+                if (MirrorIctSignalsExactly && CloseOppositePositions)
+                    CloseBotPositions(TradeType.Sell);
+
                 _lastLongTradeSignalBar = index;
             }
 
             if (_isShortSignal && (!MirrorIctSignalsExactly || _lastShortTradeSignalBar != index))
             {
-                if (CloseOppositePositions)
-                    CloseBotPositions(TradeType.Buy);
-
                 if (!MirrorIctSignalsExactly)
                 {
+                    if (CloseOppositePositions)
+                        CloseBotPositions(TradeType.Buy);
+
                     openCount = Positions.FindAll(BotLabel, SymbolName).Length;
                     if (openCount >= MaxOpenPositions)
                         return;
                 }
 
                 TryEnterShort(nextBarBidOpen, index);
+
+                if (MirrorIctSignalsExactly && CloseOppositePositions)
+                    CloseBotPositions(TradeType.Buy);
+
                 _lastShortTradeSignalBar = index;
             }
         }
