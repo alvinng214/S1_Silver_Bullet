@@ -660,7 +660,9 @@ namespace cAlgo.Robots
 
             // Signal is computed on the completed bar (index), entry must mirror execution at next bar open.
             int entryBarIndex = Math.Min(index + 1, Bars.Count - 1);
-            double entryPrice = Bars.OpenPrices[entryBarIndex];
+            double nextBarBidOpen = Bars.OpenPrices[entryBarIndex];
+            // cTrader Buy orders are filled on Ask; chart bars are Bid. Model Ask-at-open for long sizing/logging.
+            double nextBarAskOpen = nextBarBidOpen + (Symbol.Spread * Symbol.PipSize);
 
             if (_isLongSignal && (!MirrorIctSignalsExactly || _lastLongTradeSignalBar != index))
             {
@@ -674,7 +676,7 @@ namespace cAlgo.Robots
                         return;
                 }
 
-                TryEnterLong(entryPrice, index);
+                TryEnterLong(nextBarAskOpen, index);
                 _lastLongTradeSignalBar = index;
             }
 
@@ -690,7 +692,7 @@ namespace cAlgo.Robots
                         return;
                 }
 
-                TryEnterShort(entryPrice, index);
+                TryEnterShort(nextBarBidOpen, index);
                 _lastShortTradeSignalBar = index;
             }
         }
