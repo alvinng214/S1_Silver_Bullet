@@ -201,16 +201,18 @@ namespace cAlgo.Robots
                 return;
 
             // ── Long signal ──────────────────────────────────────────────────
+            // LongSignal outputs Bars.LowPrices[bar] on signal bars, NaN otherwise.
             if (_lastLongEntryBar != signalBar &&
-                _ict01.LongSignal[signalBar] >= 1.0)
+                !double.IsNaN(_ict01.LongSignal[signalBar]))
             {
                 _lastLongEntryBar = signalBar;
                 TryEnterLong(signalBar);
             }
 
             // ── Short signal ─────────────────────────────────────────────────
+            // ShortSignal outputs Bars.HighPrices[bar] on signal bars, NaN otherwise.
             if (_lastShortEntryBar != signalBar &&
-                _ict01.ShortSignal[signalBar] >= 1.0)
+                !double.IsNaN(_ict01.ShortSignal[signalBar]))
             {
                 _lastShortEntryBar = signalBar;
                 TryEnterShort(signalBar);
