@@ -32,7 +32,6 @@
 
 using System;
 using cAlgo.API;
-using cAlgo;          // BSL_SSL.LiquidityLineStyle, ICT_01
 
 namespace cAlgo.Robots
 {
@@ -117,8 +116,8 @@ namespace cAlgo.Robots
 
         private const string BotLabel = "ICT01_LIQ";
 
-        private ICT_01  _ict01;
-        private BSL_SSL _bslSsl;
+        private cAlgo.ICT_01  _ict01;
+        private cAlgo.BSL_SSL _bslSsl;
 
         private int _lastLongSignalBar  = -1;
         private int _lastShortSignalBar = -1;
@@ -131,7 +130,7 @@ namespace cAlgo.Robots
         {
             // Link ICT_01 — all 15 parameters in declaration order.
             // Visual/alert parameters are hardcoded; signal parameters are forwarded.
-            _ict01 = Indicators.GetIndicator<ICT_01>(
+            _ict01 = Indicators.GetIndicator<cAlgo.ICT_01>(
                 FvgDetectorMultiplier,      // 1  FvgDetectorMultiplier   double
                 FvgValidityPeriod,          // 2  FvgValidityPeriod        int
                 UseDiscountAndPremium,      // 3  UseDiscountAndPremium    bool
@@ -151,11 +150,11 @@ namespace cAlgo.Robots
 
             // Link BSL_SSL — all 7 parameters in declaration order.
             // Visual parameters are hardcoded; pivot parameters are forwarded.
-            _bslSsl = Indicators.GetIndicator<BSL_SSL>(
-                PivotLeft,                              // 1 PivotLeft         int
-                PivotRight,                             // 2 PivotRight        int
-                1,                                      // 3 ShowPools         int    (visual)
-                BSL_SSL.LiquidityLineStyle.Dots,        // 4 LineStyleParam    enum   (visual)
+            _bslSsl = Indicators.GetIndicator<cAlgo.BSL_SSL>(
+                PivotLeft,                                   // 1 PivotLeft         int
+                PivotRight,                                  // 2 PivotRight        int
+                1,                                           // 3 ShowPools         int    (visual)
+                cAlgo.BSL_SSL.LiquidityLineStyle.Dots,       // 4 LineStyleParam    enum   (visual)
                 "Teal",                                 // 5 BuysideColorName  string (visual)
                 "Red",                                  // 6 SellsideColorName string (visual)
                 2.0                                     // 7 LabelOffsetPips   double (visual)
@@ -168,8 +167,6 @@ namespace cAlgo.Robots
 
         protected override void OnStop()
         {
-            _ict01?.Dispose();
-            _bslSsl?.Dispose();
             Print("{0} stopped.", BotLabel);
         }
 
