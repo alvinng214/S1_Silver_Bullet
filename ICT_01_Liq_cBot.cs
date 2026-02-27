@@ -1,49 +1,40 @@
 // =============================================================================
 // ICT_01_Liq_cBot.cs
 // =============================================================================
-// cBot that links to two custom indicators via Indicators.GetIndicator<T>():
+// Self-contained cBot — all ICT_01 signal logic and BSL/SSL pivot logic are
+// embedded directly.  No Indicators.GetIndicator<T>() is used because the
+// linked-indicator approach suffers from a cTrader backtesting timing issue
+// where the indicator's Calculate() may not have run on the just-closed bar's
+// final OHLC before OnBar() fires.  Calling ProcessBar(signalBar) explicitly
+// in OnBar() guarantees that the signal is computed from the fully-closed bar.
 //
-//   1. ICT_01  (ICT Setup 01 TFlab_ct.cs)
-//      → LongSignal[bar]  = Bars.LowPrices[bar]  when a long  setup fires
-//      → ShortSignal[bar] = Bars.HighPrices[bar]  when a short setup fires
-//      → NaN on all other bars
+// Signal logic  : mirrors ICT_01 (ICT Setup 01 TFlab_ct.cs)
+// SL anchor     : mirrors BSL and SSL (BSL and SSL.cs)
+//                 Fallback: sweep low/high from the signal bar itself when the
+//                 BSL/SSL pool has been cleared by the signal-bar's sweep.
 //
-//   2. BSL_SSL (BSL and SSL.cs)
-//      → CurrentSSL[bar] = most-recent active Sellside pivot low  (long SL ref)
-//      → CurrentBSL[bar] = most-recent active Buyside  pivot high (short SL ref)
-//      → NaN when the pool has been fully cleared by price sweeping all levels
-//
-// Execution rules
-//   • Signal bar closes  → on the very next bar open execute a market order
-//   • Long  SL reference = CurrentSSL from signal bar
-//                          (fallback: signal bar's sweep low when pool is empty)
-//   • Short SL reference = CurrentBSL from signal bar
-//                          (fallback: signal bar's sweep high when pool is empty)
-//   • Actual SL placed SlBufferPips below/above the reference
-//   • TP = SL distance × RewardRiskRatio  (default 1:2)
-//   • Volume sized to risk exactly RiskPercent% of remaining equity
-//   • Maximum MaxOpenPositions simultaneous positions (all directions combined)
+// Long  entry : market order at next bar open after long signal bar closes
+//               SL ref = nearest active SSL (pivot low); fallback = bar low
+//               Actual SL placed SlBufferPips below the reference price.
+// Short entry : market order at next bar open after short signal bar closes
+//               SL ref = nearest active BSL (pivot high); fallback = bar high
+//               Actual SL placed SlBufferPips above the reference price.
+// TP          : SL distance × RewardRiskRatio  (default 1:2)
+// Risk        : RiskPercent % of current account equity per trade
+// Capacity    : max MaxOpenPositions simultaneous positions
 //
 // WHY THE FALLBACK IS NEEDED
 //   The ICT_01 long signal fires precisely because price swept below the FVG
-//   proximal zone.  That same sweep triggers BSL_SSL's ClearMitigated(), which
-//   removes every pivot-low pool entry whose price ≥ the bar's low.  When all
+//   proximal zone.  That same sweep triggers BSL_SSL's ClearMitigated() which
+//   removes every pivot-low pool entry whose price >= the bar's low.  When all
 //   entries are cleared the output is NaN.  The natural ICT stop-loss in that
-//   case is below the sweep low itself — which is exactly what LongSignal
-//   already outputs (= Bars.LowPrices[signalBar]).  Likewise for short signals.
-//
-// IMPORTANT – project setup
-//   All three files must be compiled in the same cTrader Algo project:
-//     • "ICT Setup 01 [TradingFinder] FVG + Liquidity SweepsHunt Alerts,
-//        ICT Setup 01 TFlab_ct.cs"
-//     • "BSL and SSL.cs"
-//     • This file
+//   case is below the sweep low itself — which is exactly what the signal bar's
+//   low price provides.  Likewise for short signals.
 // =============================================================================
 
 using System;
+using System.Collections.Generic;
 using cAlgo.API;
-using cAlgo.API.Internals;
-using cAlgo;                       // ICT_01 and BSL_SSL live in namespace cAlgo
 
 namespace cAlgo.Robots
 {
@@ -118,24 +109,80 @@ namespace cAlgo.Robots
             Group = "Risk Management")]
         public double MinSlPips { get; set; }
 
-        // Bug fix: was 500 — too small for XAUUSD (pip=0.01) where a $10 stop
-        // = 1,000 pips.  Default raised to 10,000 to accommodate all instruments.
         [Parameter("Max SL Distance (pips)", DefaultValue = 10000.0, MinValue = 10.0,
             Group = "Risk Management")]
         public double MaxSlPips { get; set; }
 
         // =====================================================================
-        // Private state
+        // Constants
         // =====================================================================
 
-        private const string BotLabel = "ICT01_LIQ";
+        private const string BotLabel  = "ICT01_LIQ";
+        private const int    AtrLength = 55;
 
-        private ICT_01  _ict01;
-        private BSL_SSL _bslSsl;
+        // =====================================================================
+        // ICT Setup 01 embedded state
+        // =====================================================================
 
-        // Prevent acting on the same signal bar twice
-        private int _lastLongEntryBar  = -1;
-        private int _lastShortEntryBar = -1;
+        // ATR (Wilder RMA, length 55)
+        private double _atrSumAccum;
+        private double _atrRma = double.NaN;
+
+        // Active FVG zone levels carried forward each bar
+        private double _bullishDistal;
+        private double _bullishProximal;
+        private double _bearishDistal;
+        private double _bearishProximal;
+
+        // Geometry of the most-recently-detected FVG
+        private double _bullishFvgDistal;
+        private double _bullishFvgProximal;
+        private int    _bullishFvgPoint;
+        private double _bullishPremium, _bullishDiscount, _bullishEquilibrium;
+
+        private double _bearishFvgDistal;
+        private double _bearishFvgProximal;
+        private int    _bearishFvgPoint;
+        private double _bearishPremium, _bearishDiscount, _bearishEquilibrium;
+
+        // Zone state
+        private bool   _isBullishFvgValid = true;
+        private bool   _isBearishFvgValid = true;
+        private int    _prevBullishFvgPoint;
+        private int    _prevBearishFvgPoint;
+        private double _lowTracker;
+        private double _highTracker;
+        private int    _longSignalCount;
+        private int    _shortSignalCount;
+
+        // Per-bar signal flags (set by UpdateIctSignal, read by OnBar)
+        private bool   _isLongSignal;
+        private bool   _isShortSignal;
+
+        // Signal bar's price at the time the signal fires (used for SL fallback)
+        private double _longSignalBarLow;
+        private double _shortSignalBarHigh;
+
+        // =====================================================================
+        // BSL / SSL embedded state
+        // =====================================================================
+
+        private sealed class LiquidityLevel
+        {
+            public double Price;
+            public int    PivotIndex;
+        }
+
+        private readonly LinkedList<LiquidityLevel> _bslPool = new LinkedList<LiquidityLevel>();
+        private readonly LinkedList<LiquidityLevel> _sslPool = new LinkedList<LiquidityLevel>();
+        private const int MaxLiquidityLevels = 10;
+
+        private double CurrentBslPrice => _bslPool.First != null ? _bslPool.First.Value.Price : double.NaN;
+        private double CurrentSslPrice => _sslPool.First != null ? _sslPool.First.Value.Price : double.NaN;
+
+        // ── Duplicate-entry guards ───────────────────────────────────────────
+        private int _lastLongSignalBar  = -1;
+        private int _lastShortSignalBar = -1;
 
         // =====================================================================
         // Lifecycle
@@ -143,71 +190,15 @@ namespace cAlgo.Robots
 
         protected override void OnStart()
         {
-            // -----------------------------------------------------------------
-            // Initialise ICT_01 – parameters in declaration order (15 total).
-            // Alert set to "Off" — cBot reads signals programmatically.
-            // -----------------------------------------------------------------
-            _ict01 = Indicators.GetIndicator<ICT_01>(
-                FvgDetectorMultiplier,   //  1 FvgDetectorMultiplier  double
-                FvgValidityPeriod,       //  2 FvgValidityPeriod      int
-                UseDiscountAndPremium,   //  3 UseDiscountAndPremium  bool
-                SignalMethod,            //  4 SignalMethod           string
-                SignalsAllowedPerZone,   //  5 SignalsAllowedPerZone  int
-                SignalAfterHunts,        //  6 SignalAfterHunts       bool
-                RequiredHunts,           //  7 RequiredHunts          int
-                false,                   //  8 ShowAllLongSetups      bool  (visual)
-                false,                   //  9 ShowAllShortSetups     bool  (visual)
-                "Off",                   // 10 AlertSetting           string
-                BotLabel,               // 11 AlertName              string (unused)
-                "Once Per Bar",          // 12 Frequency              string (unused)
-                "UTC",                   // 13 AlertTimeZone          string (unused)
-                string.Empty,            // 14 LongPositionMessage    string (unused)
-                string.Empty             // 15 ShortPositionMessage   string (unused)
-            );
+            // Warm up both embedded indicators over all complete historical bars.
+            // Bars.Count - 1 is the currently forming bar; stop at Bars.Count - 2.
+            int warmupEnd = Bars.Count - 2;
+            for (int i = 0; i <= warmupEnd; i++)
+                ProcessBar(i);
 
-            // -----------------------------------------------------------------
-            // Initialise BSL_SSL – parameters in declaration order (7 total).
-            // -----------------------------------------------------------------
-            _bslSsl = Indicators.GetIndicator<BSL_SSL>(
-                PivotLeft,                          // 1 PivotLeft        int
-                PivotRight,                         // 2 PivotRight       int
-                1,                                  // 3 ShowPools        int
-                BSL_SSL.LiquidityLineStyle.Dots,    // 4 LineStyleParam   enum
-                "Teal",                             // 5 BuysideColorName string
-                "Red",                              // 6 SellsideColorName string
-                2.0                                 // 7 LabelOffsetPips  double
-            );
-
-            Print("{0} started — FVG mult={1}, Pivot L/R={2}/{3}, Risk={4}%, MaxPos={5}",
+            Print("{0} started — FVG mult={1}, Pivot L/R={2}/{3}, Risk={4}%, RR={5}, MaxPos={6}",
                 BotLabel, FvgDetectorMultiplier, PivotLeft, PivotRight,
-                RiskPercent, MaxOpenPositions);
-        }
-
-        protected override void OnBar()
-        {
-            // OnBar fires at the open of bar N+1.
-            // signalBar = bar N = the bar that just closed and may carry a signal.
-            int signalBar = Bars.Count - 2;
-            if (signalBar < 1)
-                return;
-
-            // ── Long signal ──────────────────────────────────────────────────
-            // ICT_01.LongSignal[bar] = Bars.LowPrices[bar] on signal bars, NaN otherwise.
-            if (_lastLongEntryBar != signalBar &&
-                !double.IsNaN(_ict01.LongSignal[signalBar]))
-            {
-                _lastLongEntryBar = signalBar;
-                TryEnterLong(signalBar);
-            }
-
-            // ── Short signal ─────────────────────────────────────────────────
-            // ICT_01.ShortSignal[bar] = Bars.HighPrices[bar] on signal bars, NaN otherwise.
-            if (_lastShortEntryBar != signalBar &&
-                !double.IsNaN(_ict01.ShortSignal[signalBar]))
-            {
-                _lastShortEntryBar = signalBar;
-                TryEnterShort(signalBar);
-            }
+                RiskPercent, RewardRiskRatio, MaxOpenPositions);
         }
 
         protected override void OnStop()
@@ -216,126 +207,494 @@ namespace cAlgo.Robots
         }
 
         // =====================================================================
-        // Trade entry
+        // Bar event
+        // =====================================================================
+
+        protected override void OnBar()
+        {
+            // OnBar fires when a NEW bar opens.
+            // Bars.Count - 2 is the bar that just CLOSED (the signal bar).
+            int signalBar = Bars.Count - 2;
+            if (signalBar < 2)
+                return;
+
+            // Advance both embedded indicator states for the closed bar.
+            ProcessBar(signalBar);
+
+            bool hasLong  = _isLongSignal;
+            bool hasShort = _isShortSignal;
+
+            if (!hasLong && !hasShort)
+                return;
+
+            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+            if (openCount >= MaxOpenPositions)
+            {
+                Print("Bar {0}: max positions ({1}) reached, signal skipped.",
+                    signalBar, MaxOpenPositions);
+                return;
+            }
+
+            if (hasLong && _lastLongSignalBar != signalBar)
+            {
+                _lastLongSignalBar = signalBar;
+                TryEnterLong(signalBar);
+            }
+
+            // Re-check capacity before acting on a coincident short signal.
+            openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+            if (openCount >= MaxOpenPositions)
+                return;
+
+            if (hasShort && _lastShortSignalBar != signalBar)
+            {
+                _lastShortSignalBar = signalBar;
+                TryEnterShort(signalBar);
+            }
+        }
+
+        // =====================================================================
+        // Per-bar state update  (mirrors ICT_01.Calculate + BSL_SSL.Calculate)
+        // =====================================================================
+
+        private void ProcessBar(int index)
+        {
+            UpdateAtr(index);
+            UpdateIctSignal(index);
+            UpdateBslSsl(index);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // ATR  (Wilder's smoothed moving average, length 55)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private void UpdateAtr(int index)
+        {
+            double high = Bars.HighPrices[index];
+            double low  = Bars.LowPrices[index];
+            double tr;
+
+            if (index == 0)
+            {
+                tr           = high - low;
+                _atrSumAccum = tr;
+                return;
+            }
+
+            double prevClose = Bars.ClosePrices[index - 1];
+            tr = Math.Max(high - low,
+                 Math.Max(Math.Abs(high - prevClose),
+                          Math.Abs(low  - prevClose)));
+
+            if (index < AtrLength - 1)
+            {
+                _atrSumAccum += tr;
+            }
+            else if (index == AtrLength - 1)
+            {
+                _atrSumAccum += tr;
+                _atrRma = _atrSumAccum / AtrLength;
+            }
+            else
+            {
+                _atrRma = ((_atrRma * (AtrLength - 1)) + tr) / AtrLength;
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // ICT Setup 01 signal logic  (mirrors ICT_01.Calculate exactly)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private void UpdateIctSignal(int index)
+        {
+            _isLongSignal  = false;
+            _isShortSignal = false;
+
+            if (index == 0)
+                return;
+
+            double high  = Bars.HighPrices[index];
+            double low   = Bars.LowPrices[index];
+            double close = Bars.ClosePrices[index];
+
+            // Save previous bar's zone levels before any update this bar
+            double prevBullishDistal   = _bullishDistal;
+            double prevBullishProximal = _bullishProximal;
+            double prevBearishDistal   = _bearishDistal;
+            double prevBearishProximal = _bearishProximal;
+
+            // ── FVG detection ─────────────────────────────────────────────────
+            bool isBullishFvg = false;
+            bool isBearishFvg = false;
+
+            if (index >= 2)
+            {
+                double high2 = Bars.HighPrices[index - 2];
+                double low2  = Bars.LowPrices[index - 2];
+                double high1 = Bars.HighPrices[index - 1];
+                double low1  = Bars.LowPrices[index - 1];
+                double atr   = double.IsNaN(_atrRma) ? 0.0 : _atrRma;
+
+                if ((high - low2) > FvgDetectorMultiplier * atr)
+                {
+                    if (low > high2 && low2 < low1 && high1 < high &&
+                        (high + low2) / 2.0 >= high2)
+                    {
+                        _bullishFvgDistal   = high2;
+                        _bullishFvgProximal = low;
+                        _bullishFvgPoint    = index;
+                        _bullishDiscount    = low2;
+                        _bullishPremium     = high;
+                        _bullishEquilibrium = (high + low2) / 2.0;
+                        isBullishFvg        = true;
+                    }
+                }
+
+                if ((high2 - low) > FvgDetectorMultiplier * atr)
+                {
+                    if (low2 > high && high2 > high1 && low1 > low &&
+                        (low + high2) / 2.0 <= low2)
+                    {
+                        _bearishFvgDistal   = low2;
+                        _bearishFvgProximal = high;
+                        _bearishFvgPoint    = index;
+                        _bearishDiscount    = low;
+                        _bearishPremium     = high2;
+                        _bearishEquilibrium = (low + high2) / 2.0;
+                        isBearishFvg        = true;
+                    }
+                }
+            }
+
+            // Update active zone levels when a new FVG is found
+            if (isBullishFvg)
+            {
+                _bullishDistal   = _bullishFvgDistal;
+                _bullishProximal = UseDiscountAndPremium
+                    ? (_bullishEquilibrium >= _bullishFvgProximal
+                           ? _bullishFvgProximal
+                           : _bullishEquilibrium)
+                    : _bullishFvgProximal;
+            }
+
+            if (isBearishFvg)
+            {
+                _bearishDistal   = _bearishFvgDistal;
+                _bearishProximal = UseDiscountAndPremium
+                    ? (_bearishEquilibrium <= _bearishFvgProximal
+                           ? _bearishFvgProximal
+                           : _bearishEquilibrium)
+                    : _bearishFvgProximal;
+            }
+
+            // Zone validity update — uses the PREVIOUS bar's distal/proximal
+            double body1 = Bars.ClosePrices[index - 1] - Bars.OpenPrices[index - 1];
+
+            if (_isBullishFvgValid)
+                _isBullishFvgValid = CheckZoneValidity(
+                    index, body1, true,
+                    _bullishFvgPoint,
+                    prevBullishDistal, prevBullishProximal,
+                    _longSignalCount,
+                    ref _bullishProximal);
+
+            if (_isBearishFvgValid)
+                _isBearishFvgValid = CheckZoneValidity(
+                    index, body1, false,
+                    _bearishFvgPoint,
+                    prevBearishDistal, prevBearishProximal,
+                    _shortSignalCount,
+                    ref _bearishProximal);
+
+            // New FVG detected → reset zone state
+            if (_prevBullishFvgPoint != _bullishFvgPoint)
+            {
+                _isBullishFvgValid = true;
+                _lowTracker        = 0.0;
+                _longSignalCount   = 0;
+            }
+
+            if (_prevBearishFvgPoint != _bearishFvgPoint)
+            {
+                _isBearishFvgValid = true;
+                _highTracker       = 0.0;
+                _shortSignalCount  = 0;
+            }
+
+            _prevBullishFvgPoint = _bullishFvgPoint;
+            _prevBearishFvgPoint = _bearishFvgPoint;
+
+            // ── Long signal detection ─────────────────────────────────────────
+            if (_isBullishFvgValid)
+            {
+                if (_lowTracker == 0.0 && low < _bullishProximal)
+                    _lowTracker = low;
+
+                if (low < _lowTracker && _lowTracker > 0.0)
+                {
+                    _lowTracker = low;
+                    if (close >= _bullishProximal)
+                    {
+                        _longSignalCount++;
+                        _isLongSignal = SignalAfterHunts
+                            ? (_longSignalCount == RequiredHunts)
+                            : true;
+                        if (_isLongSignal)
+                            _longSignalBarLow = low;
+                    }
+                }
+            }
+            else
+            {
+                _lowTracker      = 0.0;
+                _longSignalCount = 0;
+            }
+
+            // ── Short signal detection ────────────────────────────────────────
+            if (_isBearishFvgValid)
+            {
+                if (_highTracker == 0.0 && high > _bearishProximal)
+                    _highTracker = high;
+
+                if (high > _highTracker && _highTracker > 0.0)
+                {
+                    _highTracker = high;
+                    if (close <= _bearishProximal)
+                    {
+                        _shortSignalCount++;
+                        _isShortSignal = SignalAfterHunts
+                            ? (_shortSignalCount == RequiredHunts)
+                            : true;
+                        if (_isShortSignal)
+                            _shortSignalBarHigh = high;
+                    }
+                }
+            }
+            else
+            {
+                _highTracker       = 0.0;
+                _shortSignalCount  = 0;
+            }
+        }
+
+        private bool CheckZoneValidity(
+            int index, double body1, bool isBull,
+            int zonePoint,
+            double prevDistal, double prevProximal,
+            int signalCount,
+            ref double proximal)
+        {
+            bool useOpen    = isBull ? body1 > 0 : body1 <= 0;
+            double selected = useOpen
+                ? Bars.OpenPrices[index - 1]
+                : Bars.ClosePrices[index - 1];
+
+            double sweepPrice = isBull
+                ? (SignalMethod == "Sweeps" ? selected : Bars.LowPrices[index - 1])
+                : (SignalMethod == "Sweeps" ? selected : Bars.HighPrices[index - 1]);
+
+            bool swept   = isBull ? sweepPrice < prevDistal : sweepPrice > prevDistal;
+            bool expired = index > zonePoint + FvgValidityPeriod;
+            bool limited = !SignalAfterHunts && signalCount > SignalsAllowedPerZone - 1;
+
+            if (swept || expired || limited)
+                return false;
+
+            bool movedInside = isBull
+                ? selected < prevProximal && selected > prevDistal
+                : selected > prevProximal && selected < prevDistal;
+
+            if (movedInside)
+                proximal = selected;
+
+            return true;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // BSL / SSL pivot logic  (mirrors BSL_SSL.Calculate)
+        // ─────────────────────────────────────────────────────────────────────
+
+        private void UpdateBslSsl(int index)
+        {
+            int pivotIndex = index - PivotRight;
+            if (pivotIndex <= 0)
+                return;
+
+            int leftStart = pivotIndex - PivotLeft;
+            int rightEnd  = pivotIndex + PivotRight;
+
+            if (leftStart < 0 || rightEnd >= Bars.Count)
+                return;
+
+            double candidateHigh = Bars.HighPrices[pivotIndex];
+            double candidateLow  = Bars.LowPrices[pivotIndex];
+
+            if (IsPivotHigh(candidateHigh, leftStart, rightEnd))
+                AddToPool(_bslPool, candidateHigh, pivotIndex);
+
+            if (IsPivotLow(candidateLow, leftStart, rightEnd))
+                AddToPool(_sslPool, candidateLow, pivotIndex);
+
+            MitigateLevels(index);
+        }
+
+        private bool IsPivotHigh(double candidate, int start, int end)
+        {
+            double max = double.MinValue;
+            for (int i = start; i <= end; i++)
+                if (Bars.HighPrices[i] > max) max = Bars.HighPrices[i];
+            return candidate == max;
+        }
+
+        private bool IsPivotLow(double candidate, int start, int end)
+        {
+            double min = double.MaxValue;
+            for (int i = start; i <= end; i++)
+                if (Bars.LowPrices[i] < min) min = Bars.LowPrices[i];
+            return candidate == min;
+        }
+
+        private void AddToPool(LinkedList<LiquidityLevel> pool, double price, int pivotIndex)
+        {
+            if (pool.First != null &&
+                pool.First.Value.PivotIndex == pivotIndex &&
+                Math.Abs(pool.First.Value.Price - price) < Symbol.PipSize * 0.1)
+                return;
+
+            pool.AddFirst(new LiquidityLevel { Price = price, PivotIndex = pivotIndex });
+
+            while (pool.Count > MaxLiquidityLevels)
+                pool.RemoveLast();
+        }
+
+        private void MitigateLevels(int index)
+        {
+            // SSL is mitigated when the bar's low trades at or below the level
+            var node = _sslPool.First;
+            while (node != null)
+            {
+                var next = node.Next;
+                if (Bars.LowPrices[index] <= node.Value.Price)
+                    _sslPool.Remove(node);
+                node = next;
+            }
+
+            // BSL is mitigated when the bar's high trades at or above the level
+            node = _bslPool.First;
+            while (node != null)
+            {
+                var next = node.Next;
+                if (Bars.HighPrices[index] >= node.Value.Price)
+                    _bslPool.Remove(node);
+                node = next;
+            }
+        }
+
+        // =====================================================================
+        // Trade execution
         // =====================================================================
 
         private void TryEnterLong(int signalBar)
         {
-            if (Positions.FindAll(BotLabel, SymbolName).Length >= MaxOpenPositions)
-            {
-                Print("Bar {0}: LONG skip — max positions ({1}) reached.", signalBar, MaxOpenPositions);
-                return;
-            }
-
             // ── Determine SL reference ────────────────────────────────────────
-            // Primary: most-recent active SSL (pivot low) from BSL_SSL.
-            // Fallback: signal bar's sweep low — ICT_01.LongSignal outputs
-            //           Bars.LowPrices[signalBar] which is that exact price.
-            //
-            // Why the fallback is needed:
-            //   The ICT long signal fires because price swept below the FVG zone.
-            //   That same sweep triggers BSL_SSL.ClearMitigated() which removes
-            //   all pivot-low entries whose price >= the bar's low.  When all
-            //   entries are cleared, CurrentSSL[signalBar] == NaN.  Using the
-            //   sweep low as the SL reference is standard ICT methodology.
-            double slRef   = _bslSsl.CurrentSSL[signalBar];
+            // Primary: most-recent active SSL (pivot low) from the embedded pool.
+            // Fallback: signal bar's sweep low — the ICT long signal fires because
+            //   price swept below the FVG proximal zone; that same sweep clears all
+            //   SSL pool entries (MitigateLevels removes every level at or above
+            //   the bar's low), leaving the pool empty.  The natural ICT SL in that
+            //   case is below the sweep low itself, which _longSignalBarLow holds.
+            double sslLevel = CurrentSslPrice;
             string slSource;
 
-            if (!double.IsNaN(slRef))
+            if (!double.IsNaN(sslLevel) && sslLevel > 0)
             {
-                slSource = "BSL_SSL active pivot low";
+                slSource = "SSL active pivot low";
             }
             else
             {
-                // LongSignal[signalBar] == Bars.LowPrices[signalBar]
-                slRef    = _ict01.LongSignal[signalBar];
-                slSource = "sweep low (SSL pool cleared)";
+                sslLevel = _longSignalBarLow;
+                slSource = "sweep low fallback (SSL pool cleared)";
             }
 
-            // Place actual SL SlBufferPips below the reference
             double entry   = Symbol.Ask;
-            double slPrice = slRef - SlBufferPips * Symbol.PipSize;
+            double slPrice = sslLevel - SlBufferPips * Symbol.PipSize;
 
             if (slPrice >= entry)
             {
-                Print("Bar {0}: LONG skip — SL price {1:F5} ({2}) >= entry {3:F5}.",
+                Print("Bar {0}: LONG skip — SL {1:F5} ({2}) >= entry {3:F5}.",
                     signalBar, slPrice, slSource, entry);
                 return;
             }
 
             double slPips = (entry - slPrice) / Symbol.PipSize;
 
-            if (!SlPipsInRange(signalBar, "LONG", slPips))
+            if (!ValidateSlPips(signalBar, "LONG", slPips))
                 return;
 
-            double tpPips  = slPips * RewardRiskRatio;
-            double volume  = CalculateVolume(slPips);
+            double tpPips     = slPips * RewardRiskRatio;
+            double riskAmount = Account.Equity * (RiskPercent / 100.0);
+            double volume     = GetRiskVolume(riskAmount, slPips);
 
             if (volume <= 0)
             {
-                Print("Bar {0}: LONG skip — volume is 0.", signalBar);
+                Print("Bar {0}: LONG skip — volume rounds to 0.", signalBar);
                 return;
             }
 
-            Print("Bar {0}: LONG | Ask={1:F5} | SLref={2:F5} ({3}) | SL={4:F1} pips | TP={5:F1} pips | Vol={6}",
-                signalBar, entry, slRef, slSource, slPips, tpPips, volume);
+            Print("Bar {0}: LONG  | Ask={1:F5} | SLref={2:F5} ({3}) | SL={4:F1}p | TP={5:F1}p | Vol={6}",
+                signalBar, entry, sslLevel, slSource, slPips, tpPips, volume);
 
             ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, tpPips);
         }
 
         private void TryEnterShort(int signalBar)
         {
-            if (Positions.FindAll(BotLabel, SymbolName).Length >= MaxOpenPositions)
-            {
-                Print("Bar {0}: SHORT skip — max positions ({1}) reached.", signalBar, MaxOpenPositions);
-                return;
-            }
-
             // ── Determine SL reference ────────────────────────────────────────
-            // Primary: most-recent active BSL (pivot high) from BSL_SSL.
-            // Fallback: signal bar's sweep high (= ICT_01.ShortSignal[signalBar]
-            //           = Bars.HighPrices[signalBar]).
-            double slRef   = _bslSsl.CurrentBSL[signalBar];
+            // Primary: most-recent active BSL (pivot high) from the embedded pool.
+            // Fallback: signal bar's sweep high — the ICT short signal fires because
+            //   price swept above the FVG proximal zone; that same sweep clears all
+            //   BSL pool entries, leaving the pool empty.  The natural ICT SL is
+            //   above the sweep high, which _shortSignalBarHigh holds.
+            double bslLevel = CurrentBslPrice;
             string slSource;
 
-            if (!double.IsNaN(slRef))
+            if (!double.IsNaN(bslLevel) && bslLevel > 0)
             {
-                slSource = "BSL_SSL active pivot high";
+                slSource = "BSL active pivot high";
             }
             else
             {
-                // ShortSignal[signalBar] == Bars.HighPrices[signalBar]
-                slRef    = _ict01.ShortSignal[signalBar];
-                slSource = "sweep high (BSL pool cleared)";
+                bslLevel = _shortSignalBarHigh;
+                slSource = "sweep high fallback (BSL pool cleared)";
             }
 
-            // Place actual SL SlBufferPips above the reference
             double entry   = Symbol.Bid;
-            double slPrice = slRef + SlBufferPips * Symbol.PipSize;
+            double slPrice = bslLevel + SlBufferPips * Symbol.PipSize;
 
             if (slPrice <= entry)
             {
-                Print("Bar {0}: SHORT skip — SL price {1:F5} ({2}) <= entry {3:F5}.",
+                Print("Bar {0}: SHORT skip — SL {1:F5} ({2}) <= entry {3:F5}.",
                     signalBar, slPrice, slSource, entry);
                 return;
             }
 
             double slPips = (slPrice - entry) / Symbol.PipSize;
 
-            if (!SlPipsInRange(signalBar, "SHORT", slPips))
+            if (!ValidateSlPips(signalBar, "SHORT", slPips))
                 return;
 
-            double tpPips  = slPips * RewardRiskRatio;
-            double volume  = CalculateVolume(slPips);
+            double tpPips     = slPips * RewardRiskRatio;
+            double riskAmount = Account.Equity * (RiskPercent / 100.0);
+            double volume     = GetRiskVolume(riskAmount, slPips);
 
             if (volume <= 0)
             {
-                Print("Bar {0}: SHORT skip — volume is 0.", signalBar);
+                Print("Bar {0}: SHORT skip — volume rounds to 0.", signalBar);
                 return;
             }
 
-            Print("Bar {0}: SHORT | Bid={1:F5} | SLref={2:F5} ({3}) | SL={4:F1} pips | TP={5:F1} pips | Vol={6}",
-                signalBar, entry, slRef, slSource, slPips, tpPips, volume);
+            Print("Bar {0}: SHORT | Bid={1:F5} | SLref={2:F5} ({3}) | SL={4:F1}p | TP={5:F1}p | Vol={6}",
+                signalBar, entry, bslLevel, slSource, slPips, tpPips, volume);
 
             ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, tpPips);
         }
@@ -344,35 +703,38 @@ namespace cAlgo.Robots
         // Helpers
         // =====================================================================
 
-        private bool SlPipsInRange(int signalBar, string direction, double slPips)
+        private bool ValidateSlPips(int signalBar, string dir, double slPips)
         {
             if (slPips < MinSlPips)
             {
-                Print("Bar {0}: {1} skip — SL {2:F1} pips < min {3:F1}.",
-                    signalBar, direction, slPips, MinSlPips);
+                Print("Bar {0}: {1} skip — SL {2:F1}p < min {3:F1}p.",
+                    signalBar, dir, slPips, MinSlPips);
                 return false;
             }
-
             if (slPips > MaxSlPips)
             {
-                Print("Bar {0}: {1} skip — SL {2:F1} pips > max {3:F1}.",
-                    signalBar, direction, slPips, MaxSlPips);
+                Print("Bar {0}: {1} skip — SL {2:F1}p > max {3:F1}p.",
+                    signalBar, dir, slPips, MaxSlPips);
                 return false;
             }
-
             return true;
         }
 
-        private double CalculateVolume(double slPips)
+        private double GetRiskVolume(double riskAmount, double slPips)
         {
-            if (slPips <= 0 || Symbol.PipValue <= 0)
+            if (slPips <= 0)
                 return 0;
 
-            double riskAmount = Account.Equity * (RiskPercent / 100.0);
-            double rawVolume  = riskAmount / (slPips * Symbol.PipValue);
-            double volume     = Symbol.NormalizeVolumeInUnits(rawVolume, RoundingMode.Down);
+            double raw    = Symbol.VolumeForFixedRisk(riskAmount, slPips);
+            double volume = Symbol.NormalizeVolumeInUnits(raw, RoundingMode.Down);
 
-            return volume < Symbol.VolumeInUnitsMin ? Symbol.VolumeInUnitsMin : volume;
+            if (volume < Symbol.VolumeInUnitsMin)
+                return 0;
+
+            if (volume > Symbol.VolumeInUnitsMax)
+                volume = Symbol.VolumeInUnitsMax;
+
+            return volume;
         }
     }
 }
