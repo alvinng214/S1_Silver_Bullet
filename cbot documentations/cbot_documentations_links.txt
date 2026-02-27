@@ -7,3 +7,4 @@ https://help.ctrader.com/ctrader-algo/documentation/cbots/cloud-requirements/
 https://help.ctrader.com/ctrader-algo/documentation/cbots/cbot-code-samples/
 https://help.ctrader.com/ctrader-algo/documentation/cbots/cbot-advanced-operations/
 https://help.ctrader.com/ctrader-algo/documentation/cbots/cbot-bar-events/
+https://help.ctrader.com/ctrader-algo/how-tos/indicators/use-custom-indicators-in-cbots/
