@@ -3,21 +3,34 @@
 // =============================================================================
 // cBot that links to two custom indicators via Indicators.GetIndicator<T>():
 //
-//   1. ICT_01  (ICT Setup 01 [TradingFinder] FVG + Liquidity SweepsHunt Alerts,
-//               ICT Setup 01 TFlab_ct.cs)
-//      → LongSignal[bar]  = 1.0 when a long  setup fires on that bar
-//      → ShortSignal[bar] = 1.0 when a short setup fires on that bar
+//   1. ICT_01  (ICT Setup 01 TFlab_ct.cs)
+//      → LongSignal[bar]  = Bars.LowPrices[bar]  when a long  setup fires
+//      → ShortSignal[bar] = Bars.HighPrices[bar]  when a short setup fires
+//      → NaN on all other bars
 //
 //   2. BSL_SSL (BSL and SSL.cs)
-//      → CurrentSSL[bar] = most-recent confirmed Sellside pivot low  (long SL)
-//      → CurrentBSL[bar] = most-recent confirmed Buyside  pivot high (short SL)
+//      → CurrentSSL[bar] = most-recent active Sellside pivot low  (long SL ref)
+//      → CurrentBSL[bar] = most-recent active Buyside  pivot high (short SL ref)
+//      → NaN when the pool has been fully cleared by price sweeping all levels
 //
 // Execution rules
 //   • Signal bar closes  → on the very next bar open execute a market order
-//   • Long  SL = CurrentSSL from signal bar; TP = entry + 2 × (entry − SL)
-//   • Short SL = CurrentBSL from signal bar; TP = entry − 2 × (SL − entry)
+//   • Long  SL reference = CurrentSSL from signal bar
+//                          (fallback: signal bar's sweep low when pool is empty)
+//   • Short SL reference = CurrentBSL from signal bar
+//                          (fallback: signal bar's sweep high when pool is empty)
+//   • Actual SL placed SlBufferPips below/above the reference
+//   • TP = SL distance × RewardRiskRatio  (default 1:2)
 //   • Volume sized to risk exactly RiskPercent% of remaining equity
 //   • Maximum MaxOpenPositions simultaneous positions (all directions combined)
+//
+// WHY THE FALLBACK IS NEEDED
+//   The ICT_01 long signal fires precisely because price swept below the FVG
+//   proximal zone.  That same sweep triggers BSL_SSL's ClearMitigated(), which
+//   removes every pivot-low pool entry whose price ≥ the bar's low.  When all
+//   entries are cleared the output is NaN.  The natural ICT stop-loss in that
+//   case is below the sweep low itself — which is exactly what LongSignal
+//   already outputs (= Bars.LowPrices[signalBar]).  Likewise for short signals.
 //
 // IMPORTANT – project setup
 //   All three files must be compiled in the same cTrader Algo project:
@@ -30,9 +43,7 @@
 using System;
 using cAlgo.API;
 using cAlgo.API.Internals;
-
-// ICT_01 and BSL_SSL live in namespace cAlgo
-using cAlgo;
+using cAlgo;                       // ICT_01 and BSL_SSL live in namespace cAlgo
 
 namespace cAlgo.Robots
 {
@@ -99,11 +110,17 @@ namespace cAlgo.Robots
             Group = "Risk Management")]
         public int MaxOpenPositions { get; set; }
 
-        [Parameter("Min SL Distance (pips)", DefaultValue = 3.0, MinValue = 0.5,
+        [Parameter("SL Buffer (pips)", DefaultValue = 3.0, MinValue = 0.0,
+            Group = "Risk Management")]
+        public double SlBufferPips { get; set; }
+
+        [Parameter("Min SL Distance (pips)", DefaultValue = 3.0, MinValue = 0.1,
             Group = "Risk Management")]
         public double MinSlPips { get; set; }
 
-        [Parameter("Max SL Distance (pips)", DefaultValue = 500.0, MinValue = 10.0,
+        // Bug fix: was 500 — too small for XAUUSD (pip=0.01) where a $10 stop
+        // = 1,000 pips.  Default raised to 10,000 to accommodate all instruments.
+        [Parameter("Max SL Distance (pips)", DefaultValue = 10000.0, MinValue = 10.0,
             Group = "Risk Management")]
         public double MaxSlPips { get; set; }
 
@@ -116,7 +133,7 @@ namespace cAlgo.Robots
         private ICT_01  _ict01;
         private BSL_SSL _bslSsl;
 
-        // Track last bar on which we acted to avoid double-entry
+        // Prevent acting on the same signal bar twice
         private int _lastLongEntryBar  = -1;
         private int _lastShortEntryBar = -1;
 
@@ -127,63 +144,38 @@ namespace cAlgo.Robots
         protected override void OnStart()
         {
             // -----------------------------------------------------------------
-            // Initialise ICT_01
-            // Parameters must be passed in the exact order they are declared
-            // inside class ICT_01 (matching [Parameter] attribute order).
-            //
-            //  1  FvgDetectorMultiplier  double
-            //  2  FvgValidityPeriod      int
-            //  3  UseDiscountAndPremium  bool
-            //  4  SignalMethod           string
-            //  5  SignalsAllowedPerZone  int
-            //  6  SignalAfterHunts       bool
-            //  7  RequiredHunts          int
-            //  8  ShowAllLongSetups      bool   (visual only → false)
-            //  9  ShowAllShortSetups     bool   (visual only → false)
-            // 10  AlertSetting           string ("Off" – cBot reads programmatically)
-            // 11  AlertName              string (unused)
-            // 12  Frequency              string (unused)
-            // 13  AlertTimeZone          string (unused)
-            // 14  LongPositionMessage    string (unused)
-            // 15  ShortPositionMessage   string (unused)
+            // Initialise ICT_01 – parameters in declaration order (15 total).
+            // Alert set to "Off" — cBot reads signals programmatically.
             // -----------------------------------------------------------------
             _ict01 = Indicators.GetIndicator<ICT_01>(
-                FvgDetectorMultiplier,
-                FvgValidityPeriod,
-                UseDiscountAndPremium,
-                SignalMethod,
-                SignalsAllowedPerZone,
-                SignalAfterHunts,
-                RequiredHunts,
-                false,
-                false,
-                "Off",
-                BotLabel,
-                "Once Per Bar",
-                "UTC",
-                string.Empty,
-                string.Empty
+                FvgDetectorMultiplier,   //  1 FvgDetectorMultiplier  double
+                FvgValidityPeriod,       //  2 FvgValidityPeriod      int
+                UseDiscountAndPremium,   //  3 UseDiscountAndPremium  bool
+                SignalMethod,            //  4 SignalMethod           string
+                SignalsAllowedPerZone,   //  5 SignalsAllowedPerZone  int
+                SignalAfterHunts,        //  6 SignalAfterHunts       bool
+                RequiredHunts,           //  7 RequiredHunts          int
+                false,                   //  8 ShowAllLongSetups      bool  (visual)
+                false,                   //  9 ShowAllShortSetups     bool  (visual)
+                "Off",                   // 10 AlertSetting           string
+                BotLabel,               // 11 AlertName              string (unused)
+                "Once Per Bar",          // 12 Frequency              string (unused)
+                "UTC",                   // 13 AlertTimeZone          string (unused)
+                string.Empty,            // 14 LongPositionMessage    string (unused)
+                string.Empty             // 15 ShortPositionMessage   string (unused)
             );
 
             // -----------------------------------------------------------------
-            // Initialise BSL_SSL
-            // Parameters in declaration order:
-            //  1  PivotLeft        int
-            //  2  PivotRight       int
-            //  3  ShowPools        int
-            //  4  LineStyleParam   BSL_SSL.LiquidityLineStyle (enum)
-            //  5  BuysideColorName string
-            //  6  SellsideColorName string
-            //  7  LabelOffsetPips  double
+            // Initialise BSL_SSL – parameters in declaration order (7 total).
             // -----------------------------------------------------------------
             _bslSsl = Indicators.GetIndicator<BSL_SSL>(
-                PivotLeft,
-                PivotRight,
-                1,
-                BSL_SSL.LiquidityLineStyle.Dots,
-                "Teal",
-                "Red",
-                2.0
+                PivotLeft,                          // 1 PivotLeft        int
+                PivotRight,                         // 2 PivotRight       int
+                1,                                  // 3 ShowPools        int
+                BSL_SSL.LiquidityLineStyle.Dots,    // 4 LineStyleParam   enum
+                "Teal",                             // 5 BuysideColorName string
+                "Red",                              // 6 SellsideColorName string
+                2.0                                 // 7 LabelOffsetPips  double
             );
 
             Print("{0} started — FVG mult={1}, Pivot L/R={2}/{3}, Risk={4}%, MaxPos={5}",
@@ -193,15 +185,14 @@ namespace cAlgo.Robots
 
         protected override void OnBar()
         {
-            // OnBar fires at the open of a new bar.
-            // The bar that just CLOSED is Bars.Count - 2  → this is the signal bar.
-            // We are now at the open of Bars.Count - 1   → execution bar.
+            // OnBar fires at the open of bar N+1.
+            // signalBar = bar N = the bar that just closed and may carry a signal.
             int signalBar = Bars.Count - 2;
             if (signalBar < 1)
                 return;
 
             // ── Long signal ──────────────────────────────────────────────────
-            // LongSignal outputs Bars.LowPrices[bar] on signal bars, NaN otherwise.
+            // ICT_01.LongSignal[bar] = Bars.LowPrices[bar] on signal bars, NaN otherwise.
             if (_lastLongEntryBar != signalBar &&
                 !double.IsNaN(_ict01.LongSignal[signalBar]))
             {
@@ -210,7 +201,7 @@ namespace cAlgo.Robots
             }
 
             // ── Short signal ─────────────────────────────────────────────────
-            // ShortSignal outputs Bars.HighPrices[bar] on signal bars, NaN otherwise.
+            // ICT_01.ShortSignal[bar] = Bars.HighPrices[bar] on signal bars, NaN otherwise.
             if (_lastShortEntryBar != signalBar &&
                 !double.IsNaN(_ict01.ShortSignal[signalBar]))
             {
@@ -225,52 +216,69 @@ namespace cAlgo.Robots
         }
 
         // =====================================================================
-        // Trade entry helpers
+        // Trade entry
         // =====================================================================
 
         private void TryEnterLong(int signalBar)
         {
             if (Positions.FindAll(BotLabel, SymbolName).Length >= MaxOpenPositions)
             {
-                Print("Bar {0}: LONG — max positions ({1}) reached, skip.",
-                    signalBar, MaxOpenPositions);
+                Print("Bar {0}: LONG skip — max positions ({1}) reached.", signalBar, MaxOpenPositions);
                 return;
             }
 
-            // SL at most-recent confirmed Sellside liquidity from the signal bar
-            double ssl = _bslSsl.CurrentSSL[signalBar];
-            if (double.IsNaN(ssl))
+            // ── Determine SL reference ────────────────────────────────────────
+            // Primary: most-recent active SSL (pivot low) from BSL_SSL.
+            // Fallback: signal bar's sweep low — ICT_01.LongSignal outputs
+            //           Bars.LowPrices[signalBar] which is that exact price.
+            //
+            // Why the fallback is needed:
+            //   The ICT long signal fires because price swept below the FVG zone.
+            //   That same sweep triggers BSL_SSL.ClearMitigated() which removes
+            //   all pivot-low entries whose price >= the bar's low.  When all
+            //   entries are cleared, CurrentSSL[signalBar] == NaN.  Using the
+            //   sweep low as the SL reference is standard ICT methodology.
+            double slRef   = _bslSsl.CurrentSSL[signalBar];
+            string slSource;
+
+            if (!double.IsNaN(slRef))
             {
-                Print("Bar {0}: LONG — no active SSL level found, skip.", signalBar);
-                return;
+                slSource = "BSL_SSL active pivot low";
             }
-
-            // Market order fills at current Ask (open of execution bar)
-            double entry = Symbol.Ask;
-
-            if (ssl >= entry)
+            else
             {
-                Print("Bar {0}: LONG — SSL {1:F5} is not below Ask {2:F5}, skip.",
-                    signalBar, ssl, entry);
+                // LongSignal[signalBar] == Bars.LowPrices[signalBar]
+                slRef    = _ict01.LongSignal[signalBar];
+                slSource = "sweep low (SSL pool cleared)";
+            }
+
+            // Place actual SL SlBufferPips below the reference
+            double entry   = Symbol.Ask;
+            double slPrice = slRef - SlBufferPips * Symbol.PipSize;
+
+            if (slPrice >= entry)
+            {
+                Print("Bar {0}: LONG skip — SL price {1:F5} ({2}) >= entry {3:F5}.",
+                    signalBar, slPrice, slSource, entry);
                 return;
             }
 
-            double slPips = (entry - ssl) / Symbol.PipSize;
+            double slPips = (entry - slPrice) / Symbol.PipSize;
 
             if (!SlPipsInRange(signalBar, "LONG", slPips))
                 return;
 
-            double tpPips   = slPips * RewardRiskRatio;
-            double volume   = CalculateVolume(slPips);
+            double tpPips  = slPips * RewardRiskRatio;
+            double volume  = CalculateVolume(slPips);
 
             if (volume <= 0)
             {
-                Print("Bar {0}: LONG — volume is 0, skip.", signalBar);
+                Print("Bar {0}: LONG skip — volume is 0.", signalBar);
                 return;
             }
 
-            Print("Bar {0}: LONG entry | Ask={1:F5} | SSL={2:F5} | SL={3:F1} pips | TP={4:F1} pips | Vol={5}",
-                signalBar, entry, ssl, slPips, tpPips, volume);
+            Print("Bar {0}: LONG | Ask={1:F5} | SLref={2:F5} ({3}) | SL={4:F1} pips | TP={5:F1} pips | Vol={6}",
+                signalBar, entry, slRef, slSource, slPips, tpPips, volume);
 
             ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, tpPips);
         }
@@ -279,45 +287,55 @@ namespace cAlgo.Robots
         {
             if (Positions.FindAll(BotLabel, SymbolName).Length >= MaxOpenPositions)
             {
-                Print("Bar {0}: SHORT — max positions ({1}) reached, skip.",
-                    signalBar, MaxOpenPositions);
+                Print("Bar {0}: SHORT skip — max positions ({1}) reached.", signalBar, MaxOpenPositions);
                 return;
             }
 
-            // SL at most-recent confirmed Buyside liquidity from the signal bar
-            double bsl = _bslSsl.CurrentBSL[signalBar];
-            if (double.IsNaN(bsl))
+            // ── Determine SL reference ────────────────────────────────────────
+            // Primary: most-recent active BSL (pivot high) from BSL_SSL.
+            // Fallback: signal bar's sweep high (= ICT_01.ShortSignal[signalBar]
+            //           = Bars.HighPrices[signalBar]).
+            double slRef   = _bslSsl.CurrentBSL[signalBar];
+            string slSource;
+
+            if (!double.IsNaN(slRef))
             {
-                Print("Bar {0}: SHORT — no active BSL level found, skip.", signalBar);
-                return;
+                slSource = "BSL_SSL active pivot high";
             }
-
-            // Market order fills at current Bid (open of execution bar)
-            double entry = Symbol.Bid;
-
-            if (bsl <= entry)
+            else
             {
-                Print("Bar {0}: SHORT — BSL {1:F5} is not above Bid {2:F5}, skip.",
-                    signalBar, bsl, entry);
+                // ShortSignal[signalBar] == Bars.HighPrices[signalBar]
+                slRef    = _ict01.ShortSignal[signalBar];
+                slSource = "sweep high (BSL pool cleared)";
+            }
+
+            // Place actual SL SlBufferPips above the reference
+            double entry   = Symbol.Bid;
+            double slPrice = slRef + SlBufferPips * Symbol.PipSize;
+
+            if (slPrice <= entry)
+            {
+                Print("Bar {0}: SHORT skip — SL price {1:F5} ({2}) <= entry {3:F5}.",
+                    signalBar, slPrice, slSource, entry);
                 return;
             }
 
-            double slPips = (bsl - entry) / Symbol.PipSize;
+            double slPips = (slPrice - entry) / Symbol.PipSize;
 
             if (!SlPipsInRange(signalBar, "SHORT", slPips))
                 return;
 
-            double tpPips   = slPips * RewardRiskRatio;
-            double volume   = CalculateVolume(slPips);
+            double tpPips  = slPips * RewardRiskRatio;
+            double volume  = CalculateVolume(slPips);
 
             if (volume <= 0)
             {
-                Print("Bar {0}: SHORT — volume is 0, skip.", signalBar);
+                Print("Bar {0}: SHORT skip — volume is 0.", signalBar);
                 return;
             }
 
-            Print("Bar {0}: SHORT entry | Bid={1:F5} | BSL={2:F5} | SL={3:F1} pips | TP={4:F1} pips | Vol={5}",
-                signalBar, entry, bsl, slPips, tpPips, volume);
+            Print("Bar {0}: SHORT | Bid={1:F5} | SLref={2:F5} ({3}) | SL={4:F1} pips | TP={5:F1} pips | Vol={6}",
+                signalBar, entry, slRef, slSource, slPips, tpPips, volume);
 
             ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, tpPips);
         }
@@ -330,14 +348,14 @@ namespace cAlgo.Robots
         {
             if (slPips < MinSlPips)
             {
-                Print("Bar {0}: {1} — SL {2:F1} pips < min {3:F1}, skip.",
+                Print("Bar {0}: {1} skip — SL {2:F1} pips < min {3:F1}.",
                     signalBar, direction, slPips, MinSlPips);
                 return false;
             }
 
             if (slPips > MaxSlPips)
             {
-                Print("Bar {0}: {1} — SL {2:F1} pips > max {3:F1}, skip.",
+                Print("Bar {0}: {1} skip — SL {2:F1} pips > max {3:F1}.",
                     signalBar, direction, slPips, MaxSlPips);
                 return false;
             }
@@ -345,17 +363,12 @@ namespace cAlgo.Robots
             return true;
         }
 
-        /// <summary>
-        /// Calculates the trade volume for a given SL distance (in pips) to
-        /// risk exactly RiskPercent% of current equity.
-        /// </summary>
         private double CalculateVolume(double slPips)
         {
             if (slPips <= 0 || Symbol.PipValue <= 0)
                 return 0;
 
             double riskAmount = Account.Equity * (RiskPercent / 100.0);
-            // PipValue = monetary value of 1 pip for 1 unit of volume
             double rawVolume  = riskAmount / (slPips * Symbol.PipValue);
             double volume     = Symbol.NormalizeVolumeInUnits(rawVolume, RoundingMode.Down);
 
