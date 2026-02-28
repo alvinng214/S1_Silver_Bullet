@@ -120,14 +120,40 @@ namespace cAlgo
         {
             public double Price;
             public int    PivotIndex;
+            public bool   Mitigated;   // marked when price sweeps through; kept for SL reference
         }
 
         private readonly LinkedList<LiquidityLevel> _bslPool = new LinkedList<LiquidityLevel>();
         private readonly LinkedList<LiquidityLevel> _sslPool = new LinkedList<LiquidityLevel>();
         private const int MaxLiquidityLevels = 10;
 
-        private double CurrentBslPrice => _bslPool.First != null ? _bslPool.First.Value.Price : double.NaN;
-        private double CurrentSslPrice => _sslPool.First != null ? _sslPool.First.Value.Price : double.NaN;
+        // Returns the nearest SSL price that is strictly below 'price', searching all
+        // levels including swept ones. The swept SSL is the natural SL anchor for a long.
+        private double FindNearestSslBelow(double price)
+        {
+            double nearest = double.NaN;
+            foreach (var ssl in _sslPool)
+            {
+                if (ssl.Price >= price) continue;
+                if (double.IsNaN(nearest) || ssl.Price > nearest)
+                    nearest = ssl.Price;
+            }
+            return nearest;
+        }
+
+        // Returns the nearest BSL price that is strictly above 'price', searching all
+        // levels including swept ones. The swept BSL is the natural SL anchor for a short.
+        private double FindNearestBslAbove(double price)
+        {
+            double nearest = double.NaN;
+            foreach (var bsl in _bslPool)
+            {
+                if (bsl.Price <= price) continue;
+                if (double.IsNaN(nearest) || bsl.Price < nearest)
+                    nearest = bsl.Price;
+            }
+            return nearest;
+        }
 
         // ── Duplicate-entry guards ────────────────────────────────────────────
 
@@ -526,25 +552,20 @@ namespace cAlgo
 
         private void MitigateLevels(int index)
         {
-            // SSL is mitigated when the bar's low trades at or below the level
-            var node = _sslPool.First;
-            while (node != null)
-            {
-                var next = node.Next;
-                if (Bars.LowPrices[index] <= node.Value.Price)
-                    _sslPool.Remove(node);
-                node = next;
-            }
+            double barHigh = Bars.HighPrices[index];
+            double barLow  = Bars.LowPrices[index];
 
-            // BSL is mitigated when the bar's high trades at or above the level
-            node = _bslPool.First;
-            while (node != null)
-            {
-                var next = node.Next;
-                if (Bars.HighPrices[index] >= node.Value.Price)
-                    _bslPool.Remove(node);
-                node = next;
-            }
+            // SSL is swept when the bar's low trades at or below the level.
+            // Mark it instead of removing so it remains available as a SL reference
+            // (the sweep low IS the natural stop anchor in ICT methodology).
+            foreach (var ssl in _sslPool)
+                if (!ssl.Mitigated && barLow <= ssl.Price)
+                    ssl.Mitigated = true;
+
+            // BSL is swept when the bar's high trades at or above the level.
+            foreach (var bsl in _bslPool)
+                if (!bsl.Mitigated && barHigh >= bsl.Price)
+                    bsl.Mitigated = true;
         }
 
         // =====================================================================
@@ -555,17 +576,43 @@ namespace cAlgo
         {
             // Entry at current Ask  (≈ open of the new bar in OnBar context)
             double entry    = Symbol.Ask;
-            double sslLevel = CurrentSslPrice;
+
+            // Search all SSL levels (including swept ones) for the nearest below entry.
+            // The ICT signal fires because price swept through an SSL, so the swept level
+            // IS the correct stop anchor. FindNearestSslBelow includes mitigated levels.
+            double sslLevel = FindNearestSslBelow(entry);
+
+            // Fallback: signal bar's own low is the sweep low – the natural ICT stop
+            if (double.IsNaN(sslLevel) || sslLevel <= 0)
+            {
+                double barLow = Bars.LowPrices[signalBar];
+                if (barLow > 0 && barLow < entry)
+                {
+                    sslLevel = barLow;
+                    Print("Bar {0}: LONG using signal-bar low {1:F5} as SL anchor (no SSL pool level below entry).",
+                          signalBar, sslLevel);
+                }
+            }
+
+            // Fallback: FVG distal level
+            if (double.IsNaN(sslLevel) || sslLevel <= 0)
+            {
+                if (_bullishDistal > 0 && _bullishDistal < entry)
+                {
+                    sslLevel = _bullishDistal;
+                    Print("Bar {0}: LONG using FVG distal {1:F5} as SL anchor.", signalBar, sslLevel);
+                }
+            }
 
             if (double.IsNaN(sslLevel) || sslLevel <= 0)
             {
-                Print("Bar {0}: LONG skipped – no SSL available.", signalBar);
+                Print("Bar {0}: LONG skipped – no SL anchor found below entry {1:F5}.", signalBar, entry);
                 return;
             }
 
             if (sslLevel >= entry)
             {
-                Print("Bar {0}: LONG skipped – SSL {1:F5} not below entry {2:F5}.",
+                Print("Bar {0}: LONG skipped – SL anchor {1:F5} not below entry {2:F5}.",
                       signalBar, sslLevel, entry);
                 return;
             }
@@ -594,17 +641,41 @@ namespace cAlgo
         {
             // Entry at current Bid  (≈ open of the new bar in OnBar context)
             double entry    = Symbol.Bid;
-            double bslLevel = CurrentBslPrice;
+
+            // Search all BSL levels (including swept ones) for the nearest above entry.
+            double bslLevel = FindNearestBslAbove(entry);
+
+            // Fallback: signal bar's own high is the sweep high – the natural ICT stop
+            if (double.IsNaN(bslLevel) || bslLevel <= 0)
+            {
+                double barHigh = Bars.HighPrices[signalBar];
+                if (barHigh > 0 && barHigh > entry)
+                {
+                    bslLevel = barHigh;
+                    Print("Bar {0}: SHORT using signal-bar high {1:F5} as SL anchor (no BSL pool level above entry).",
+                          signalBar, bslLevel);
+                }
+            }
+
+            // Fallback: FVG distal level
+            if (double.IsNaN(bslLevel) || bslLevel <= 0)
+            {
+                if (_bearishDistal > 0 && _bearishDistal > entry)
+                {
+                    bslLevel = _bearishDistal;
+                    Print("Bar {0}: SHORT using FVG distal {1:F5} as SL anchor.", signalBar, bslLevel);
+                }
+            }
 
             if (double.IsNaN(bslLevel) || bslLevel <= 0)
             {
-                Print("Bar {0}: SHORT skipped – no BSL available.", signalBar);
+                Print("Bar {0}: SHORT skipped – no SL anchor found above entry {1:F5}.", signalBar, entry);
                 return;
             }
 
             if (bslLevel <= entry)
             {
-                Print("Bar {0}: SHORT skipped – BSL {1:F5} not above entry {2:F5}.",
+                Print("Bar {0}: SHORT skipped – SL anchor {1:F5} not above entry {2:F5}.",
                       signalBar, bslLevel, entry);
                 return;
             }
