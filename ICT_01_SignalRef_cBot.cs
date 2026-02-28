@@ -107,7 +107,7 @@ namespace cAlgo
             );
 
             // ATR (Wilder) used to size the safety stop-loss distance.
-            _atr = Indicators.AverageTrueRange(AtrPeriod, MovingAverageType.Wilder);
+            _atr = Indicators.AverageTrueRange(AtrPeriod, MovingAverageType.WilderSmoothing);
 
             Print("ICT Setup 01 Signal-Reference Bot started. Risk={0}%, ATR({1})×{2}, SL range=[{3},{4}] pips",
                   RiskPercent, AtrPeriod, AtrMultiplier, MinSlPips, MaxSlPips);
