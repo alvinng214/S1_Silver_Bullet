@@ -2,46 +2,40 @@ using System;
 using cAlgo.API;
 using cAlgo.API.Internals;
 
-namespace cAlgo.Robots
+namespace cAlgo
 {
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
-    public class ICT_01_cBot : Robot
+    public class ICT_01_BSL_and_SSL_cbot : Robot
     {
-        [Parameter("FVG Detector Multiplier", DefaultValue = 1.0, MinValue = 1.0, Group = "ICT_01 Signal Settings")]
+        [Parameter("FVG Detector Multiplier", DefaultValue = 1.0, MinValue = 1.0, Group = "ICT Setup 01")]
         public double FvgDetectorMultiplier { get; set; }
 
-        [Parameter("FVG Validity Period (bars)", DefaultValue = 15, MinValue = 2, Group = "ICT_01 Signal Settings")]
+        [Parameter("FVG Validity Period (bars)", DefaultValue = 15, MinValue = 2, Group = "ICT Setup 01")]
         public int FvgValidityPeriod { get; set; }
 
-        [Parameter("Use Discount/Premium Zone", DefaultValue = false, Group = "ICT_01 Signal Settings")]
+        [Parameter("Use Discount & Premium Zone", DefaultValue = false, Group = "ICT Setup 01")]
         public bool UseDiscountAndPremium { get; set; }
 
-        [Parameter("Signal Method (Hunt / Sweeps)", DefaultValue = "Hunt", Group = "ICT_01 Signal Settings")]
+        [Parameter("Signal Method (Hunt / Sweeps)", DefaultValue = "Hunt", Group = "ICT Setup 01")]
         public string SignalMethod { get; set; }
 
-        [Parameter("Max Signals Per Zone", DefaultValue = 3, MinValue = 1, Group = "ICT_01 Signal Settings")]
+        [Parameter("Signals Allowed Per Zone", DefaultValue = 3, MinValue = 1, Group = "ICT Setup 01")]
         public int SignalsAllowedPerZone { get; set; }
 
-        [Parameter("Signal After Hunts/Sweeps", DefaultValue = false, Group = "ICT_01 Signal Settings")]
+        [Parameter("Signal After Hunts", DefaultValue = false, Group = "ICT Setup 01")]
         public bool SignalAfterHunts { get; set; }
 
-        [Parameter("Required Hunts/Sweeps Count", DefaultValue = 2, MinValue = 1, Group = "ICT_01 Signal Settings")]
+        [Parameter("Required Hunts Count", DefaultValue = 2, MinValue = 1, Group = "ICT Setup 01")]
         public int RequiredHunts { get; set; }
 
-        [Parameter("Pivot Left", DefaultValue = 5, MinValue = 1, Group = "BSL/SSL Liquidity Settings")]
+        [Parameter("Pivot Left", DefaultValue = 5, MinValue = 1, Group = "BSL/SSL")]
         public int PivotLeft { get; set; }
 
-        [Parameter("Pivot Right", DefaultValue = 5, MinValue = 1, Group = "BSL/SSL Liquidity Settings")]
+        [Parameter("Pivot Right", DefaultValue = 5, MinValue = 1, Group = "BSL/SSL")]
         public int PivotRight { get; set; }
 
         [Parameter("Risk Per Trade (%)", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Group = "Risk Management")]
         public double RiskPercent { get; set; }
-
-        [Parameter("Reward : Risk Ratio", DefaultValue = 2.0, MinValue = 1.0, Group = "Risk Management")]
-        public double RewardRiskRatio { get; set; }
-
-        [Parameter("Max Open Positions", DefaultValue = 3, MinValue = 1, MaxValue = 10, Group = "Risk Management")]
-        public int MaxOpenPositions { get; set; }
 
         [Parameter("Min SL Distance (pips)", DefaultValue = 3.0, MinValue = 0.5, Group = "Risk Management")]
         public double MinSlPips { get; set; }
@@ -49,20 +43,20 @@ namespace cAlgo.Robots
         [Parameter("Max SL Distance (pips)", DefaultValue = 500.0, MinValue = 10.0, Group = "Risk Management")]
         public double MaxSlPips { get; set; }
 
-        [Parameter("Liquidity Lookback Bars", DefaultValue = 300, MinValue = 1, Group = "BSL/SSL Liquidity Settings")]
+        [Parameter("Liquidity Lookback Bars", DefaultValue = 300, MinValue = 1, Group = "BSL/SSL")]
         public int LiquidityLookbackBars { get; set; }
 
-        private const string BotLabel = "ICT_01_cBot";
+        private const string BotLabel = "ICT01_BSL_SSL";
 
-        private ICT_01 _ict01;
+        private ICT_01 _ict;
         private BSL_SSL _bslSsl;
 
-        private int _lastLongEntryBar = -1;
-        private int _lastShortEntryBar = -1;
+        private int _lastLongSignalBar = -1;
+        private int _lastShortSignalBar = -1;
 
         protected override void OnStart()
         {
-            _ict01 = Indicators.GetIndicator<ICT_01>(
+            _ict = Indicators.GetIndicator<ICT_01>(
                 FvgDetectorMultiplier,
                 FvgValidityPeriod,
                 UseDiscountAndPremium,
@@ -87,9 +81,6 @@ namespace cAlgo.Robots
                 "Teal",
                 "Red",
                 2.0);
-
-            Print("{0} started. Risk={1}% | RR={2} | MaxPos={3}",
-                BotLabel, RiskPercent, RewardRiskRatio, MaxOpenPositions);
         }
 
         protected override void OnBar()
@@ -98,19 +89,20 @@ namespace cAlgo.Robots
             if (signalBar < 2)
                 return;
 
-            bool longSignal = IsSignal(_ict01.LongSignal[signalBar]);
-            bool shortSignal = IsSignal(_ict01.ShortSignal[signalBar]);
+            bool isLongSignal = IsSignal(_ict.LongSignal[signalBar]);
+            bool isShortSignal = IsSignal(_ict.ShortSignal[signalBar]);
 
-            if (longSignal && _lastLongEntryBar != signalBar)
+            if (isLongSignal && _lastLongSignalBar != signalBar)
             {
-                _lastLongEntryBar = signalBar;
-                TryEnterLong(signalBar);
+                _lastLongSignalBar = signalBar;
+                ClosePositionsByType(TradeType.Sell);
+                TryOpenLong(signalBar);
             }
-
-            if (shortSignal && _lastShortEntryBar != signalBar)
+            else if (isShortSignal && _lastShortSignalBar != signalBar)
             {
-                _lastShortEntryBar = signalBar;
-                TryEnterShort(signalBar);
+                _lastShortSignalBar = signalBar;
+                ClosePositionsByType(TradeType.Buy);
+                TryOpenShort(signalBar);
             }
         }
 
@@ -119,50 +111,53 @@ namespace cAlgo.Robots
             return !double.IsNaN(value) && value != 0.0;
         }
 
-        private void TryEnterLong(int signalBar)
+        private void ClosePositionsByType(TradeType type)
         {
-            if (Positions.FindAll(BotLabel, SymbolName).Length >= MaxOpenPositions)
-                return;
-
-            double entry = Symbol.Ask;
-            double ssl = GetLatestLiquidity(_bslSsl.CurrentSSL, signalBar);
-
-            if (double.IsNaN(ssl) || ssl >= entry)
-                return;
-
-            double slPips = (entry - ssl) / Symbol.PipSize;
-            if (!SlPipsInRange(slPips))
-                return;
-
-            double tpPips = slPips * RewardRiskRatio;
-            double volume = CalculateVolume(slPips);
-            if (volume <= 0)
-                return;
-
-            ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, tpPips);
+            foreach (var position in Positions.FindAll(BotLabel, SymbolName, type))
+                ClosePosition(position);
         }
 
-        private void TryEnterShort(int signalBar)
+        private void TryOpenLong(int signalBar)
         {
-            if (Positions.FindAll(BotLabel, SymbolName).Length >= MaxOpenPositions)
+            double entry = Symbol.Ask;
+            double sslLevel = GetLatestLiquidity(_bslSsl.CurrentSSL, signalBar);
+
+            if (double.IsNaN(sslLevel) || sslLevel >= entry)
                 return;
 
-            double entry = Symbol.Bid;
-            double bsl = GetLatestLiquidity(_bslSsl.CurrentBSL, signalBar);
-
-            if (double.IsNaN(bsl) || bsl <= entry)
+            double slPips = (entry - sslLevel) / Symbol.PipSize;
+            if (!IsValidSl(slPips))
                 return;
 
-            double slPips = (bsl - entry) / Symbol.PipSize;
-            if (!SlPipsInRange(slPips))
-                return;
-
-            double tpPips = slPips * RewardRiskRatio;
             double volume = CalculateVolume(slPips);
             if (volume <= 0)
                 return;
 
-            ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, tpPips);
+            ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, null);
+        }
+
+        private void TryOpenShort(int signalBar)
+        {
+            double entry = Symbol.Bid;
+            double bslLevel = GetLatestLiquidity(_bslSsl.CurrentBSL, signalBar);
+
+            if (double.IsNaN(bslLevel) || bslLevel <= entry)
+                return;
+
+            double slPips = (bslLevel - entry) / Symbol.PipSize;
+            if (!IsValidSl(slPips))
+                return;
+
+            double volume = CalculateVolume(slPips);
+            if (volume <= 0)
+                return;
+
+            ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, null);
+        }
+
+        private bool IsValidSl(double slPips)
+        {
+            return slPips >= MinSlPips && slPips <= MaxSlPips;
         }
 
         private double GetLatestLiquidity(IndicatorDataSeries series, int signalBar)
@@ -170,17 +165,12 @@ namespace cAlgo.Robots
             int start = Math.Max(0, signalBar - LiquidityLookbackBars);
             for (int i = signalBar; i >= start; i--)
             {
-                var level = series[i];
+                double level = series[i];
                 if (!double.IsNaN(level) && level > 0)
                     return level;
             }
 
             return double.NaN;
-        }
-
-        private bool SlPipsInRange(double slPips)
-        {
-            return slPips >= MinSlPips && slPips <= MaxSlPips;
         }
 
         private double CalculateVolume(double slPips)
