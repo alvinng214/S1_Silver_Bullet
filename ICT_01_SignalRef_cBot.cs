@@ -6,12 +6,13 @@
 //  ICT Setup 01 TFlab_ct.cs") for long/short signals.
 //
 // Entry  : Market order at the open of the bar AFTER the signal fires.
-// Exit   : Position is closed (and reversed) when the opposite signal fires.
-//          No fixed take-profit is used.
+// Exit   : Fixed TP at 2 × SL distance (1:2 risk-to-reward). SL is ATR-based.
 // Risk   : 1 % of current account equity per trade (configurable).
-// SL     : ATR-based safety stop (for position sizing and exchange-limit).
+// SL     : ATR-based (ATR × multiplier, clamped to min/max pip range).
 //
-// Signal priority: long takes precedence if both signals fire on the same bar.
+// Difference vs ICT_01_cBot.cs: SL anchor only. ICT_01_cBot uses BSL/SSL pivot
+// levels for SL; this bot uses ATR. Signal logic and R:R are identical.
+// No limit on simultaneous open positions.
 // =============================================================================
 
 using System;
@@ -67,7 +68,8 @@ namespace cAlgo
 
         // ── Constants ─────────────────────────────────────────────────────────
 
-        private const string BotLabel = "ICT01_Ref";
+        private const string BotLabel  = "ICT01_Ref";
+        private const double RrRatio   = 2.0;
 
         // ── Indicator references ──────────────────────────────────────────────
 
@@ -133,21 +135,15 @@ namespace cAlgo
             bool isLong  = _ictIndicator.LongSignal[signalBar]  == 1.0;
             bool isShort = _ictIndicator.ShortSignal[signalBar] == 1.0;
 
-            // ── Long signal ───────────────────────────────────────────────────
-            // Close any open short positions, then enter long at current Ask
-            // (≈ the open price of the new bar that just started).
             if (isLong && _lastLongBar != signalBar)
             {
                 _lastLongBar = signalBar;
-                ClosePositionsByType(TradeType.Sell);
                 OpenLong(signalBar);
             }
-            // ── Short signal ──────────────────────────────────────────────────
-            // Close any open long positions, then enter short at current Bid.
-            else if (isShort && _lastShortBar != signalBar)
+
+            if (isShort && _lastShortBar != signalBar)
             {
                 _lastShortBar = signalBar;
-                ClosePositionsByType(TradeType.Buy);
                 OpenShort(signalBar);
             }
         }
@@ -155,16 +151,6 @@ namespace cAlgo
         // =====================================================================
         // Trade helpers
         // =====================================================================
-
-        private void ClosePositionsByType(TradeType tradeType)
-        {
-            foreach (var pos in Positions.FindAll(BotLabel, SymbolName, tradeType))
-            {
-                var result = ClosePosition(pos);
-                if (!result.IsSuccessful)
-                    Print("Failed to close {0} position #{1}: {2}", tradeType, pos.Id, result.Error);
-            }
-        }
 
         private void OpenLong(int signalBar)
         {
@@ -182,11 +168,11 @@ namespace cAlgo
                 return;
             }
 
-            Print("Bar {0}: LONG | Ask={1:F5} | SL={2:F1} pips | Vol={3}",
-                  signalBar, Symbol.Ask, slPips, volume);
+            double tpPips = slPips * RrRatio;
+            Print("Bar {0}: LONG | Ask={1:F5} | SL={2:F1}p | TP={3:F1}p | Vol={4}",
+                  signalBar, Symbol.Ask, slPips, tpPips, volume);
 
-            // No take-profit – the position is reversed when the opposite signal fires.
-            ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, null);
+            ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, tpPips);
         }
 
         private void OpenShort(int signalBar)
@@ -205,11 +191,11 @@ namespace cAlgo
                 return;
             }
 
-            Print("Bar {0}: SHORT | Bid={1:F5} | SL={2:F1} pips | Vol={3}",
-                  signalBar, Symbol.Bid, slPips, volume);
+            double tpPips = slPips * RrRatio;
+            Print("Bar {0}: SHORT | Bid={1:F5} | SL={2:F1}p | TP={3:F1}p | Vol={4}",
+                  signalBar, Symbol.Bid, slPips, tpPips, volume);
 
-            // No take-profit – the position is reversed when the opposite signal fires.
-            ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, null);
+            ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, tpPips);
         }
 
         // =====================================================================

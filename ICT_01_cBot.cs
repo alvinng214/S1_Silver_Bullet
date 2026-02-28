@@ -58,9 +58,6 @@ namespace cAlgo
         [Parameter("Risk Per Trade (%)", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Group = "Risk Management")]
         public double RiskPercent { get; set; }
 
-        [Parameter("Max Simultaneous Positions", DefaultValue = 3, MinValue = 1, MaxValue = 10, Group = "Risk Management")]
-        public int MaxOpenPositions { get; set; }
-
         [Parameter("Min SL Distance (pips)", DefaultValue = 3.0, MinValue = 0.1, Group = "Risk Management")]
         public double MinSlPips { get; set; }
 
@@ -172,8 +169,7 @@ namespace cAlgo
             for (int i = 0; i <= warmupEnd; i++)
                 ProcessBar(i);
 
-            Print("ICT Setup 01 cBot started. MaxPositions={0}, Risk={1}%",
-                  MaxOpenPositions, RiskPercent);
+            Print("ICT Setup 01 cBot started. Risk={0}%, RR=1:{1}", RiskPercent, RrRatio);
         }
 
         protected override void OnStop()
@@ -202,24 +198,11 @@ namespace cAlgo
             if (!hasLong && !hasShort)
                 return;
 
-            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
-            if (openCount >= MaxOpenPositions)
-            {
-                Print("Bar {0}: max positions ({1}) reached, signal skipped.",
-                      signalBar, MaxOpenPositions);
-                return;
-            }
-
             if (hasLong && _lastLongSignalBar != signalBar)
             {
                 _lastLongSignalBar = signalBar;
                 TryEnterLong(signalBar);
             }
-
-            // Re-check capacity before acting on a coincident short signal.
-            openCount = Positions.FindAll(BotLabel, SymbolName).Length;
-            if (openCount >= MaxOpenPositions)
-                return;
 
             if (hasShort && _lastShortSignalBar != signalBar)
             {
