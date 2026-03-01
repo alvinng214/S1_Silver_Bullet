@@ -77,6 +77,16 @@ namespace cAlgo
         [Parameter("Show Signals FVG", Group = "Display", DefaultValue = true)]
         public bool ShowSignalsFvg { get; set; }
 
+        // ── Signal outputs consumed by cBots ────────────────────────────────
+        // 1.0 on the bar where the signal fires, 0.0 otherwise.
+        // LongSignal  fires when an OB or FVG bull entry condition is met.
+        // ShortSignal fires when an OB or FVG bear entry condition is met.
+        [Output("Long Signal", LineColor = "Lime", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries LongSignal { get; set; }
+
+        [Output("Short Signal", LineColor = "Red", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries ShortSignal { get; set; }
+
         [Parameter("Min dist", Group = "Signals", DefaultValue = 1, MinValue = 1)]
         public int MinDist { get; set; }
 
@@ -109,7 +119,11 @@ namespace cAlgo
         public override void Calculate(int index)
         {
             if (index < 2)
+            {
+                LongSignal[index]  = 0.0;
+                ShortSignal[index] = 0.0;
                 return;
+            }
 
             var sourceIndex = FindBarIndexAtOrBefore(_sourceBars, Bars.OpenTimes[index]);
             if (sourceIndex < 2)
@@ -160,6 +174,12 @@ namespace cAlgo
             }
 
             DrawSignals(index, cond, condFvg);
+
+            // Expose signal state for cBot consumption (mirrors ICT_01 pattern).
+            // Long  = OB bull entry OR FVG bull entry on this bar.
+            // Short = OB bear entry OR FVG bear entry on this bar.
+            LongSignal[index]  = (cond == 1  || condFvg == 1)  ? 1.0 : 0.0;
+            ShortSignal[index] = (cond == -1 || condFvg == -1) ? 1.0 : 0.0;
         }
 
         private void DetectOrderBlock(int index, int sourceIndex)
