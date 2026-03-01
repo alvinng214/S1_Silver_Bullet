@@ -86,6 +86,15 @@ namespace cAlgo
         [Parameter("Use Heikin-Ashi", Group = "Signals", DefaultValue = false)]
         public bool UseHeikinAshi { get; set; }
 
+        [Parameter("Signal Offset (pips)", Group = "Signals", DefaultValue = 2.0, MinValue = 0.0, Step = 0.1)]
+        public double SignalOffsetPips { get; set; }
+
+        [Output("Long Signal", LineColor = "Lime", PlotType = PlotType.Points, Thickness = 6)]
+        public IndicatorDataSeries LongSignal { get; set; }
+
+        [Output("Short Signal", LineColor = "Red", PlotType = PlotType.Points, Thickness = 6)]
+        public IndicatorDataSeries ShortSignal { get; set; }
+
         private Bars _sourceBars;
         private readonly List<ObRecord> _obRecords = new List<ObRecord>();
         private readonly List<FvgRecord> _fvgRecords = new List<FvgRecord>();
@@ -108,6 +117,9 @@ namespace cAlgo
 
         public override void Calculate(int index)
         {
+            LongSignal[index] = double.NaN;
+            ShortSignal[index] = double.NaN;
+
             if (index < 2)
                 return;
 
@@ -356,20 +368,28 @@ namespace cAlgo
 
         private void DrawSignals(int index, int cond, int condFvg)
         {
+            var offset = SignalOffsetPips * Symbol.PipSize;
+
             if (ShowSignalsOb && cond == 1)
-                DrawSignalIcon($"ob_buy_{index}_{_shapeId++}", ChartIconType.UpArrow, index, Bars.LowPrices[index], ColorBull);
+                DrawSignalIcon($"ob_buy_{index}_{_shapeId++}", ChartIconType.UpArrow, index, Bars.LowPrices[index], ColorBull, -offset);
             if (ShowSignalsOb && cond == -1)
-                DrawSignalIcon($"ob_sell_{index}_{_shapeId++}", ChartIconType.DownArrow, index, Bars.HighPrices[index], ColorBear);
+                DrawSignalIcon($"ob_sell_{index}_{_shapeId++}", ChartIconType.DownArrow, index, Bars.HighPrices[index], ColorBear, offset);
 
             if (ShowSignalsFvg && condFvg == 1)
-                DrawSignalIcon($"fvg_buy_{index}_{_shapeId++}", ChartIconType.UpArrow, index, Bars.LowPrices[index], ColorFvgBull);
+                DrawSignalIcon($"fvg_buy_{index}_{_shapeId++}", ChartIconType.UpArrow, index, Bars.LowPrices[index], ColorFvgBull, -offset);
             if (ShowSignalsFvg && condFvg == -1)
-                DrawSignalIcon($"fvg_sell_{index}_{_shapeId++}", ChartIconType.DownArrow, index, Bars.HighPrices[index], ColorFvgBear);
+                DrawSignalIcon($"fvg_sell_{index}_{_shapeId++}", ChartIconType.DownArrow, index, Bars.HighPrices[index], ColorFvgBear, offset);
+
+            if (cond == 1 || condFvg == 1)
+                LongSignal[index] = Bars.LowPrices[index] - offset;
+
+            if (cond == -1 || condFvg == -1)
+                ShortSignal[index] = Bars.HighPrices[index] + offset;
         }
 
-        private void DrawSignalIcon(string id, ChartIconType type, int index, double y, Color color)
+        private void DrawSignalIcon(string id, ChartIconType type, int index, double y, Color color, double delta)
         {
-            Chart.DrawIcon(id, type, Bars.OpenTimes[index], y, color);
+            Chart.DrawIcon(id, type, Bars.OpenTimes[index], y + delta, color);
         }
 
         private void DrawLiquidationLine(string id, DateTime from, DateTime to, double price, Color color)
