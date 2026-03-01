@@ -331,9 +331,13 @@ namespace cAlgo
             DrawCurrentZones(index);
             EmitAlerts(index);
 
-            // Expose signal state for cBot consumption
-            LongSignal[index] = _isLongSignal ? 1.0 : 0.0;
-            ShortSignal[index] = _isShortSignal ? 1.0 : 0.0;
+            // Expose signal state for cBot consumption.
+            // Output the bar's price on signal bars so the axis scaler treats
+            // them as normal price values and does not squeeze the Y-axis.
+            // Output double.NaN on non-signal bars so those bars are invisible
+            // to the axis scaler (DiscontinuousLine skips NaN points entirely).
+            LongSignal[index]  = _isLongSignal  ? Bars.LowPrices[index]  : double.NaN;
+            ShortSignal[index] = _isShortSignal ? Bars.HighPrices[index] : double.NaN;
         }
 
         private void CalculateAtr(int index)
