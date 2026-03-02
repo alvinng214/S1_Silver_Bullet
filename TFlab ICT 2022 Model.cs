@@ -432,9 +432,12 @@ namespace cAlgo
                 return;
 
             string side = isHigh ? "H" : "L";
-            Color levelColor = Color.Transparent;
-            Color nameColor = Color.Transparent;
-            double yText = isHigh ? Bars.HighPrices[i] + 1.15 * atr : Bars.LowPrices[i] - 1.15 * atr;
+            Color levelColor = isHigh ? HLColor : LLColor;
+            Color nameColor = isHigh ? HNColor : LNColor;
+            // TradingView parity requested by user:
+            // - bearish sweep label (high-side sweep) below the candle
+            // - bullish sweep label (low-side sweep) above the candle
+            double yText = isHigh ? Bars.LowPrices[i] - 0.35 * atr : Bars.HighPrices[i] + 0.35 * atr;
 
             Chart.DrawTrendLine(Prefix + "LS_LINE_" + side + "_" + i,
                 Bars.OpenTimes[swing.Index], swing.Price,
@@ -460,14 +463,14 @@ namespace cAlgo
             Chart.DrawTrendLine(Prefix + "MSS_LINE_" + side,
                 Bars.OpenTimes[startIndex], level,
                 Bars.OpenTimes[i], level,
-                Color.Transparent, 1, LineStyle.Solid);
+                bearish ? HLColorMss : LLColorMss, 1, LineStyle.Solid);
 
             double labelY = bearish ? Bars.LowPrices[startIndex] - 0.3 * atr : Bars.HighPrices[startIndex] + 0.6 * atr;
             Chart.DrawText(Prefix + "MSS_NAME_" + side,
                 "MSS",
                 Bars.OpenTimes[Math.Min(startIndex + 1, Bars.Count - 1)],
                 labelY,
-                Color.Transparent);
+                bearish ? HNColorMss : LNColorMss);
         }
 
         private void ExtendMssLine(bool bearish, int toIndex, int startIndex, double level)
@@ -476,7 +479,7 @@ namespace cAlgo
             Chart.DrawTrendLine(Prefix + "MSS_LINE_" + side,
                 Bars.OpenTimes[startIndex], level,
                 Bars.OpenTimes[Math.Min(toIndex, Bars.Count - 1)], level,
-                Color.Transparent, 1, LineStyle.Solid);
+                bearish ? HLColorMss : LLColorMss, 1, LineStyle.Solid);
         }
 
         private void ColorizeHighStructures(int i, int startIndex, double level, double atr)
@@ -487,7 +490,7 @@ namespace cAlgo
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     HLColor, 1, LineStyle.DotsRare);
-                Chart.DrawText(Prefix + "LS_CONF_H_TXT_" + i, "Liquidity Sweep", Bars.OpenTimes[i], Bars.HighPrices[i] + 1.15 * atr, HNColor);
+                Chart.DrawText(Prefix + "LS_CONF_H_TXT_" + i, "Liquidity Sweep", Bars.OpenTimes[i], Bars.LowPrices[i] - 0.35 * atr, HNColor);
             }
 
             if (AShowMss && HShowMss)
@@ -496,6 +499,7 @@ namespace cAlgo
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     HLColorMss, 1, LineStyle.Solid);
+                Chart.DrawText(Prefix + "MSS_CONF_H_TXT_" + i, "MSS", Bars.OpenTimes[i], Bars.HighPrices[i] + 0.25 * atr, HNColorMss);
                 Chart.DrawIcon(Prefix + "MSS_TRI_H_" + i, ChartIconType.DownTriangle, Bars.OpenTimes[i], Bars.HighPrices[i] + 0.6 * atr, HNColorMss);
             }
         }
@@ -508,7 +512,7 @@ namespace cAlgo
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     LLColor, 1, LineStyle.DotsRare);
-                Chart.DrawText(Prefix + "LS_CONF_L_TXT_" + i, "Liquidity Sweep", Bars.OpenTimes[i], Bars.LowPrices[i] - 1.15 * atr, LNColor);
+                Chart.DrawText(Prefix + "LS_CONF_L_TXT_" + i, "Liquidity Sweep", Bars.OpenTimes[i], Bars.HighPrices[i] + 0.35 * atr, LNColor);
             }
 
             if (AShowMss && LShowMss)
@@ -517,6 +521,7 @@ namespace cAlgo
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     LLColorMss, 1, LineStyle.Solid);
+                Chart.DrawText(Prefix + "MSS_CONF_L_TXT_" + i, "MSS", Bars.OpenTimes[i], Bars.LowPrices[i] - 0.25 * atr, LNColorMss);
                 Chart.DrawIcon(Prefix + "MSS_TRI_L_" + i, ChartIconType.UpTriangle, Bars.OpenTimes[i], Bars.LowPrices[i] - 0.6 * atr, LNColorMss);
             }
         }
