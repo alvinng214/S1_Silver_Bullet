@@ -490,7 +490,6 @@ namespace cAlgo
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     HLColor, 1, LineStyle.DotsRare);
-                Chart.DrawText(Prefix + "LS_CONF_H_TXT_" + i, "Liquidity Sweep", Bars.OpenTimes[i], Bars.LowPrices[i] - 0.35 * atr, HNColor);
             }
 
             if (AShowMss && HShowMss)
@@ -512,7 +511,6 @@ namespace cAlgo
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     LLColor, 1, LineStyle.DotsRare);
-                Chart.DrawText(Prefix + "LS_CONF_L_TXT_" + i, "Liquidity Sweep", Bars.OpenTimes[i], Bars.HighPrices[i] + 0.35 * atr, LNColor);
             }
 
             if (AShowMss && LShowMss)
