@@ -147,8 +147,8 @@ namespace cAlgo
 
         private double GetLowestLowBeforeSignal(int signalBarIndex, int lookbackBars)
         {
-            var from = Math.Max(0, signalBarIndex - lookbackBars);
-            var to = signalBarIndex - 1;
+            var from = Math.Max(0, signalBarIndex - lookbackBars + 1);
+            var to = signalBarIndex;
             if (to < from)
                 return double.NaN;
 
@@ -160,8 +160,8 @@ namespace cAlgo
 
         private double GetHighestHighBeforeSignal(int signalBarIndex, int lookbackBars)
         {
-            var from = Math.Max(0, signalBarIndex - lookbackBars);
-            var to = signalBarIndex - 1;
+            var from = Math.Max(0, signalBarIndex - lookbackBars + 1);
+            var to = signalBarIndex;
             if (to < from)
                 return double.NaN;
 

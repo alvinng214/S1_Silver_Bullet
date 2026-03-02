@@ -111,7 +111,7 @@ namespace cAlgo
             if (index < 2)
                 return;
 
-            var sourceIndex = FindBarIndexAtOrBefore(_sourceBars, Bars.OpenTimes[index]);
+            var sourceIndex = ResolveSecuritySourceIndex(index);
             if (sourceIndex < 2)
                 return;
 
@@ -160,6 +160,30 @@ namespace cAlgo
             }
 
             DrawSignals(index, cond, condFvg);
+        }
+
+        private int ResolveSecuritySourceIndex(int chartIndex)
+        {
+            var sourceIndex = FindBarIndexAtOrBefore(_sourceBars, Bars.OpenTimes[chartIndex]);
+            if (sourceIndex < 1)
+                return sourceIndex;
+
+            if (sourceIndex >= _sourceBars.Count - 1)
+                return sourceIndex;
+
+            var sourcePeriod = _sourceBars.OpenTimes[sourceIndex] - _sourceBars.OpenTimes[sourceIndex - 1];
+            var chartPeriod = Bars.OpenTimes[chartIndex] - Bars.OpenTimes[chartIndex - 1];
+
+            if (sourcePeriod <= chartPeriod)
+                return sourceIndex;
+
+            var chartBarCloseTime = Bars.OpenTimes[chartIndex] + chartPeriod;
+            var sourceBarCloseTime = _sourceBars.OpenTimes[sourceIndex] + sourcePeriod;
+
+            if (chartBarCloseTime < sourceBarCloseTime)
+                return sourceIndex - 1;
+
+            return sourceIndex;
         }
 
         private void DetectOrderBlock(int index, int sourceIndex)
