@@ -155,6 +155,10 @@ namespace cAlgo
             int lastLowSweepIndex = -1;
             double lastHighSweepPrice = 0;
             double lastLowSweepPrice = 0;
+            int lastHighSweepBar = -1;
+            double lastHighSweepAtr = 0;
+            int lastLowSweepBar = -1;
+            double lastLowSweepAtr = 0;
 
             int mssBearStartIndex = -1;
             double mssBearLevel = 0;
@@ -236,7 +240,9 @@ namespace cAlgo
                         hAlert = true;
                         lastHighSweepIndex = swing.Index;
                         lastHighSweepPrice = swing.Price;
-                        DrawLiquiditySweep(true, i, swing, atr.Result[i]);
+                        lastHighSweepBar = i;
+                        lastHighSweepAtr = atr.Result[i];
+                        // Sweep line/label drawn only upon MSS confirmation (matching Pine textcolor=na until confirmed)
                     }
 
                     if (Bars.ClosePrices[i] > swing.Price && swing.AoiIndex == int.MaxValue)
@@ -257,18 +263,18 @@ namespace cAlgo
                         lAlert = true;
                         lastLowSweepIndex = swing.Index;
                         lastLowSweepPrice = swing.Price;
-                        DrawLiquiditySweep(false, i, swing, atr.Result[i]);
+                        lastLowSweepBar = i;
+                        lastLowSweepAtr = atr.Result[i];
+                        // Sweep line/label drawn only upon MSS confirmation (matching Pine textcolor=na until confirmed)
                     }
 
                     if (Bars.ClosePrices[i] < swing.Price && swing.AoiIndex == int.MaxValue)
                         swing.AoiIndex = i;
                 }
 
-                // reset permits analogous to Pine H_Permit/L_Permit
-                if (!hAlert)
-                    ResetPermits(_swingHighs);
-                if (!lAlert)
-                    ResetPermits(_swingLows);
+                // Per Pine: MSH_Permit/MSL_Permit stay false permanently once a swing is swept.
+                // No per-swing permit reset occurs; the Pine H_Permit/L_Permit single-var
+                // only gates label creation within one bar update and is not needed here.
 
                 // MSS set after high sweep
                 if (hAlert && lastPivotLowIndex >= 0)
@@ -314,7 +320,8 @@ namespace cAlgo
                     {
                         permitHReset = false;
                         bearTrigger = true;
-                        ColorizeHighStructures(i, mssBearStartIndex, mssBearLevel, atr.Result[i]);
+                        ColorizeHighStructures(i, mssBearStartIndex, mssBearLevel, atr.Result[i],
+                            lastHighSweepBar, lastHighSweepIndex, lastHighSweepPrice, lastHighSweepAtr);
                         fvgBearTrigger = _bearFvgs.Count > 0;
                     }
                 }
@@ -329,7 +336,8 @@ namespace cAlgo
                     {
                         permitLReset = false;
                         bullTrigger = true;
-                        ColorizeLowStructures(i, mssBullStartIndex, mssBullLevel, atr.Result[i]);
+                        ColorizeLowStructures(i, mssBullStartIndex, mssBullLevel, atr.Result[i],
+                            lastLowSweepBar, lastLowSweepIndex, lastLowSweepPrice, lastLowSweepAtr);
                         fvgBullTrigger = _bullFvgs.Count > 0;
                     }
                 }
@@ -422,34 +430,6 @@ namespace cAlgo
             }
         }
 
-        private void DrawLiquiditySweep(bool isHigh, int i, SwingPoint swing, double atr)
-        {
-            if (!AShow)
-                return;
-            if (isHigh && !HShow)
-                return;
-            if (!isHigh && !LShow)
-                return;
-
-            string side = isHigh ? "H" : "L";
-            Color levelColor = isHigh ? HLColor : LLColor;
-            Color nameColor = isHigh ? HNColor : LNColor;
-            // TradingView parity requested by user:
-            // - bearish sweep label (high-side sweep) below the candle
-            // - bullish sweep label (low-side sweep) above the candle
-            double yText = isHigh ? Bars.LowPrices[i] - 0.35 * atr : Bars.HighPrices[i] + 0.35 * atr;
-
-            Chart.DrawTrendLine(Prefix + "LS_LINE_" + side + "_" + i,
-                Bars.OpenTimes[swing.Index], swing.Price,
-                Bars.OpenTimes[i], swing.Price,
-                levelColor, 1, LineStyle.DotsRare);
-
-            Chart.DrawText(Prefix + "LS_NAME_" + side + "_" + i,
-                "Liquidity Sweep",
-                Bars.OpenTimes[i], yText,
-                nameColor);
-        }
-
         private void DrawMssCandidate(bool bearish, int i, int startIndex, double level, double atr)
         {
             if (!AShowMss)
@@ -482,14 +462,24 @@ namespace cAlgo
                 bearish ? HLColorMss : LLColorMss, 1, LineStyle.Solid);
         }
 
-        private void ColorizeHighStructures(int i, int startIndex, double level, double atr)
+        private void ColorizeHighStructures(int i, int startIndex, double level, double atr,
+            int sweepBar, int sweepSwingIndex, double sweepSwingPrice, double sweepAtr)
         {
-            if (AShow && HShow)
+            // Draw sweep line and label now that MSS is confirmed.
+            // In Pine, MSH_Line and MSH_Label are created invisible (color=na, textcolor=na)
+            // and only become visible here via set_color/set_textcolor.
+            if (AShow && HShow && sweepBar >= 0 && sweepSwingIndex >= 0)
             {
-                Chart.DrawTrendLine(Prefix + "LS_CONF_H_" + i,
-                    Bars.OpenTimes[startIndex], level,
-                    Bars.OpenTimes[i], level,
+                Chart.DrawTrendLine(Prefix + "LS_LINE_H_" + sweepBar,
+                    Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
+                    Bars.OpenTimes[sweepBar], sweepSwingPrice,
                     HLColor, 1, LineStyle.DotsRare);
+
+                double yText = Bars.LowPrices[sweepBar] - 0.35 * sweepAtr;
+                Chart.DrawText(Prefix + "LS_NAME_H_" + sweepBar,
+                    "Liquidity Sweep",
+                    Bars.OpenTimes[sweepBar], yText,
+                    HNColor);
             }
 
             if (AShowMss && HShowMss)
@@ -503,14 +493,24 @@ namespace cAlgo
             }
         }
 
-        private void ColorizeLowStructures(int i, int startIndex, double level, double atr)
+        private void ColorizeLowStructures(int i, int startIndex, double level, double atr,
+            int sweepBar, int sweepSwingIndex, double sweepSwingPrice, double sweepAtr)
         {
-            if (AShow && LShow)
+            // Draw sweep line and label now that MSS is confirmed.
+            // In Pine, MSL_Line and MSL_Label are created invisible (color=na, textcolor=na)
+            // and only become visible here via set_color/set_textcolor.
+            if (AShow && LShow && sweepBar >= 0 && sweepSwingIndex >= 0)
             {
-                Chart.DrawTrendLine(Prefix + "LS_CONF_L_" + i,
-                    Bars.OpenTimes[startIndex], level,
-                    Bars.OpenTimes[i], level,
+                Chart.DrawTrendLine(Prefix + "LS_LINE_L_" + sweepBar,
+                    Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
+                    Bars.OpenTimes[sweepBar], sweepSwingPrice,
                     LLColor, 1, LineStyle.DotsRare);
+
+                double yText = Bars.HighPrices[sweepBar] + 0.35 * sweepAtr;
+                Chart.DrawText(Prefix + "LS_NAME_L_" + sweepBar,
+                    "Liquidity Sweep",
+                    Bars.OpenTimes[sweepBar], yText,
+                    LNColor);
             }
 
             if (AShowMss && LShowMss)
@@ -607,16 +607,6 @@ namespace cAlgo
             if (string.Equals(MaxSwingBackMethod, "Custom", StringComparison.OrdinalIgnoreCase))
                 return Math.Max(1, MaxSwingBack);
             return 100000;
-        }
-
-        private void ResetPermits(List<SwingPoint> list)
-        {
-            int cap = Math.Min(list.Count, 2000);
-            for (int i = list.Count - cap; i < list.Count; i++)
-            {
-                if (i >= 0 && !list[i].Permit)
-                    list[i].Permit = true;
-            }
         }
 
         private void ClearObjects()
