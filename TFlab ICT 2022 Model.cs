@@ -239,7 +239,14 @@ namespace cAlgo
                         lastHighSweepPrice = swing.Price;
                         lastHighSweepBar = i;
                         lastHighSweepAtr = atr.Result[i];
-                        // Sweep line/label drawn only upon MSS confirmation (matching Pine textcolor=na until confirmed)
+                        // Draw the sweep line immediately (Pine creates MSH_Line with color=na here;
+                        // we draw it visible right away so the level is always shown).
+                        // The "Liquidity Sweep" text label is deferred to MSS confirmation.
+                        if (AShow && HShow)
+                            Chart.DrawTrendLine(Prefix + "LS_LINE_H_" + i,
+                                Bars.OpenTimes[swing.Index], swing.Price,
+                                Bars.OpenTimes[i], swing.Price,
+                                HLColor, 2, LineStyle.Lines);
                     }
 
                     if (Bars.ClosePrices[i] > swing.Price && swing.AoiIndex == int.MaxValue)
@@ -262,7 +269,14 @@ namespace cAlgo
                         lastLowSweepPrice = swing.Price;
                         lastLowSweepBar = i;
                         lastLowSweepAtr = atr.Result[i];
-                        // Sweep line/label drawn only upon MSS confirmation (matching Pine textcolor=na until confirmed)
+                        // Draw the sweep line immediately (Pine creates MSL_Line with color=na here;
+                        // we draw it visible right away so the level is always shown).
+                        // The "Liquidity Sweep" text label is deferred to MSS confirmation.
+                        if (AShow && LShow)
+                            Chart.DrawTrendLine(Prefix + "LS_LINE_L_" + i,
+                                Bars.OpenTimes[swing.Index], swing.Price,
+                                Bars.OpenTimes[i], swing.Price,
+                                LLColor, 2, LineStyle.Lines);
                     }
 
                     if (Bars.ClosePrices[i] < swing.Price && swing.AoiIndex == int.MaxValue)
@@ -450,12 +464,9 @@ namespace cAlgo
             // and only become visible here via set_color/set_textcolor.
             if (AShow && HShow && sweepBar >= 0 && sweepSwingIndex >= 0)
             {
-                // Bearish/high sweep: dashed line, thickness 2 for visibility (Pine: line.style_dashed)
-                Chart.DrawTrendLine(Prefix + "LS_LINE_H_" + sweepBar,
-                    Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
-                    Bars.OpenTimes[sweepBar], sweepSwingPrice,
-                    HLColor, 2, LineStyle.Lines);
-
+                // Sweep line was already drawn when the sweep was detected.
+                // Add the "Liquidity Sweep" label now that MSS is confirmed
+                // (Pine: MSH_Label.set_textcolor(HNColor) on confirmation).
                 // Label ABOVE the sweep candle's high (Pine: high + 1.15 * ATR, label_down style)
                 double yText = Bars.HighPrices[sweepBar] + 1.15 * sweepAtr;
                 Chart.DrawText(Prefix + "LS_NAME_H_" + sweepBar,
@@ -484,12 +495,9 @@ namespace cAlgo
             // and only become visible here via set_color/set_textcolor.
             if (AShow && LShow && sweepBar >= 0 && sweepSwingIndex >= 0)
             {
-                // Bullish/low sweep: dashed line, thickness 2 for visibility (Pine: line.style_dashed)
-                Chart.DrawTrendLine(Prefix + "LS_LINE_L_" + sweepBar,
-                    Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
-                    Bars.OpenTimes[sweepBar], sweepSwingPrice,
-                    LLColor, 2, LineStyle.Lines);
-
+                // Sweep line was already drawn when the sweep was detected.
+                // Add the "Liquidity Sweep" label now that MSS is confirmed
+                // (Pine: MSL_Label.set_textcolor(LNColor) on confirmation).
                 // Label BELOW the sweep candle's low (Pine: low - 1.15 * ATR, label_up style)
                 double yText = Bars.LowPrices[sweepBar] - 1.15 * sweepAtr;
                 Chart.DrawText(Prefix + "LS_NAME_L_" + sweepBar,
