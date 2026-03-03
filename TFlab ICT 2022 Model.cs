@@ -168,9 +168,6 @@ namespace cAlgo
             double mssBullLevel = 0;
             bool permitLReset = false;
 
-            bool prevPermitHReset = false;
-            bool prevPermitLReset = false;
-
             int lastPivotHighIndex = -1;
             double lastPivotHighPrice = 0;
             int lastPivotLowIndex = -1;
@@ -305,8 +302,6 @@ namespace cAlgo
                 if (_bullFvgs.Count > 0 && Bars.LowPrices[i] < _bullFvgs[_bullFvgs.Count - 1].Distal)
                     _bullFvgs.RemoveAt(_bullFvgs.Count - 1);
 
-                bool bearTrigger = false;
-                bool bullTrigger = false;
                 bool fvgBearTrigger = false;
                 bool fvgBullTrigger = false;
 
@@ -319,7 +314,6 @@ namespace cAlgo
                     if (Bars.ClosePrices[Math.Max(i - 1, 0)] <= mssBearLevel && (Math.Max(i - 1, 0) - mssBearStartIndex) <= MssLength)
                     {
                         permitHReset = false;
-                        bearTrigger = true;
                         ColorizeHighStructures(i, mssBearStartIndex, mssBearLevel, atr.Result[i],
                             lastHighSweepBar, lastHighSweepIndex, lastHighSweepPrice, lastHighSweepAtr);
                         fvgBearTrigger = _bearFvgs.Count > 0;
@@ -335,17 +329,11 @@ namespace cAlgo
                     if (Bars.ClosePrices[i] >= mssBullLevel && (i - mssBullStartIndex) <= MssLength)
                     {
                         permitLReset = false;
-                        bullTrigger = true;
                         ColorizeLowStructures(i, mssBullStartIndex, mssBullLevel, atr.Result[i],
                             lastLowSweepBar, lastLowSweepIndex, lastLowSweepPrice, lastLowSweepAtr);
                         fvgBullTrigger = _bullFvgs.Count > 0;
                     }
                 }
-
-                if (prevPermitHReset && !permitHReset)
-                    bearTrigger = true;
-                if (prevPermitLReset && !permitLReset)
-                    bullTrigger = true;
 
                 // Draw FVG OB equivalent
                 if (fvgBullTrigger && _bullFvgs.Count > 0)
@@ -374,8 +362,6 @@ namespace cAlgo
                 if (lAlert)
                     _bullFvgs.Clear();
 
-                prevPermitHReset = permitHReset;
-                prevPermitLReset = permitLReset;
             }
         }
 
@@ -468,7 +454,7 @@ namespace cAlgo
                 Chart.DrawTrendLine(Prefix + "LS_LINE_H_" + sweepBar,
                     Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
                     Bars.OpenTimes[sweepBar], sweepSwingPrice,
-                    HLColor, 2, LineStyle.Dashes);
+                    HLColor, 2, LineStyle.Lines);
 
                 // Label ABOVE the sweep candle's high (Pine: high + 1.15 * ATR, label_down style)
                 double yText = Bars.HighPrices[sweepBar] + 1.15 * sweepAtr;
@@ -502,7 +488,7 @@ namespace cAlgo
                 Chart.DrawTrendLine(Prefix + "LS_LINE_L_" + sweepBar,
                     Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
                     Bars.OpenTimes[sweepBar], sweepSwingPrice,
-                    LLColor, 2, LineStyle.Dashes);
+                    LLColor, 2, LineStyle.Lines);
 
                 // Label BELOW the sweep candle's low (Pine: low - 1.15 * ATR, label_up style)
                 double yText = Bars.LowPrices[sweepBar] - 1.15 * sweepAtr;
