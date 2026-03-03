@@ -13,6 +13,13 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class FibonacciOptimalEntryZoneOTEZeiierman : Indicator
     {
+        public enum GoldenZoneDirection
+        {
+            Both,
+            BullishOnly,
+            BearishOnly
+        }
+
         // =========================
         // Parameters (mirrors Pine)
         // =========================
@@ -58,15 +65,20 @@ namespace cAlgo
         [Parameter("Fill Golden Zone", DefaultValue = false, Group = "Fibonacci")]
         public bool golden { get; set; }
 
-        // Pine: color.new(color.teal, 50)
-        [Parameter("Golden Zone Color", DefaultValue = "#80009688", Group = "Fibonacci")]
-        public Color goldZone { get; set; }
+        [Parameter("Golden Zone Direction", DefaultValue = GoldenZoneDirection.Both, Group = "Fibonacci")]
+        public GoldenZoneDirection goldenDirection { get; set; }
+
+        [Parameter("Bullish Golden Zone Color", DefaultValue = "#8008EC32", Group = "Fibonacci")]
+        public Color bullGoldZone { get; set; }
+
+        [Parameter("Bearish Golden Zone Color", DefaultValue = "#80FF2222", Group = "Fibonacci")]
+        public Color bearGoldZone { get; set; }
 
         // Levels
         [Parameter("L1 Enabled", DefaultValue = true, Group = "Levels")]
         public bool level1Enabled { get; set; }
 
-        [Parameter("L1 Value", DefaultValue = 0.50, Group = "Levels")]
+        [Parameter("L1 Value", DefaultValue = 0.618, Group = "Levels")]
         public double level1Value { get; set; }
 
         [Parameter("L1 Color", DefaultValue = "#4CAF50", Group = "Levels")]
@@ -75,7 +87,7 @@ namespace cAlgo
         [Parameter("L2 Enabled", DefaultValue = true, Group = "Levels")]
         public bool level2Enabled { get; set; }
 
-        [Parameter("L2 Value", DefaultValue = 0.618, Group = "Levels")]
+        [Parameter("L2 Value", DefaultValue = 0.786, Group = "Levels")]
         public double level2Value { get; set; }
 
         [Parameter("L2 Color", DefaultValue = "#009688", Group = "Levels")]
@@ -584,28 +596,39 @@ namespace cAlgo
         // =========================
         private void UpdateGoldenFill(int index)
         {
-            var a = _flevels[0];
-            var b = _flevels[1];
-            if (a == null || b == null)
+            var level0 = _flevels[0];
+            var level1 = _flevels[1];
+            if (level0 == null || level1 == null)
                 return;
 
-            double yA = a.Y1;
-            double yB = b.Y1;
-            double top = Math.Max(yA, yB);
-            double bot = Math.Min(yA, yB);
+            bool isBullishZone = level1.Y1 > level0.Y1;
+            bool isBearishZone = level1.Y1 < level0.Y1;
 
-            DateTime left = a.Time1 > b.Time1 ? a.Time1 : b.Time1;
+            bool shouldDraw = goldenDirection == GoldenZoneDirection.Both
+                || (goldenDirection == GoldenZoneDirection.BullishOnly && isBullishZone)
+                || (goldenDirection == GoldenZoneDirection.BearishOnly && isBearishZone);
+
+            if (!shouldDraw || (!isBullishZone && !isBearishZone))
+            {
+                RemoveGoldenFill();
+                return;
+            }
+
+            var fillColor = isBullishZone ? bullGoldZone : bearGoldZone;
+
+            double top = Math.Max(level0.Y1, level1.Y1);
+            double bot = Math.Min(level0.Y1, level1.Y1);
+
+            DateTime left = level0.Time1 > level1.Time1 ? level0.Time1 : level1.Time1;
             DateTime right = TimeOf(index);
 
             if (_goldRect == null)
             {
                 _goldRectName = NextName("gold");
-                _goldRect = Chart.DrawRectangle(_goldRectName, left, top, right, bot, goldZone);
+                _goldRect = Chart.DrawRectangle(_goldRectName, left, top, right, bot, fillColor);
                 _goldRect.IsInteractive = false;
                 _goldRect.IsFilled = true;
-
-                // Your API has no FillColor, so we use Color as the fill.
-                _goldRect.Color = goldZone;
+                _goldRect.Color = fillColor;
                 _goldRect.Thickness = 0;
             }
             else
@@ -616,7 +639,7 @@ namespace cAlgo
                 _goldRect.Y2 = bot;
 
                 _goldRect.IsFilled = true;
-                _goldRect.Color = goldZone;
+                _goldRect.Color = fillColor;
                 _goldRect.Thickness = 0;
             }
         }
