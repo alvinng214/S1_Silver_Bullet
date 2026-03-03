@@ -444,13 +444,7 @@ namespace cAlgo
                 Bars.OpenTimes[startIndex], level,
                 Bars.OpenTimes[i], level,
                 bearish ? HLColorMss : LLColorMss, 1, LineStyle.Solid);
-
-            double labelY = bearish ? Bars.LowPrices[startIndex] - 0.3 * atr : Bars.HighPrices[startIndex] + 0.6 * atr;
-            Chart.DrawText(Prefix + "MSS_NAME_" + side,
-                "MSS",
-                Bars.OpenTimes[Math.Min(startIndex + 1, Bars.Count - 1)],
-                labelY,
-                bearish ? HNColorMss : LNColorMss);
+            // No text drawn here: in Pine MSS_NameH/L has textcolor=na until MSS confirms.
         }
 
         private void ExtendMssLine(bool bearish, int toIndex, int startIndex, double level)
@@ -470,12 +464,14 @@ namespace cAlgo
             // and only become visible here via set_color/set_textcolor.
             if (AShow && HShow && sweepBar >= 0 && sweepSwingIndex >= 0)
             {
+                // Bearish/high sweep: dashed line, thickness 2 for visibility (Pine: line.style_dashed)
                 Chart.DrawTrendLine(Prefix + "LS_LINE_H_" + sweepBar,
                     Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
                     Bars.OpenTimes[sweepBar], sweepSwingPrice,
-                    HLColor, 1, LineStyle.DotsRare);
+                    HLColor, 2, LineStyle.Dashes);
 
-                double yText = Bars.LowPrices[sweepBar] - 0.35 * sweepAtr;
+                // Label ABOVE the sweep candle's high (Pine: high + 1.15 * ATR, label_down style)
+                double yText = Bars.HighPrices[sweepBar] + 1.15 * sweepAtr;
                 Chart.DrawText(Prefix + "LS_NAME_H_" + sweepBar,
                     "Liquidity Sweep",
                     Bars.OpenTimes[sweepBar], yText,
@@ -484,7 +480,8 @@ namespace cAlgo
 
             if (AShowMss && HShowMss)
             {
-                Chart.DrawTrendLine(Prefix + "MSS_CONF_H_" + i,
+                // Overwrite the pending MSS_LINE_H (same name) so only one confirmed line shows.
+                Chart.DrawTrendLine(Prefix + "MSS_LINE_H",
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     HLColorMss, 1, LineStyle.Solid);
@@ -501,12 +498,14 @@ namespace cAlgo
             // and only become visible here via set_color/set_textcolor.
             if (AShow && LShow && sweepBar >= 0 && sweepSwingIndex >= 0)
             {
+                // Bullish/low sweep: dashed line, thickness 2 for visibility (Pine: line.style_dashed)
                 Chart.DrawTrendLine(Prefix + "LS_LINE_L_" + sweepBar,
                     Bars.OpenTimes[sweepSwingIndex], sweepSwingPrice,
                     Bars.OpenTimes[sweepBar], sweepSwingPrice,
-                    LLColor, 1, LineStyle.DotsRare);
+                    LLColor, 2, LineStyle.Dashes);
 
-                double yText = Bars.HighPrices[sweepBar] + 0.35 * sweepAtr;
+                // Label BELOW the sweep candle's low (Pine: low - 1.15 * ATR, label_up style)
+                double yText = Bars.LowPrices[sweepBar] - 1.15 * sweepAtr;
                 Chart.DrawText(Prefix + "LS_NAME_L_" + sweepBar,
                     "Liquidity Sweep",
                     Bars.OpenTimes[sweepBar], yText,
@@ -515,7 +514,8 @@ namespace cAlgo
 
             if (AShowMss && LShowMss)
             {
-                Chart.DrawTrendLine(Prefix + "MSS_CONF_L_" + i,
+                // Overwrite the pending MSS_LINE_L (same name) so only one confirmed line shows.
+                Chart.DrawTrendLine(Prefix + "MSS_LINE_L",
                     Bars.OpenTimes[startIndex], level,
                     Bars.OpenTimes[i], level,
                     LLColorMss, 1, LineStyle.Solid);
