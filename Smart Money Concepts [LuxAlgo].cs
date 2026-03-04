@@ -9,7 +9,7 @@ using cAlgo.API.Internals;
 
 namespace cAlgo
 {
-    [Indicator("Smart Money Concepts [LuxAlgo]", IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.FullAccess)]
+    [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.FullAccess)]
     public class SmartMoneyConceptsLuxAlgo : Indicator
     {
         // ─── Enums ───────────────────────────────────────────────────────────────
@@ -406,7 +406,7 @@ namespace cAlgo
                 DrawPremiumDiscountZones(index);
 
             // MTF levels (drawn at last confirmed history bar and on new bar in realtime)
-            if (IsLastBar(index))
+            if (IsAtLastBar(index))
             {
                 if (ShowDailyLevelsInput && _dailyBars != null)
                     DrawMtfLevels(index, _dailyBars, DailyLevelsColorInput, DailyLevelsStyleInput, "D");
@@ -889,9 +889,9 @@ namespace cAlgo
                     var rect = Chart.DrawRectangle(ob.RectId1, ob.BarIndex, ob.BarHigh,
                                                    index + 1, ob.BarLow, rawColor);
                     rect.IsFilled  = true;
-                    rect.Color     = rawColor;
-                    // Swing OBs have a border; internal OBs have no border (mirrors Pine: na vs color)
-                    rect.LineColor = internalMode ? Color.Transparent : rawColor;
+                    // Swing OBs have a border (same color); internal OBs have no visible border
+                    // ChartRectangle.Color controls the outline; set transparent for internal OBs
+                    rect.Color = internalMode ? Color.Transparent : rawColor;
                     shown++;
                 }
                 else
@@ -1033,9 +1033,8 @@ namespace cAlgo
         {
             var rect = Chart.DrawRectangle(id, leftBar, topPrice,
                                            Math.Min(rightBar, Bars.Count - 1), bottomPrice, color);
-            rect.IsFilled  = true;
-            rect.Color     = color;
-            rect.LineColor = color;
+            rect.IsFilled = true;
+            rect.Color    = color;
         }
 
         // ─── Update Trailing Extremes ─────────────────────────────────────────────
@@ -1133,9 +1132,8 @@ namespace cAlgo
             Color fillColor = WithAlpha(color, 80);
             var rect = Chart.DrawRectangle(id, Math.Max(0, leftBar), topPrice,
                                            Math.Min(Bars.Count - 1, rightBar), bottomPrice, fillColor);
-            rect.IsFilled  = true;
-            rect.Color     = fillColor;
-            rect.LineColor = Color.Transparent;
+            rect.IsFilled = true;
+            rect.Color    = Color.Transparent; // no visible border on zone boxes
             Chart.DrawText(id + "_lbl", label, Math.Min(Bars.Count - 1, rightBar),
                            (topPrice + bottomPrice) / 2.0, color);
         }
@@ -1250,8 +1248,9 @@ namespace cAlgo
             return -1;
         }
 
-        // ─── Helper: IsLastBar ────────────────────────────────────────────────────
-        private bool IsLastBar(int index) => index == Bars.Count - 1;
+        // ─── Helper: IsAtLastBar ──────────────────────────────────────────────────
+        // Renamed from IsLastBar to avoid hiding Indicator.IsLastBar property
+        private bool IsAtLastBar(int index) => index == Bars.Count - 1;
 
         // ─── Helper: WithAlpha ────────────────────────────────────────────────────
         // Returns the same color with a new alpha (0-255).
