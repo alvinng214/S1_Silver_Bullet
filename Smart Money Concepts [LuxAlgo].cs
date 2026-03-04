@@ -100,16 +100,16 @@ namespace cAlgo
         [Parameter("Order Block Mitigation", DefaultValue = MitigationMode.HighLow, Group = "Order Blocks")]
         public MitigationMode OrderBlockMitigationInput { get; set; }
 
-        [Parameter("Internal Bullish OB", DefaultValue = "#CC3179F5", Group = "Order Blocks")]
+        [Parameter("Internal Bullish OB", DefaultValue = "#5508A05C", Group = "Order Blocks")]
         public Color InternalBullishObColor { get; set; }
 
-        [Parameter("Internal Bearish OB", DefaultValue = "#CCF77C80", Group = "Order Blocks")]
+        [Parameter("Internal Bearish OB", DefaultValue = "#55F23645", Group = "Order Blocks")]
         public Color InternalBearishObColor { get; set; }
 
-        [Parameter("Bullish OB", DefaultValue = "#CC1848CC", Group = "Order Blocks")]
+        [Parameter("Bullish OB", DefaultValue = "#8008A05C", Group = "Order Blocks")]
         public Color SwingBullishObColor { get; set; }
 
-        [Parameter("Bearish OB", DefaultValue = "#CCB22833", Group = "Order Blocks")]
+        [Parameter("Bearish OB", DefaultValue = "#80F23645", Group = "Order Blocks")]
         public Color SwingBearishObColor { get; set; }
 
         // ─── Parameters: EQH/EQL ─────────────────────────────────────────────────
@@ -888,10 +888,10 @@ namespace cAlgo
                 {
                     var rect = Chart.DrawRectangle(ob.RectId1, ob.BarIndex, ob.BarHigh,
                                                    index + 1, ob.BarLow, rawColor);
-                    rect.IsFilled  = true;
-                    // Swing OBs have a border (same color); internal OBs have no visible border
-                    // ChartRectangle.Color controls the outline; set transparent for internal OBs
-                    rect.Color = internalMode ? Color.Transparent : rawColor;
+                    rect.IsFilled = true;
+                    // rect.Color drives both the fill and the border in cTrader.
+                    // Always set it to rawColor so the filled rectangle is visible.
+                    rect.Color = rawColor;
                     shown++;
                 }
                 else
