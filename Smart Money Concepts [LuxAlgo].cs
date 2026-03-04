@@ -236,14 +236,14 @@ namespace cAlgo
         // ─── Order block record ───────────────────────────────────────────────────
         private class ObRecord
         {
-            public double  BarHigh;
-            public double  BarLow;
-            public DateTime BarTime;
-            public int     BarIndex;
-            public int     Bias;      // +1 bullish, -1 bearish
-            public bool    Internal;
-            public string  RectId1;
-            public string  RectId2;   // border rect (swing only)
+            public double         BarHigh;
+            public double         BarLow;
+            public DateTime       BarTime;
+            public int            BarIndex;
+            public int            Bias;     // +1 bullish, -1 bearish
+            public bool           Internal;
+            public string         RectId;
+            public ChartRectangle Rect;     // stored reference so we can extend Time2
         }
 
         // ─── FVG record ───────────────────────────────────────────────────────────
@@ -378,17 +378,20 @@ namespace cAlgo
             if (ShowStructureInput || ShowSwingOrderBlocksInput || ShowHighLowSwingsInput)
                 DisplayStructure(index, false);
 
-            // Mitigate (delete) crossed order blocks
+            // Mitigate (delete) crossed order blocks every bar
             if (ShowInternalOrderBlocksInput)
                 MitigateOrderBlocks(index, true);
             if (ShowSwingOrderBlocksInput)
                 MitigateOrderBlocks(index, false);
 
-            // Redraw active OBs (extend right boundary to current bar)
-            if (ShowInternalOrderBlocksInput)
-                RedrawOrderBlocks(index, true);
-            if (ShowSwingOrderBlocksInput)
-                RedrawOrderBlocks(index, false);
+            // Extend OB right edges only on last bar (mirrors reference pattern)
+            if (IsAtLastBar(index))
+            {
+                if (ShowInternalOrderBlocksInput)
+                    ExtendOrderBlocks(index, true);
+                if (ShowSwingOrderBlocksInput)
+                    ExtendOrderBlocks(index, false);
+            }
 
             // FVGs
             if (ShowFairValueGapsInput)
@@ -800,6 +803,8 @@ namespace cAlgo
         // Mirrors Pine's storeOrderBlock:
         //   BEARISH OB = bar with highest parsedHigh between pivot and current bar
         //   BULLISH OB = bar with lowest  parsedLow  between pivot and current bar
+        // Rectangle is created immediately with time-based coordinates (matching
+        // the reference Order Blocks & Imbalance MTF.cs pattern).
         private void StoreOrderBlock(int index, PivotState pivot, bool internalMode, int bias)
         {
             if (pivot.BarIndex < 0 || pivot.BarIndex >= index) return;
@@ -821,21 +826,57 @@ namespace cAlgo
 
             if (obBarIdx < 0 || obBarIdx >= _parsedHighs.Count) return;
 
+            double   obHigh   = _parsedHighs[obBarIdx];
+            double   obLow    = _parsedLows[obBarIdx];
+            DateTime obTime   = _times[obBarIdx];
+
+            // Base color: green for bullish, red for bearish (strips any alpha from param)
+            Color baseColor;
+            if (StyleInput == ThemeStyle.Monochrome)
+            {
+                baseColor = bias == 1 ? Color.FromArgb(178, 181, 190) : Color.FromArgb(93, 96, 107);
+            }
+            else
+            {
+                Color cfg = internalMode
+                    ? (bias == 1 ? InternalBullishObColor : InternalBearishObColor)
+                    : (bias == 1 ? SwingBullishObColor    : SwingBearishObColor);
+                baseColor = Color.FromArgb(cfg.R, cfg.G, cfg.B); // strip alpha; apply below
+            }
+
+            // Internal OBs slightly more transparent than swing OBs (mirrors Pine opacity)
+            Color fillColor = Color.FromArgb(internalMode ? 60 : 80, baseColor);
+
+            // Right edge starts at the current bar's open time; extended to future on last bar
+            DateTime rightTime = Bars.OpenTimes[index];
+
             string rectId = $"smc_ob_{(internalMode ? "i" : "s")}_{(bias > 0 ? "b" : "r")}_{obBarIdx}_{index}";
+
+            // Draw using time-based overload (matches reference, works correctly with IsFilled)
+            var rect = Chart.DrawRectangle(rectId, obTime, obHigh, rightTime, obLow,
+                                           baseColor, 1, LineStyle.Solid);
+            rect.IsFilled = true;
+            rect.Color    = fillColor;
 
             var ob = new ObRecord
             {
-                BarHigh  = _parsedHighs[obBarIdx],
-                BarLow   = _parsedLows[obBarIdx],
-                BarTime  = _times[obBarIdx],
+                BarHigh  = obHigh,
+                BarLow   = obLow,
+                BarTime  = obTime,
                 BarIndex = obBarIdx,
                 Bias     = bias,
                 Internal = internalMode,
-                RectId1  = rectId
+                RectId   = rectId,
+                Rect     = rect
             };
 
             var list = internalMode ? _intObs : _swingObs;
-            if (list.Count >= 100) list.RemoveAt(list.Count - 1);
+            // Cap total stored OBs at 100 (oldest removed)
+            if (list.Count >= 100)
+            {
+                Chart.RemoveObject(list[list.Count - 1].RectId);
+                list.RemoveAt(list.Count - 1);
+            }
             list.Insert(0, ob);
         }
 
@@ -857,46 +898,38 @@ namespace cAlgo
                 if (ob.Bias ==  1 && bullMit < ob.BarLow)  mitigated = true;
                 if (mitigated)
                 {
-                    Chart.RemoveObject(ob.RectId1);
+                    Chart.RemoveObject(ob.RectId);
                     list.RemoveAt(i);
                 }
             }
         }
 
-        // ─── Redraw Order Blocks ──────────────────────────────────────────────────
-        // Mirrors Pine's drawOrderBlocks — extends right boundary to current bar
-        // Shows only the most recent N blocks per the size setting
-        private void RedrawOrderBlocks(int index, bool internalMode)
+        // ─── Extend Order Blocks ──────────────────────────────────────────────────
+        // Called only at the last bar. Extends Time2 on each active OB so they
+        // reach the right edge of the chart — matches the reference pattern exactly.
+        // Also hides (removes) blocks beyond the user's display limit.
+        private void ExtendOrderBlocks(int index, bool internalMode)
         {
             var list    = internalMode ? _intObs : _swingObs;
             int maxShow = internalMode ? InternalOrderBlocksSizeInput : SwingOrderBlocksSizeInput;
-            int shown   = 0;
 
-            for (int i = 0; i < list.Count; i++)
+            var dt = index > 0
+                ? (Bars.OpenTimes[index] - Bars.OpenTimes[index - 1])
+                : TimeSpan.FromMinutes(1);
+            DateTime futureTime = Bars.OpenTimes[index].AddTicks(dt.Ticks * 10);
+
+            for (int i = list.Count - 1; i >= 0; i--)
             {
-                var ob  = list[i];
-                bool show = shown < maxShow;
-
-                Color rawColor = StyleInput == ThemeStyle.Monochrome
-                    ? (ob.Bias == -1 ? Color.FromArgb(50, 93, 96, 107)
-                                     : Color.FromArgb(50, 178, 181, 190))
-                    : (internalMode
-                        ? (ob.Bias == -1 ? InternalBearishObColor : InternalBullishObColor)
-                        : (ob.Bias == -1 ? SwingBearishObColor    : SwingBullishObColor));
-
-                if (show)
+                if (i >= maxShow)
                 {
-                    var rect = Chart.DrawRectangle(ob.RectId1, ob.BarIndex, ob.BarHigh,
-                                                   index + 1, ob.BarLow, rawColor);
-                    rect.IsFilled = true;
-                    // rect.Color drives both the fill and the border in cTrader.
-                    // Always set it to rawColor so the filled rectangle is visible.
-                    rect.Color = rawColor;
-                    shown++;
+                    // Beyond display limit — remove from chart and list
+                    Chart.RemoveObject(list[i].RectId);
+                    list.RemoveAt(i);
                 }
-                else
+                else if (list[i].Rect != null)
                 {
-                    Chart.RemoveObject(ob.RectId1);
+                    // Extend right boundary to future (like reference: z.Box.Time2 = futureTime)
+                    list[i].Rect.Time2 = futureTime;
                 }
             }
         }
