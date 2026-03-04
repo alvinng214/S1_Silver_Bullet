@@ -68,10 +68,10 @@ namespace cAlgo
         [Parameter("Golden Zone Direction", DefaultValue = GoldenZoneDirection.Both, Group = "Fibonacci")]
         public GoldenZoneDirection goldenDirection { get; set; }
 
-        [Parameter("Bullish Golden Zone Color", DefaultValue = "#8008EC32", Group = "Fibonacci")]
+        [Parameter("Bullish Golden Zone Color", DefaultValue = "#9900FF00", Group = "Fibonacci")]
         public Color bullGoldZone { get; set; }
 
-        [Parameter("Bearish Golden Zone Color", DefaultValue = "#80FF2222", Group = "Fibonacci")]
+        [Parameter("Bearish Golden Zone Color", DefaultValue = "#99FF0000", Group = "Fibonacci")]
         public Color bearGoldZone { get; set; }
 
         // Levels
@@ -601,8 +601,15 @@ namespace cAlgo
             if (level0 == null || level1 == null)
                 return;
 
-            bool isBullishZone = level1.Y1 > level0.Y1;
-            bool isBearishZone = level1.Y1 < level0.Y1;
+            bool isBullishZone = _pos > 0;
+            bool isBearishZone = _pos < 0;
+
+            // Fallback when position state is neutral: infer from fib level ordering.
+            if (!isBullishZone && !isBearishZone)
+            {
+                isBullishZone = level1.Y1 > level0.Y1;
+                isBearishZone = level1.Y1 < level0.Y1;
+            }
 
             bool shouldDraw = goldenDirection == GoldenZoneDirection.Both
                 || (goldenDirection == GoldenZoneDirection.BullishOnly && isBullishZone)
@@ -614,7 +621,8 @@ namespace cAlgo
                 return;
             }
 
-            var fillColor = isBullishZone ? bullGoldZone : bearGoldZone;
+            var sourceColor = isBullishZone ? bullGoldZone : bearGoldZone;
+            var fillColor = Color.FromArgb(153, sourceColor.R, sourceColor.G, sourceColor.B);
 
             double top = Math.Max(level0.Y1, level1.Y1);
             double bot = Math.Min(level0.Y1, level1.Y1);
