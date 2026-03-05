@@ -13,13 +13,6 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class FibonacciOptimalEntryZoneOTEZeiierman : Indicator
     {
-        public enum GoldenZoneDirection
-        {
-            Both,
-            BullishOnly,
-            BearishOnly
-        }
-
         // =========================
         // Parameters (mirrors Pine)
         // =========================
@@ -64,9 +57,6 @@ namespace cAlgo
 
         [Parameter("Fill Golden Zone", DefaultValue = false, Group = "Fibonacci")]
         public bool golden { get; set; }
-
-        [Parameter("Golden Zone Direction", DefaultValue = GoldenZoneDirection.Both, Group = "Fibonacci")]
-        public GoldenZoneDirection goldenDirection { get; set; }
 
         [Parameter("Bullish Golden Zone Color", DefaultValue = "#9900FF00", Group = "Fibonacci")]
         public Color bullGoldZone { get; set; }
@@ -596,26 +586,7 @@ namespace cAlgo
         // =========================
         private void UpdateGoldenFill(int index)
         {
-            var level0 = _flevels[0];
-            var level1 = _flevels[1];
-            if (level0 == null || level1 == null)
-                return;
-
-            bool isBullishZone = _pos > 0;
-            bool isBearishZone = _pos < 0;
-
-            // Fallback when position state is neutral: infer from fib level ordering.
-            if (!isBullishZone && !isBearishZone)
-            {
-                isBullishZone = level1.Y1 > level0.Y1;
-                isBearishZone = level1.Y1 < level0.Y1;
-            }
-
-            bool shouldDraw = goldenDirection == GoldenZoneDirection.Both
-                || (goldenDirection == GoldenZoneDirection.BullishOnly && isBullishZone)
-                || (goldenDirection == GoldenZoneDirection.BearishOnly && isBearishZone);
-
-            if (!shouldDraw || (!isBullishZone && !isBearishZone))
+            if (!TryGetGoldenZoneBounds(out var top, out var bot, out var isBullishZone, out var isBearishZone))
             {
                 RemoveGoldenFill();
                 return;
@@ -624,10 +595,9 @@ namespace cAlgo
             var sourceColor = isBullishZone ? bullGoldZone : bearGoldZone;
             var fillColor = Color.FromArgb(153, sourceColor.R, sourceColor.G, sourceColor.B);
 
-            double top = Math.Max(level0.Y1, level1.Y1);
-            double bot = Math.Min(level0.Y1, level1.Y1);
-
-            DateTime left = level0.Time1 > level1.Time1 ? level0.Time1 : level1.Time1;
+            var a = _flevels[0];
+            var b = _flevels[1];
+            DateTime left = a.Time1 > b.Time1 ? a.Time1 : b.Time1;
             DateTime right = TimeOf(index);
 
             if (_goldRect == null)
@@ -662,6 +632,32 @@ namespace cAlgo
             }
         }
 
+        private bool TryGetGoldenZoneBounds(out double top, out double bot, out bool isBullishZone, out bool isBearishZone)
+        {
+            top = bot = double.NaN;
+            isBullishZone = false;
+            isBearishZone = false;
+
+            if (_flevels.Count <= 1 || _flevels[0] == null || _flevels[1] == null)
+                return false;
+
+            var level0 = _flevels[0];
+            var level1 = _flevels[1];
+            top = Math.Max(level0.Y1, level1.Y1);
+            bot = Math.Min(level0.Y1, level1.Y1);
+
+            isBullishZone = _pos > 0;
+            isBearishZone = _pos < 0;
+
+            if (!isBullishZone && !isBearishZone)
+            {
+                isBullishZone = level1.Y1 > level0.Y1;
+                isBearishZone = level1.Y1 < level0.Y1;
+            }
+
+            return isBullishZone || isBearishZone;
+        }
+
         // =========================
         // Cleanup helpers
         // =========================
@@ -682,7 +678,9 @@ namespace cAlgo
             }
             else
             {
-                RemoveGoldenFill();
+                // Keep previously drawn golden rectangles when Previous=true.
+                _goldRect = null;
+                _goldRectName = null;
             }
 
             _trend = null;
