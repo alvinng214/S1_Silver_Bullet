@@ -22,6 +22,9 @@ namespace cAlgo
         [Parameter("Color Candles", DefaultValue = false, Group = "Smart Money Concepts")]
         public bool ShowTrendInput { get; set; }
 
+        [Parameter("Plot Signal Series", DefaultValue = false, Group = "Smart Money Concepts")]
+        public bool PlotSignalSeriesInput { get; set; }
+
         [Parameter("Show Internal Structure", DefaultValue = true, Group = "Real Time Internal Structure")]
         public bool ShowInternalsInput { get; set; }
         [Parameter("Bullish Structure", DefaultValue = StructureFilter.All, Group = "Real Time Internal Structure")]
@@ -150,22 +153,50 @@ namespace cAlgo
 
         private int _internalTrend = 0;
         private int _swingTrend = 0;
+        private int _internalLeg = 0;
+        private int _swingLeg = 0;
+
+        // runtime structure events (independent from optional plotted output series)
+        private bool _evtInternalBull;
+        private bool _evtInternalBear;
+        private bool _evtSwingBull;
+        private bool _evtSwingBear;
         private readonly List<OrderBlock> _internalBullObs = new List<OrderBlock>();
         private readonly List<OrderBlock> _internalBearObs = new List<OrderBlock>();
         private readonly List<OrderBlock> _swingBullObs = new List<OrderBlock>();
         private readonly List<OrderBlock> _swingBearObs = new List<OrderBlock>();
-        private readonly List<FvgBox> _fvgs = new List<FvgBox>();
 
         private double _lastSwingHigh = double.NaN;
         private double _lastSwingLow = double.NaN;
         private int _lastSwingHighIndex = -1;
         private int _lastSwingLowIndex = -1;
 
+        private double _internalHighLevel = double.NaN;
+        private double _internalLowLevel = double.NaN;
+        private bool _internalHighCrossed;
+        private bool _internalLowCrossed;
+        private bool _swingHighCrossed;
+        private bool _swingLowCrossed;
+
+        private double _prevEqHigh = double.NaN;
+        private int _prevEqHighIndex = -1;
+        private double _prevEqLow = double.NaN;
+        private int _prevEqLowIndex = -1;
+
+        private int _internalHighIndex = -1;
+        private int _internalLowIndex = -1;
+
+        private readonly List<double> _parsedHighs = new List<double>();
+        private readonly List<double> _parsedLows = new List<double>();
+        private readonly List<DateTime> _times = new List<DateTime>();
+        private double _cumTr = 0.0;
+
         private ChartTrendLine _dailyHighLine, _dailyLowLine, _weeklyHighLine, _weeklyLowLine, _monthlyHighLine, _monthlyLowLine;
         private DateTime _lastDay = DateTime.MinValue, _lastWeek = DateTime.MinValue, _lastMonth = DateTime.MinValue;
         private double _dayHigh, _dayLow, _weekHigh, _weekLow, _monthHigh, _monthLow;
 
         private ChartRectangle _premiumBox, _equilibriumBox, _discountBox;
+        private int _obIdCounter = 0;
 
         protected override void Initialize()
         {
@@ -176,6 +207,7 @@ namespace cAlgo
         public override void Calculate(int index)
         {
             ResetSignals(index);
+            UpdateParsedArrays(index);
             if (index < Math.Max(SwingsLengthInput, EqualHighsLowsLengthInput) + 5)
                 return;
 
@@ -200,40 +232,58 @@ namespace cAlgo
 
         private void UpdateStructure(int index)
         {
-            var iLen = Math.Max(2, EqualHighsLowsLengthInput);
+            var iLen = 5; // LuxAlgo internal structure leg length
             var sLen = Math.Max(5, SwingsLengthInput);
 
-            var intPivotHigh = IsPivotHigh(index - iLen, iLen);
-            var intPivotLow = IsPivotLow(index - iLen, iLen);
-            if (intPivotHigh)
-            {
-                var lvl = Bars.HighPrices[index - iLen];
-                EmitStructure(index, true, false, lvl, true);
-            }
-            if (intPivotLow)
-            {
-                var lvl = Bars.LowPrices[index - iLen];
-                EmitStructure(index, false, false, lvl, true);
-            }
+            var internalLegNow = ComputeLeg(index, iLen, _internalLeg);
+            var internalLegChange = internalLegNow - _internalLeg;
+            var internalNewPivot = internalLegChange != 0;
+            var internalPivotLow = internalLegChange == 1;
 
-            var swingPivotHigh = IsPivotHigh(index - sLen / 2, sLen / 2);
-            var swingPivotLow = IsPivotLow(index - sLen / 2, sLen / 2);
-            if (swingPivotHigh)
+            if (internalNewPivot)
             {
-                _lastSwingHigh = Bars.HighPrices[index - sLen / 2];
-                _lastSwingHighIndex = index - sLen / 2;
-                EmitStructure(index, true, true, _lastSwingHigh, false);
-                if (ShowSwingsInput)
-                    Chart.DrawText($"swH_{index}", "HH", _lastSwingHighIndex, _lastSwingHigh, SwingBearishColorInput);
+                if (internalPivotLow)
+                {
+                    _internalLowLevel = Bars.LowPrices[index - iLen];
+                    _internalLowIndex = index - iLen;
+                    _internalLowCrossed = false;
+                }
+                else
+                {
+                    _internalHighLevel = Bars.HighPrices[index - iLen];
+                    _internalHighIndex = index - iLen;
+                    _internalHighCrossed = false;
+                }
             }
-            if (swingPivotLow)
+            _internalLeg = internalLegNow;
+
+            var swingLegNow = ComputeLeg(index, sLen, _swingLeg);
+            var swingLegChange = swingLegNow - _swingLeg;
+            var swingNewPivot = swingLegChange != 0;
+            var swingPivotLow = swingLegChange == 1;
+
+            if (swingNewPivot)
             {
-                _lastSwingLow = Bars.LowPrices[index - sLen / 2];
-                _lastSwingLowIndex = index - sLen / 2;
-                EmitStructure(index, false, true, _lastSwingLow, false);
-                if (ShowSwingsInput)
-                    Chart.DrawText($"swL_{index}", "LL", _lastSwingLowIndex, _lastSwingLow, SwingBullishColorInput);
+                if (swingPivotLow)
+                {
+                    _lastSwingLow = Bars.LowPrices[index - sLen];
+                    _lastSwingLowIndex = index - sLen;
+                    _swingLowCrossed = false;
+                    if (ShowSwingsInput)
+                        Chart.DrawText($"swL_{index}", "LL", _lastSwingLowIndex, _lastSwingLow, SwingBullishColorInput);
+                }
+                else
+                {
+                    _lastSwingHigh = Bars.HighPrices[index - sLen];
+                    _lastSwingHighIndex = index - sLen;
+                    _swingHighCrossed = false;
+                    if (ShowSwingsInput)
+                        Chart.DrawText($"swH_{index}", "HH", _lastSwingHighIndex, _lastSwingHigh, SwingBearishColorInput);
+                }
             }
+            _swingLeg = swingLegNow;
+
+            ProcessStructureCrosses(index);
 
             if (ShowEqualHighsLowsInput)
                 DetectEqualHighLow(index, iLen);
@@ -242,25 +292,87 @@ namespace cAlgo
                 DrawHighLowSwings(index);
         }
 
-        private void EmitStructure(int index, bool bullishBreak, bool swing, double level, bool internal)
+        private int ComputeLeg(int index, int size, int previousLeg)
+        {
+            if (index - size < 1)
+                return previousLeg;
+
+            var refHigh = Bars.HighPrices[index - size];
+            var refLow = Bars.LowPrices[index - size];
+            var highest = double.MinValue;
+            var lowest = double.MaxValue;
+            var start = Math.Max(0, index - size + 1);
+            for (var i = start; i <= index; i++)
+            {
+                if (Bars.HighPrices[i] > highest) highest = Bars.HighPrices[i];
+                if (Bars.LowPrices[i] < lowest) lowest = Bars.LowPrices[i];
+            }
+
+            if (refHigh > highest)
+                return 0;
+            if (refLow < lowest)
+                return 1;
+            return previousLeg;
+        }
+
+        private void ProcessStructureCrosses(int index)
+        {
+            var close = Bars.ClosePrices[index];
+
+            if (!double.IsNaN(_internalHighLevel) && !_internalHighCrossed && close > _internalHighLevel)
+            {
+                _internalHighCrossed = true;
+                EmitStructure(index, true, false, _internalHighLevel, true);
+                if (ShowInternalOrderBlocksInput)
+                    StoreOrderBlockFromPivot(_internalHighIndex, true, 1, index);
+            }
+
+            if (!double.IsNaN(_internalLowLevel) && !_internalLowCrossed && close < _internalLowLevel)
+            {
+                _internalLowCrossed = true;
+                EmitStructure(index, false, false, _internalLowLevel, true);
+                if (ShowInternalOrderBlocksInput)
+                    StoreOrderBlockFromPivot(_internalLowIndex, true, -1, index);
+            }
+
+            if (!double.IsNaN(_lastSwingHigh) && !_swingHighCrossed && close > _lastSwingHigh)
+            {
+                _swingHighCrossed = true;
+                EmitStructure(index, true, true, _lastSwingHigh, false);
+                if (ShowSwingOrderBlocksInput)
+                    StoreOrderBlockFromPivot(_lastSwingHighIndex, false, 1, index);
+            }
+
+            if (!double.IsNaN(_lastSwingLow) && !_swingLowCrossed && close < _lastSwingLow)
+            {
+                _swingLowCrossed = true;
+                EmitStructure(index, false, true, _lastSwingLow, false);
+                if (ShowSwingOrderBlocksInput)
+                    StoreOrderBlockFromPivot(_lastSwingLowIndex, false, -1, index);
+            }
+        }
+
+        private void EmitStructure(int index, bool bullishBreak, bool swing, double level, bool isInternal)
         {
             var close = Bars.ClosePrices[index];
             if (bullishBreak)
             {
                 if (close > level)
                 {
-                    var choch = (internal ? _internalTrend : _swingTrend) < 0;
-                    if (internal)
+                    var choch = (isInternal ? _internalTrend : _swingTrend) < 0;
+                    if (isInternal)
                     {
-                        if (choch) InternalBullishCHoCH[index] = 1; else InternalBullishBOS[index] = 1;
+                        if (choch) SetSignal(InternalBullishCHoCH, index, Bars.ClosePrices[index]); else SetSignal(InternalBullishBOS, index, Bars.ClosePrices[index]);
                         _internalTrend = 1;
+                        _evtInternalBull = true;
                         if (ShowInternalsInput && ShouldShow(ShowInternalBullInput, choch))
                             DrawStructureLine(index, level, choch ? "iCHoCH" : "iBOS", InternalBullColorInput, InternalStructureSize);
                     }
                     else
                     {
-                        if (choch) SwingBullishCHoCH[index] = 1; else SwingBullishBOS[index] = 1;
+                        if (choch) SetSignal(SwingBullishCHoCH, index, Bars.ClosePrices[index]); else SetSignal(SwingBullishBOS, index, Bars.ClosePrices[index]);
                         _swingTrend = 1;
+                        _evtSwingBull = true;
                         if (ShowStructureInput && ShouldShow(ShowSwingBullInput, choch))
                             DrawStructureLine(index, level, choch ? "CHoCH" : "BOS", SwingBullishColorInput, SwingStructureSize);
                     }
@@ -270,18 +382,20 @@ namespace cAlgo
             {
                 if (close < level)
                 {
-                    var choch = (internal ? _internalTrend : _swingTrend) > 0;
-                    if (internal)
+                    var choch = (isInternal ? _internalTrend : _swingTrend) > 0;
+                    if (isInternal)
                     {
-                        if (choch) InternalBearishCHoCH[index] = 1; else InternalBearishBOS[index] = 1;
+                        if (choch) SetSignal(InternalBearishCHoCH, index, Bars.ClosePrices[index]); else SetSignal(InternalBearishBOS, index, Bars.ClosePrices[index]);
                         _internalTrend = -1;
+                        _evtInternalBear = true;
                         if (ShowInternalsInput && ShouldShow(ShowInternalBearInput, choch))
                             DrawStructureLine(index, level, choch ? "iCHoCH" : "iBOS", InternalBearColorInput, InternalStructureSize);
                     }
                     else
                     {
-                        if (choch) SwingBearishCHoCH[index] = 1; else SwingBearishBOS[index] = 1;
+                        if (choch) SetSignal(SwingBearishCHoCH, index, Bars.ClosePrices[index]); else SetSignal(SwingBearishBOS, index, Bars.ClosePrices[index]);
                         _swingTrend = -1;
+                        _evtSwingBear = true;
                         if (ShowStructureInput && ShouldShow(ShowSwingBearInput, choch))
                             DrawStructureLine(index, level, choch ? "CHoCH" : "BOS", SwingBearishColorInput, SwingStructureSize);
                     }
@@ -304,27 +418,35 @@ namespace cAlgo
             if (p <= len || p >= Bars.Count)
                 return;
 
-            if (IsPivotHigh(p, len) && !double.IsNaN(_lastSwingHigh))
+            var range = Math.Max(Symbol.TickSize, Bars.HighPrices[index] - Bars.LowPrices[index]);
+            var thr = Math.Max(Symbol.TickSize, EqualHighsLowsThresholdInput * range);
+
+            if (IsPivotHigh(p, len))
             {
                 var v = Bars.HighPrices[p];
-                var thr = Math.Max(Symbol.TickSize, EqualHighsLowsThresholdInput * (Bars.HighPrices[index] - Bars.LowPrices[index]));
-                if (Math.Abs(v - _lastSwingHigh) <= thr)
+                if (!double.IsNaN(_prevEqHigh) && Math.Abs(v - _prevEqHigh) <= thr)
                 {
-                    EqualHighSignal[index] = 1;
-                    var l = Chart.DrawTrendLine($"eqh_{index}", _lastSwingHighIndex, _lastSwingHigh, p, v, Color.DodgerBlue, 1, LineStyle.DotsRare);
-                    Chart.DrawText($"eqht_{index}", "EQH", p, v, Color.DodgerBlue);
+                    SetSignal(EqualHighSignal, index, v);
+                    Chart.DrawTrendLine("smc_eqh_line", _prevEqHighIndex, _prevEqHigh, p, v, Color.DodgerBlue, 1, LineStyle.DotsRare);
+                    Chart.DrawText("smc_eqh_label", "EQH", p, v, Color.DodgerBlue);
                 }
+
+                _prevEqHigh = v;
+                _prevEqHighIndex = p;
             }
-            if (IsPivotLow(p, len) && !double.IsNaN(_lastSwingLow))
+
+            if (IsPivotLow(p, len))
             {
                 var v = Bars.LowPrices[p];
-                var thr = Math.Max(Symbol.TickSize, EqualHighsLowsThresholdInput * (Bars.HighPrices[index] - Bars.LowPrices[index]));
-                if (Math.Abs(v - _lastSwingLow) <= thr)
+                if (!double.IsNaN(_prevEqLow) && Math.Abs(v - _prevEqLow) <= thr)
                 {
-                    EqualLowSignal[index] = 1;
-                    var l = Chart.DrawTrendLine($"eql_{index}", _lastSwingLowIndex, _lastSwingLow, p, v, Color.DodgerBlue, 1, LineStyle.DotsRare);
-                    Chart.DrawText($"eqlt_{index}", "EQL", p, v, Color.DodgerBlue);
+                    SetSignal(EqualLowSignal, index, v);
+                    Chart.DrawTrendLine("smc_eql_line", _prevEqLowIndex, _prevEqLow, p, v, Color.DodgerBlue, 1, LineStyle.DotsRare);
+                    Chart.DrawText("smc_eql_label", "EQL", p, v, Color.DodgerBlue);
                 }
+
+                _prevEqLow = v;
+                _prevEqLowIndex = p;
             }
         }
 
@@ -333,64 +455,190 @@ namespace cAlgo
             if (index < 3)
                 return;
 
-            var atrLike = AverageRange(index, 14);
-            var threshold = OrderBlockFilterInput == ObFilter.Atr ? atrLike : AverageRange(index, Math.Min(index, 100));
-
-            if (InternalBullishBOS[index] > 0 || InternalBullishCHoCH[index] > 0)
-                AddOrderBlock(_internalBullObs, index - 1, true, true);
-            if (InternalBearishBOS[index] > 0 || InternalBearishCHoCH[index] > 0)
-                AddOrderBlock(_internalBearObs, index - 1, false, true);
-            if (SwingBullishBOS[index] > 0 || SwingBullishCHoCH[index] > 0)
-                AddOrderBlock(_swingBullObs, index - 1, true, false);
-            if (SwingBearishBOS[index] > 0 || SwingBearishCHoCH[index] > 0)
-                AddOrderBlock(_swingBearObs, index - 1, false, false);
-
-            ManageObList(_internalBullObs, index, true, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBullishOrderBlockColor, threshold);
-            ManageObList(_internalBearObs, index, false, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBearishOrderBlockColor, threshold);
-            ManageObList(_swingBullObs, index, true, SwingOrderBlocksSizeInput, ShowSwingOrderBlocksInput, SwingBullishOrderBlockColor, threshold);
-            ManageObList(_swingBearObs, index, false, SwingOrderBlocksSizeInput, ShowSwingOrderBlocksInput, SwingBearishOrderBlockColor, threshold);
+            ManageObList(_internalBullObs, index, true, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBullishOrderBlockColor);
+            ManageObList(_internalBearObs, index, false, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBearishOrderBlockColor);
+            ManageObList(_swingBullObs, index, true, SwingOrderBlocksSizeInput, ShowSwingOrderBlocksInput, SwingBullishOrderBlockColor);
+            ManageObList(_swingBearObs, index, false, SwingOrderBlocksSizeInput, ShowSwingOrderBlocksInput, SwingBearishOrderBlockColor);
         }
 
-        private void AddOrderBlock(List<OrderBlock> list, int i, bool bullish, bool internal)
+        private void UpdateParsedArrays(int index)
+        {
+            if (index == 0)
+            {
+                _cumTr = 0;
+            }
+            else
+            {
+                var prevClose = Bars.ClosePrices[index - 1];
+                var tr = Math.Max(Bars.HighPrices[index] - Bars.LowPrices[index], Math.Max(Math.Abs(Bars.HighPrices[index] - prevClose), Math.Abs(Bars.LowPrices[index] - prevClose)));
+                _cumTr += tr;
+            }
+
+            var atrMeasure = AverageTrueRangeSimple(index, 200);
+            var volatilityMeasure = OrderBlockFilterInput == ObFilter.Atr
+                ? atrMeasure
+                : (_cumTr / Math.Max(1, index));
+
+            var highVolatilityBar = (Bars.HighPrices[index] - Bars.LowPrices[index]) >= (2.0 * volatilityMeasure);
+            var parsedHigh = highVolatilityBar ? Bars.LowPrices[index] : Bars.HighPrices[index];
+            var parsedLow = highVolatilityBar ? Bars.HighPrices[index] : Bars.LowPrices[index];
+
+            _parsedHighs.Add(parsedHigh);
+            _parsedLows.Add(parsedLow);
+            _times.Add(Bars.OpenTimes[index]);
+        }
+
+        private double AverageTrueRangeSimple(int index, int period)
+        {
+            var start = Math.Max(1, index - period + 1);
+            var sum = 0.0;
+            var n = 0;
+            for (var i = start; i <= index; i++)
+            {
+                var prevClose = Bars.ClosePrices[i - 1];
+                var tr = Math.Max(Bars.HighPrices[i] - Bars.LowPrices[i], Math.Max(Math.Abs(Bars.HighPrices[i] - prevClose), Math.Abs(Bars.LowPrices[i] - prevClose)));
+                sum += tr;
+                n++;
+            }
+            return n > 0 ? sum / n : Symbol.TickSize;
+        }
+
+        private void StoreOrderBlockFromPivot(int pivotIndex, bool isInternal, int bias, int index)
+        {
+            if (pivotIndex < 0 || pivotIndex >= index || index >= _parsedHighs.Count)
+                return;
+
+            var parsedIndex = pivotIndex;
+            if (bias == -1)
+            {
+                var maxV = double.MinValue;
+                for (var i = pivotIndex; i <= index; i++)
+                {
+                    var v = _parsedHighs[i];
+                    if (v > maxV) { maxV = v; parsedIndex = i; }
+                }
+            }
+            else
+            {
+                var minV = double.MaxValue;
+                for (var i = pivotIndex; i <= index; i++)
+                {
+                    var v = _parsedLows[i];
+                    if (v < minV) { minV = v; parsedIndex = i; }
+                }
+            }
+
+            var bullish = bias == 1;
+            List<OrderBlock> list;
+            if (isInternal)
+                list = bullish ? _internalBullObs : _internalBearObs;
+            else
+                list = bullish ? _swingBullObs : _swingBearObs;
+            var id = $"ob_{(isInternal ? "i" : "s")}_{(bullish ? "b" : "r")}_{_obIdCounter++}";
+
+            var ob = new OrderBlock
+            {
+                Id = id,
+                Index = parsedIndex,
+                Top = _parsedHighs[parsedIndex],
+                Bottom = _parsedLows[parsedIndex],
+                Bullish = bullish,
+                Internal = isInternal,
+                Mitigated = false,
+                Box = null,
+                Time = _times[parsedIndex]
+            };
+
+            if (list.Count >= 100)
+            {
+                var tail = list[list.Count - 1];
+                DeleteObVisual(tail);
+                list.RemoveAt(list.Count - 1);
+            }
+            list.Insert(0, ob);
+        }
+
+        private void AddOrderBlock(List<OrderBlock> list, int i, bool bullish, bool isInternal)
         {
             if (i < 1) return;
             var top = Math.Max(Bars.OpenPrices[i], Bars.ClosePrices[i]);
             var bottom = Math.Min(Bars.OpenPrices[i], Bars.ClosePrices[i]);
-            list.Insert(0, new OrderBlock { Index = i, Top = top, Bottom = bottom, Bullish = bullish, Internal = internal });
+            var id = $"ob_{(isInternal ? "i" : "s")}_{(bullish ? "b" : "r")}_{_obIdCounter++}";
+
+            list.Insert(0, new OrderBlock
+            {
+                Id = id,
+                Index = i,
+                Top = top,
+                Bottom = bottom,
+                Bullish = bullish,
+                Internal = isInternal,
+                Mitigated = false,
+                Box = null
+            });
         }
 
-        private void ManageObList(List<OrderBlock> list, int index, bool bullish, int keep, bool show, Color color, double threshold)
+        private void ManageObList(List<OrderBlock> list, int index, bool bullish, int keep, bool show, Color color)
         {
             for (var i = list.Count - 1; i >= 0; i--)
             {
                 var ob = list[i];
-                if ((ob.Top - ob.Bottom) > Math.Max(Symbol.TickSize, threshold * 3))
+                var bearishSource = OrderBlockMitigationInput == MitigationMode.Close ? Bars.ClosePrices[index] : Bars.HighPrices[index];
+                var bullishSource = OrderBlockMitigationInput == MitigationMode.Close ? Bars.ClosePrices[index] : Bars.LowPrices[index];
+
+                var crossedOrderBlock = (!bullish && bearishSource > ob.Top) || (bullish && bullishSource < ob.Bottom);
+                if (crossedOrderBlock)
                 {
+                    DeleteObVisual(ob);
                     list.RemoveAt(i);
                     continue;
                 }
 
-                var mitigated = OrderBlockMitigationInput == MitigationMode.Close
-                    ? (bullish ? Bars.ClosePrices[index] < ob.Bottom : Bars.ClosePrices[index] > ob.Top)
-                    : (bullish ? Bars.LowPrices[index] < ob.Bottom : Bars.HighPrices[index] > ob.Top);
-
-                if (mitigated)
+                if (!show)
                 {
-                    list.RemoveAt(i);
+                    DeleteObVisual(ob);
                     continue;
                 }
 
-                if (show)
+                var right = Math.Min(index + 1, Bars.Count - 1);
+                var baseColor = color;
+                var style = LineStyle.Solid;
+
+                if (ob.Box == null)
                 {
-                    var name = $"ob_{(ob.Internal ? "i" : "s")}_{(bullish ? "b" : "r")}_{ob.Index}";
-                    var rect = Chart.DrawRectangle(name, ob.Index, ob.Top, index + 1, ob.Bottom, color);
+                    var rect = Chart.DrawRectangle(ob.Id, ob.Time, ob.Top, Bars.OpenTimes[right], ob.Bottom, baseColor, 1, style);
                     rect.IsFilled = true;
-                    rect.Color = color;
+                    rect.Color = baseColor;
+                    rect.LineStyle = style;
+                    ob.Box = rect;
+                }
+                else
+                {
+                    ob.Box.Time1 = ob.Time;
+                    ob.Box.Time2 = Bars.OpenTimes[right];
+                    ob.Box.Y1 = ob.Top;
+                    ob.Box.Y2 = ob.Bottom;
+                    ob.Box.Color = baseColor;
+                    ob.Box.LineStyle = style;
+                    ob.Box.IsFilled = true;
                 }
             }
 
             while (list.Count > keep)
+            {
+                var rm = list[list.Count - 1];
+                DeleteObVisual(rm);
                 list.RemoveAt(list.Count - 1);
+            }
+        }
+
+        private void DeleteObVisual(OrderBlock ob)
+        {
+            if (ob.Box != null)
+            {
+                Chart.RemoveObject(ob.Id);
+                ob.Box = null;
+            }
         }
 
         private void UpdateFvgs(int index)
@@ -404,12 +652,12 @@ namespace cAlgo
 
             if (bull)
             {
-                BullishFvgSignal[index] = 1;
+                SetSignal(BullishFvgSignal, index, Bars.LowPrices[index]);
                 DrawFvg(index - 2, index + FairValueGapsExtendInput, Bars.LowPrices[index], Bars.HighPrices[index - 2], FairValueGapsBullColorInput, true);
             }
             if (bear)
             {
-                BearishFvgSignal[index] = 1;
+                SetSignal(BearishFvgSignal, index, Bars.HighPrices[index]);
                 DrawFvg(index - 2, index + FairValueGapsExtendInput, Bars.LowPrices[index - 2], Bars.HighPrices[index], FairValueGapsBearColorInput, false);
             }
         }
@@ -481,13 +729,13 @@ namespace cAlgo
         {
             if (!double.IsNaN(_lastSwingHigh))
             {
-                var l = Chart.DrawTrendLine($"wh_{index}", _lastSwingHighIndex, _lastSwingHigh, index + 1, _lastSwingHigh, SwingBearishColorInput, 1, LineStyle.DotsRare);
-                Chart.DrawText($"wht_{index}", Bars.ClosePrices[index] > _lastSwingHigh ? "Strong High" : "Weak High", index, _lastSwingHigh, SwingBearishColorInput);
+                Chart.DrawTrendLine("smc_wh_line", _lastSwingHighIndex, _lastSwingHigh, index + 1, _lastSwingHigh, SwingBearishColorInput, 1, LineStyle.DotsRare);
+                Chart.DrawText("smc_wh_label", Bars.ClosePrices[index] > _lastSwingHigh ? "Strong High" : "Weak High", index, _lastSwingHigh, SwingBearishColorInput);
             }
             if (!double.IsNaN(_lastSwingLow))
             {
-                var l = Chart.DrawTrendLine($"wl_{index}", _lastSwingLowIndex, _lastSwingLow, index + 1, _lastSwingLow, SwingBullishColorInput, 1, LineStyle.DotsRare);
-                Chart.DrawText($"wlt_{index}", Bars.ClosePrices[index] < _lastSwingLow ? "Strong Low" : "Weak Low", index, _lastSwingLow, SwingBullishColorInput);
+                Chart.DrawTrendLine("smc_wl_line", _lastSwingLowIndex, _lastSwingLow, index + 1, _lastSwingLow, SwingBullishColorInput, 1, LineStyle.DotsRare);
+                Chart.DrawText("smc_wl_label", Bars.ClosePrices[index] < _lastSwingLow ? "Strong Low" : "Weak Low", index, _lastSwingLow, SwingBullishColorInput);
             }
         }
 
@@ -512,9 +760,9 @@ namespace cAlgo
 
         private ChartRectangle DrawZoneRect(ChartRectangle existing, string name, int x1, double y1, int x2, double y2, Color color, string text)
         {
-            var rect = Chart.DrawRectangle(name, Math.Max(0, x1), y1, Math.Min(Bars.Count - 1, x2), y2, Color.FromArgb(80, color));
+            var rect = Chart.DrawRectangle(name, Math.Max(0, x1), y1, Math.Min(Bars.Count - 1, x2), y2, Color.FromArgb(80, color.R, color.G, color.B));
             rect.IsFilled = true;
-            rect.Color = Color.FromArgb(80, color);
+            rect.Color = Color.FromArgb(80, color.R, color.G, color.B);
             Chart.DrawText($"{name}_t", text, Math.Min(Bars.Count - 1, x2), (y1 + y2) / 2.0, color);
             return rect;
         }
@@ -598,32 +846,36 @@ namespace cAlgo
             if (count <= keep) return;
         }
 
+
+        private void SetSignal(IndicatorDataSeries series, int index, double value)
+        {
+            if (PlotSignalSeriesInput)
+                series[index] = value;
+        }
+
         private void ResetSignals(int index)
         {
-            InternalBullishBOS[index] = InternalBearishBOS[index] = 0;
-            InternalBullishCHoCH[index] = InternalBearishCHoCH[index] = 0;
-            SwingBullishBOS[index] = SwingBearishBOS[index] = 0;
-            SwingBullishCHoCH[index] = SwingBearishCHoCH[index] = 0;
-            EqualHighSignal[index] = EqualLowSignal[index] = 0;
-            BullishFvgSignal[index] = BearishFvgSignal[index] = 0;
+            _evtInternalBull = _evtInternalBear = _evtSwingBull = _evtSwingBear = false;
+            InternalBullishBOS[index] = InternalBearishBOS[index] = double.NaN;
+            InternalBullishCHoCH[index] = InternalBearishCHoCH[index] = double.NaN;
+            SwingBullishBOS[index] = SwingBearishBOS[index] = double.NaN;
+            SwingBullishCHoCH[index] = SwingBearishCHoCH[index] = double.NaN;
+            EqualHighSignal[index] = EqualLowSignal[index] = double.NaN;
+            BullishFvgSignal[index] = BearishFvgSignal[index] = double.NaN;
         }
 
         private sealed class OrderBlock
         {
+            public string Id;
             public int Index;
             public double Top;
             public double Bottom;
             public bool Bullish;
             public bool Internal;
+            public bool Mitigated;
+            public ChartRectangle Box;
+            public DateTime Time;
         }
 
-        private sealed class FvgBox
-        {
-            public int Left;
-            public int Right;
-            public double Top;
-            public double Bottom;
-            public bool Bullish;
-        }
     }
 }
