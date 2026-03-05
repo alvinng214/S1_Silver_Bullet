@@ -220,6 +220,16 @@ namespace cAlgo
             if (index < Math.Max(SwingsLengthInput, EqualHighsLowsLengthInput) + 5)
                 return;
 
+            // Match Lux execution order: trailing/strong-weak is drawn before structure trend updates
+            if (ShowHighLowSwingsInput || ShowPremiumDiscountZonesInput)
+                UpdateTrailingExtremes(index);
+
+            if (ShowHighLowSwingsInput)
+                DrawHighLowSwings(index);
+
+            if (ShowPremiumDiscountZonesInput)
+                UpdatePremiumDiscountZones(index);
+
             if (ShowInternalsInput || ShowStructureInput || ShowSwingsInput || ShowEqualHighsLowsInput || ShowHighLowSwingsInput || ShowPremiumDiscountZonesInput)
                 UpdateStructure(index);
 
@@ -231,12 +241,6 @@ namespace cAlgo
 
             if (ShowDailyLevelsInput || ShowWeeklyLevelsInput || ShowMonthlyLevelsInput)
                 UpdateMtfLevels(index);
-
-            if (ShowHighLowSwingsInput || ShowPremiumDiscountZonesInput)
-                UpdateTrailingExtremes(index);
-
-            if (ShowPremiumDiscountZonesInput)
-                UpdatePremiumDiscountZones(index);
 
             if (ShowTrendInput)
                 ColorTrendBar(index);
@@ -300,8 +304,6 @@ namespace cAlgo
             if (ShowEqualHighsLowsInput)
                 DetectEqualHighLow(index, iLen);
 
-            if (ShowHighLowSwingsInput)
-                DrawHighLowSwings(index);
         }
 
         private int ComputeLeg(int index, int size, int previousLeg)
