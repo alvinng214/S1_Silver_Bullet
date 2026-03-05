@@ -207,6 +207,16 @@ namespace cAlgo
         private double _majorHighLevel = double.NaN, _majorLowLevel = double.NaN;
         private int _majorHighIndex = -1, _majorLowIndex = -1;
 
+        // Sticky "valuewhen" equivalents for cross-type pivot references
+        private double _lastHighValue = double.NaN;
+        private int _lastHighIndex = -1;
+        private double _lastLowValue = double.NaN;
+        private int _lastLowIndex = -1;
+
+        // Previous-bar snapshot of the last ZZ element, used in UpdateAdvancedArrays
+        private double _prevLastZzValue = double.NaN;
+        private string _prevLastZzType;
+
         private readonly Dictionary<string, PointerState> _pointers = new Dictionary<string, PointerState>();
         private readonly Dictionary<string, TrendLineState> _lines = new Dictionary<string, TrendLineState>();
 
@@ -234,11 +244,11 @@ namespace cAlgo
 
             UpdateZigZag(index);
 
-            if (_arrayType.Count > 2)
+            if (_arrayTypeAdv.Count > 2)
             {
-                var x0 = _arrayIndex[_arrayType.Count - 1];
-                var y0 = _arrayValue[_arrayType.Count - 1];
-                var t0 = _arrayType[_arrayType.Count - 1];
+                var x0 = _arrayIndexAdv[_arrayTypeAdv.Count - 1];
+                var y0 = _arrayValueAdv[_arrayTypeAdv.Count - 1];
+                var t0 = _arrayTypeAdv[_arrayTypeAdv.Count - 1];
                 UpdatePointers(x0, y0, t0);
             }
 
@@ -363,6 +373,10 @@ namespace cAlgo
             var highIndex = pivotIndex;
             var lowIndex = pivotIndex;
 
+            // Update sticky "valuewhen" equivalents (Pine: ta.valuewhen)
+            if (hasHigh) { _lastHighValue = highValue; _lastHighIndex = highIndex; }
+            if (hasLow)  { _lastLowValue  = lowValue;  _lastLowIndex  = lowIndex; }
+
             if (hasHigh && hasLow)
             {
                 if (_arrayType.Count == 0)
@@ -401,7 +415,7 @@ namespace cAlgo
                     if (lastType == "L" || lastType == "HL" || lastType == "LL")
                     {
                         if (highValue > lastVal) Push(PivotTypeForHigh(highValue), highValue, highIndex);
-                        else ReplaceLast(PivotTypeForLow(lowValue), lowValue, lowIndex);
+                        else if (!double.IsNaN(_lastLowValue)) ReplaceLast(PivotTypeForLow(_lastLowValue), _lastLowValue, _lastLowIndex);
                     }
                     else if (lastVal < highValue)
                         ReplaceLast(PivotTypeForHigh(highValue), highValue, highIndex);
@@ -417,7 +431,7 @@ namespace cAlgo
                     if (lastType == "H" || lastType == "HH" || lastType == "LH")
                     {
                         if (lowValue < lastVal) Push(PivotTypeForLow(lowValue), lowValue, lowIndex);
-                        else ReplaceLast(PivotTypeForHigh(highValue), highValue, highIndex);
+                        else if (!double.IsNaN(_lastHighValue)) ReplaceLast(PivotTypeForHigh(_lastHighValue), _lastHighValue, _lastHighIndex);
                     }
                     else if (lastVal > lowValue)
                         ReplaceLast(PivotTypeForLow(lowValue), lowValue, lowIndex);
@@ -425,6 +439,13 @@ namespace cAlgo
             }
 
             UpdateAdvancedArrays(index);
+
+            // Save current last ZZ element for next bar's "previous-bar" comparison
+            if (_arrayValue.Count > 0)
+            {
+                _prevLastZzValue = _arrayValue[_arrayValue.Count - 1];
+                _prevLastZzType  = _arrayType[_arrayType.Count - 1];
+            }
         }
 
         private void UpdateAdvancedArrays(int index)
@@ -452,24 +473,26 @@ namespace cAlgo
                 _arrayTypeAdv.Insert(1, "M" + _arrayType[1]); _arrayValueAdv.Insert(1, _arrayValue[1]); _arrayIndexAdv.Insert(1, _arrayIndex[1]); _lock1 = false;
             }
 
-            if (_arrayValue.Count > 1)
+            // Pine: "Making Copies of Arrays" — fires whenever the last ZZ element changed
+            // compared to the previous bar (Pine's [1] operator).
+            if (_arrayValue.Count > 1 && !double.IsNaN(_prevLastZzValue) &&
+                _prevLastZzValue != _arrayValue[_arrayValue.Count - 1])
             {
-                var last = _arrayValue[_arrayValue.Count - 1];
-                if (_arrayValue.Count > 2 && _arrayValue[_arrayValue.Count - 2] != last)
+                var last      = _arrayValue[_arrayValue.Count - 1];
+                var lastType  = _arrayType[_arrayType.Count - 1];
+                // Compare last character of current vs previous-bar type to decide push vs update
+                var prevSuffix = _prevLastZzType != null ? Suffix(_prevLastZzType) : string.Empty;
+                var lastSuffix = Suffix(lastType);
+                if (prevSuffix != lastSuffix)
                 {
-                    var prevSuffix = Suffix(_arrayType[_arrayType.Count - 2]);
-                    var lastSuffix = Suffix(_arrayType[_arrayType.Count - 1]);
-                    if (prevSuffix != lastSuffix)
-                    {
-                        _arrayTypeAdv.Add("m" + _arrayType[_arrayType.Count - 1]);
-                        _arrayValueAdv.Add(last);
-                        _arrayIndexAdv.Add(_arrayIndex[_arrayIndex.Count - 1]);
-                    }
-                    else if (_arrayValueAdv.Count > 0)
-                    {
-                        _arrayValueAdv[_arrayValueAdv.Count - 1] = last;
-                        _arrayIndexAdv[_arrayIndexAdv.Count - 1] = _arrayIndex[_arrayIndex.Count - 1];
-                    }
+                    _arrayTypeAdv.Add("m" + lastType);
+                    _arrayValueAdv.Add(last);
+                    _arrayIndexAdv.Add(_arrayIndex[_arrayIndex.Count - 1]);
+                }
+                else if (_arrayValueAdv.Count > 0)
+                {
+                    _arrayValueAdv[_arrayValueAdv.Count - 1] = last;
+                    _arrayIndexAdv[_arrayIndexAdv.Count - 1] = _arrayIndex[_arrayIndex.Count - 1];
                 }
             }
 
