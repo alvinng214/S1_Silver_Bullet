@@ -169,6 +169,13 @@ namespace cAlgo
         private int _lastSwingHighIndex = -1;
         private int _lastSwingLowIndex = -1;
 
+        private double _internalHighLevel = double.NaN;
+        private double _internalLowLevel = double.NaN;
+        private bool _internalHighCrossed;
+        private bool _internalLowCrossed;
+        private bool _swingHighCrossed;
+        private bool _swingLowCrossed;
+
         private ChartTrendLine _dailyHighLine, _dailyLowLine, _weeklyHighLine, _weeklyLowLine, _monthlyHighLine, _monthlyLowLine;
         private DateTime _lastDay = DateTime.MinValue, _lastWeek = DateTime.MinValue, _lastMonth = DateTime.MinValue;
         private double _dayHigh, _dayLow, _weekHigh, _weekLow, _monthHigh, _monthLow;
@@ -216,13 +223,13 @@ namespace cAlgo
             var intPivotLow = IsPivotLow(index - iLen, iLen);
             if (intPivotHigh)
             {
-                var lvl = Bars.HighPrices[index - iLen];
-                EmitStructure(index, true, false, lvl, true);
+                _internalHighLevel = Bars.HighPrices[index - iLen];
+                _internalHighCrossed = false;
             }
             if (intPivotLow)
             {
-                var lvl = Bars.LowPrices[index - iLen];
-                EmitStructure(index, false, false, lvl, true);
+                _internalLowLevel = Bars.LowPrices[index - iLen];
+                _internalLowCrossed = false;
             }
 
             var swingPivotHigh = IsPivotHigh(index - sLen / 2, sLen / 2);
@@ -231,7 +238,7 @@ namespace cAlgo
             {
                 _lastSwingHigh = Bars.HighPrices[index - sLen / 2];
                 _lastSwingHighIndex = index - sLen / 2;
-                EmitStructure(index, true, true, _lastSwingHigh, false);
+                _swingHighCrossed = false;
                 if (ShowSwingsInput)
                     Chart.DrawText($"swH_{index}", "HH", _lastSwingHighIndex, _lastSwingHigh, SwingBearishColorInput);
             }
@@ -239,16 +246,47 @@ namespace cAlgo
             {
                 _lastSwingLow = Bars.LowPrices[index - sLen / 2];
                 _lastSwingLowIndex = index - sLen / 2;
-                EmitStructure(index, false, true, _lastSwingLow, false);
+                _swingLowCrossed = false;
                 if (ShowSwingsInput)
                     Chart.DrawText($"swL_{index}", "LL", _lastSwingLowIndex, _lastSwingLow, SwingBullishColorInput);
             }
+
+            ProcessStructureCrosses(index);
 
             if (ShowEqualHighsLowsInput)
                 DetectEqualHighLow(index, iLen);
 
             if (ShowHighLowSwingsInput)
                 DrawHighLowSwings(index);
+        }
+
+        private void ProcessStructureCrosses(int index)
+        {
+            var close = Bars.ClosePrices[index];
+
+            if (!double.IsNaN(_internalHighLevel) && !_internalHighCrossed && close > _internalHighLevel)
+            {
+                _internalHighCrossed = true;
+                EmitStructure(index, true, false, _internalHighLevel, true);
+            }
+
+            if (!double.IsNaN(_internalLowLevel) && !_internalLowCrossed && close < _internalLowLevel)
+            {
+                _internalLowCrossed = true;
+                EmitStructure(index, false, false, _internalLowLevel, true);
+            }
+
+            if (!double.IsNaN(_lastSwingHigh) && !_swingHighCrossed && close > _lastSwingHigh)
+            {
+                _swingHighCrossed = true;
+                EmitStructure(index, true, true, _lastSwingHigh, false);
+            }
+
+            if (!double.IsNaN(_lastSwingLow) && !_swingLowCrossed && close < _lastSwingLow)
+            {
+                _swingLowCrossed = true;
+                EmitStructure(index, false, true, _lastSwingLow, false);
+            }
         }
 
         private void EmitStructure(int index, bool bullishBreak, bool swing, double level, bool isInternal)
