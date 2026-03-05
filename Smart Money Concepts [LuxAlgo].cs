@@ -198,10 +198,19 @@ namespace cAlgo
         private ChartRectangle _premiumBox, _equilibriumBox, _discountBox;
         private int _obIdCounter = 0;
 
+        private double _trailingTop = double.MinValue;
+        private double _trailingBottom = double.MaxValue;
+        private DateTime _trailingBarTime = DateTime.MinValue;
+        private int _trailingBarIndex = -1;
+        private DateTime _trailingLastTopTime = DateTime.MinValue;
+        private DateTime _trailingLastBottomTime = DateTime.MinValue;
+
         protected override void Initialize()
         {
             _dayHigh = _weekHigh = _monthHigh = double.MinValue;
             _dayLow = _weekLow = _monthLow = double.MaxValue;
+            _trailingTop = double.MinValue;
+            _trailingBottom = double.MaxValue;
         }
 
         public override void Calculate(int index)
@@ -222,6 +231,9 @@ namespace cAlgo
 
             if (ShowDailyLevelsInput || ShowWeeklyLevelsInput || ShowMonthlyLevelsInput)
                 UpdateMtfLevels(index);
+
+            if (ShowHighLowSwingsInput || ShowPremiumDiscountZonesInput)
+                UpdateTrailingExtremes(index);
 
             if (ShowPremiumDiscountZonesInput)
                 UpdatePremiumDiscountZones(index);
@@ -725,27 +737,49 @@ namespace cAlgo
             Chart.DrawText($"lvl_{tag}_lt_{index}", $"P{tag}L", index, low, color);
         }
 
+        private void UpdateTrailingExtremes(int index)
+        {
+            var h = Bars.HighPrices[index];
+            var l = Bars.LowPrices[index];
+
+            if (h >= _trailingTop)
+            {
+                _trailingTop = h;
+                _trailingLastTopTime = Bars.OpenTimes[index];
+            }
+
+            if (l <= _trailingBottom)
+            {
+                _trailingBottom = l;
+                _trailingLastBottomTime = Bars.OpenTimes[index];
+            }
+
+            _trailingBarTime = Bars.OpenTimes[index];
+            _trailingBarIndex = index;
+        }
+
         private void DrawHighLowSwings(int index)
         {
-            if (!double.IsNaN(_lastSwingHigh))
-            {
-                Chart.DrawTrendLine("smc_wh_line", _lastSwingHighIndex, _lastSwingHigh, index + 1, _lastSwingHigh, SwingBearishColorInput, 1, LineStyle.DotsRare);
-                Chart.DrawText("smc_wh_label", Bars.ClosePrices[index] > _lastSwingHigh ? "Strong High" : "Weak High", index, _lastSwingHigh, SwingBearishColorInput);
-            }
-            if (!double.IsNaN(_lastSwingLow))
-            {
-                Chart.DrawTrendLine("smc_wl_line", _lastSwingLowIndex, _lastSwingLow, index + 1, _lastSwingLow, SwingBullishColorInput, 1, LineStyle.DotsRare);
-                Chart.DrawText("smc_wl_label", Bars.ClosePrices[index] < _lastSwingLow ? "Strong Low" : "Weak Low", index, _lastSwingLow, SwingBullishColorInput);
-            }
+            if (_trailingTop == double.MinValue || _trailingBottom == double.MaxValue)
+                return;
+
+            var dt = index > 0 ? (Bars.OpenTimes[index] - Bars.OpenTimes[index - 1]) : TimeSpan.FromMinutes(1);
+            var rightTime = Bars.OpenTimes[index].AddTicks(dt.Ticks * 20);
+
+            Chart.DrawTrendLine("smc_wh_line", _trailingLastTopTime, _trailingTop, rightTime, _trailingTop, SwingBearishColorInput, 1, LineStyle.Solid);
+            Chart.DrawText("smc_wh_label", _swingTrend < 0 ? "Strong High" : "Weak High", rightTime, _trailingTop, SwingBearishColorInput);
+
+            Chart.DrawTrendLine("smc_wl_line", _trailingLastBottomTime, _trailingBottom, rightTime, _trailingBottom, SwingBullishColorInput, 1, LineStyle.Solid);
+            Chart.DrawText("smc_wl_label", _swingTrend > 0 ? "Strong Low" : "Weak Low", rightTime, _trailingBottom, SwingBullishColorInput);
         }
 
         private void UpdatePremiumDiscountZones(int index)
         {
-            if (double.IsNaN(_lastSwingHigh) || double.IsNaN(_lastSwingLow) || _lastSwingHigh <= _lastSwingLow)
+            if (_trailingTop == double.MinValue || _trailingBottom == double.MaxValue || _trailingTop <= _trailingBottom)
                 return;
 
-            var top = _lastSwingHigh;
-            var bottom = _lastSwingLow;
+            var top = _trailingTop;
+            var bottom = _trailingBottom;
             var premiumTop = top;
             var premiumBottom = 0.95 * top + 0.05 * bottom;
             var eqTop = 0.525 * top + 0.475 * bottom;
