@@ -203,6 +203,9 @@ namespace cAlgo
 
         private bool _lock0 = true;
         private bool _lock1 = true;
+        private int _lastArrayCount;
+        private string _lastArrayType = string.Empty;
+        private double _lastArrayValue = double.NaN;
 
         private double _majorHighLevel = double.NaN, _majorLowLevel = double.NaN;
         private int _majorHighIndex = -1, _majorLowIndex = -1;
@@ -287,6 +290,13 @@ namespace cAlgo
                         if (showLine)
                         {
                             var line = Chart.DrawTrendLine($"ATL_{key}_{index}", p.X0, p.Y0, p.X1, p.Y1, color, width, MapStyle(style));
+                            if (extend == ExtendInput.Left || extend == ExtendInput.Both)
+                            {
+                                var firstIndex = 0;
+                                var firstY = LinePrice(p.X0, p.Y0, p.X1, p.Y1, firstIndex);
+                                line.Time1 = Bars.OpenTimes[firstIndex];
+                                line.Y1 = firstY;
+                            }
                             line.ExtendToInfinity = extend == ExtendInput.Both || extend == ExtendInput.Right;
                             st.Line = line;
                             if (deletePrev && st.PrevLineName != null)
@@ -455,13 +465,15 @@ namespace cAlgo
             if (_arrayValue.Count > 1)
             {
                 var last = _arrayValue[_arrayValue.Count - 1];
-                if (_arrayValue.Count > 2 && _arrayValue[_arrayValue.Count - 2] != last)
+                var lastTypeNow = _arrayType[_arrayType.Count - 1];
+                var pivotChanged = _arrayValue.Count != _lastArrayCount || lastTypeNow != _lastArrayType || last != _lastArrayValue;
+                if (pivotChanged)
                 {
-                    var prevSuffix = Suffix(_arrayType[_arrayType.Count - 2]);
-                    var lastSuffix = Suffix(_arrayType[_arrayType.Count - 1]);
+                    var prevSuffix = _arrayType.Count > 1 ? Suffix(_arrayType[_arrayType.Count - 2]) : string.Empty;
+                    var lastSuffix = Suffix(lastTypeNow);
                     if (prevSuffix != lastSuffix)
                     {
-                        _arrayTypeAdv.Add("m" + _arrayType[_arrayType.Count - 1]);
+                        _arrayTypeAdv.Add("m" + lastTypeNow);
                         _arrayValueAdv.Add(last);
                         _arrayIndexAdv.Add(_arrayIndex[_arrayIndex.Count - 1]);
                     }
@@ -471,6 +483,10 @@ namespace cAlgo
                         _arrayIndexAdv[_arrayIndexAdv.Count - 1] = _arrayIndex[_arrayIndex.Count - 1];
                     }
                 }
+
+                _lastArrayCount = _arrayValue.Count;
+                _lastArrayType = lastTypeNow;
+                _lastArrayValue = last;
             }
 
             if (_arrayValueAdv.Count <= 1 || double.IsNaN(_majorHighLevel) || double.IsNaN(_majorLowLevel))
