@@ -113,7 +113,7 @@ namespace cAlgo
         public bool Show_MnExUp { get; set; }
         [Parameter("Delete Previous Minor External Up   TrendLine", DefaultValue = true, Group = "Minor External Up   TrendLine")]
         public bool Delete_Pre_MnExUp { get; set; }
-        [Parameter("Color", DefaultValue = "#016B05A6", Group = "Minor External Up   TrendLine")]
+        [Parameter("Color", DefaultValue = "#A6016B05", Group = "Minor External Up   TrendLine")]
         public Color Color_MnExUp { get; set; }
         [Parameter("Style", DefaultValue = LineStyleInput.Dashed, Group = "Minor External Up   TrendLine")]
         public LineStyleInput Style_MnExUp { get; set; }
@@ -126,7 +126,7 @@ namespace cAlgo
         public bool Show_MnExDown { get; set; }
         [Parameter("Delete Previous Minor External Down   TrendLine", DefaultValue = true, Group = "Minor External Down TrendLine")]
         public bool Delete_Pre_MnExDown { get; set; }
-        [Parameter("Color", DefaultValue = "#AA0202A6", Group = "Minor External Down TrendLine")]
+        [Parameter("Color", DefaultValue = "#A6AA0202", Group = "Minor External Down TrendLine")]
         public Color Color_MnExDown { get; set; }
         [Parameter("Style", DefaultValue = LineStyleInput.Dashed, Group = "Minor External Down TrendLine")]
         public LineStyleInput Style_MnExDown { get; set; }
@@ -139,7 +139,7 @@ namespace cAlgo
         public bool Show_MnInUp { get; set; }
         [Parameter("Delete Previous Minor Internal Up   TrendLine", DefaultValue = true, Group = "Minor Internal Up   TrendLine")]
         public bool Delete_Pre_MnInUp { get; set; }
-        [Parameter("Color", DefaultValue = "#016B05A6", Group = "Minor Internal Up   TrendLine")]
+        [Parameter("Color", DefaultValue = "#A6016B05", Group = "Minor Internal Up   TrendLine")]
         public Color Color_MnInUp { get; set; }
         [Parameter("Style", DefaultValue = LineStyleInput.Dotted, Group = "Minor Internal Up   TrendLine")]
         public LineStyleInput Style_MnInUp { get; set; }
@@ -152,7 +152,7 @@ namespace cAlgo
         public bool Show_MnInDown { get; set; }
         [Parameter("Delete Previous Minor Internal Down TrendLine", DefaultValue = true, Group = "Minor Internal Down TrendLine")]
         public bool Delete_Pre_MnInDown { get; set; }
-        [Parameter("Color", DefaultValue = "#AA0202A6", Group = "Minor Internal Down TrendLine")]
+        [Parameter("Color", DefaultValue = "#A6AA0202", Group = "Minor Internal Down TrendLine")]
         public Color Color_MnInDown { get; set; }
         [Parameter("Style", DefaultValue = LineStyleInput.Dotted, Group = "Minor Internal Down TrendLine")]
         public LineStyleInput Style_MnInDown { get; set; }
@@ -281,7 +281,12 @@ namespace cAlgo
                 var nowPrice = LinePrice(st.Line.Time1, st.Line.Y1, st.Line.Time2, st.Line.Y2, Bars.OpenTimes[index]);
                 var keep = isUp ? Bars.ClosePrices[index] > nowPrice : Bars.ClosePrices[index] < nowPrice;
                 if (keep && st.PermitSet)
-                    st.Line.Time2 = Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)];
+                {
+                    var newTime2 = Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)];
+                    var newY2 = LinePrice(st.Line.Time1, st.Line.Y1, st.Line.Time2, st.Line.Y2, newTime2);
+                    st.Line.Time2 = newTime2;
+                    st.Line.Y2 = newY2;
+                }
                 else
                     st.PermitSet = false;
             }
