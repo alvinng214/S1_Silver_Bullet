@@ -70,28 +70,28 @@ namespace cAlgo
         [Parameter("Minimum Trade Framework", DefaultValue = false, Group = "Show")]
         public bool ShowMinFramework { get; set; }
 
-        [Output("Bull FVG Formed", LineColor = "Lime")]
+        [Output("Bull FVG Formed", LineColor = "Lime", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BullFvgFormed { get; set; }
 
-        [Output("Bull FVG Cancel", LineColor = "Red")]
+        [Output("Bull FVG Cancel", LineColor = "Red", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BullFvgCancel { get; set; }
 
-        [Output("Bull FVG Retrace", LineColor = "Aqua")]
+        [Output("Bull FVG Retrace", LineColor = "Aqua", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BullFvgRetrace { get; set; }
 
-        [Output("Bull Target Reached", LineColor = "Yellow")]
+        [Output("Bull Target Reached", LineColor = "Yellow", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BullTargetReached { get; set; }
 
-        [Output("Bear FVG Formed", LineColor = "Lime")]
+        [Output("Bear FVG Formed", LineColor = "Lime", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BearFvgFormed { get; set; }
 
-        [Output("Bear FVG Cancel", LineColor = "Red")]
+        [Output("Bear FVG Cancel", LineColor = "Red", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BearFvgCancel { get; set; }
 
-        [Output("Bear FVG Retrace", LineColor = "Aqua")]
+        [Output("Bear FVG Retrace", LineColor = "Aqua", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BearFvgRetrace { get; set; }
 
-        [Output("Bear Target Reached", LineColor = "Yellow")]
+        [Output("Bear Target Reached", LineColor = "Yellow", PlotType = PlotType.Points, Thickness = 2)]
         public IndicatorDataSeries BearTargetReached { get; set; }
 
         private const int MaxSize = 100;
@@ -111,7 +111,7 @@ namespace cAlgo
         private readonly List<BarPoint> _bpH = new List<BarPoint>();
         private readonly List<BarPoint> _bpL = new List<BarPoint>();
 
-        private readonly List<ChartTrendLine> _sessionLines = new List<ChartTrendLine>();
+        private readonly List<ChartVerticalLine> _sessionLines = new List<ChartVerticalLine>();
 
         private int _trend;
         private bool _prevIsInSb;
@@ -125,6 +125,7 @@ namespace cAlgo
 
         private double _minTf;
         private int _htfMinutes;
+        private const double SignalArrowOffsetTicks = 5.0;
 
         protected override void Initialize()
         {
@@ -259,14 +260,14 @@ namespace cAlgo
             {
                 var fvg = CreateFvg(ix2, ix, lo2, hi, false, index);
                 _bearFvgs.Insert(0, fvg);
-                BearFvgFormed[index] = 1;
+                BearFvgFormed[index] = Bars.HighPrices[index];
             }
 
             if (lo > hi2 && (!FilterByTrend || _trend == 1))
             {
                 var fvg = CreateFvg(ix2, ix, hi2, lo, true, index);
                 _bullFvgs.Insert(0, fvg);
-                BullFvgFormed[index] = 1;
+                BullFvgFormed[index] = Bars.LowPrices[index];
             }
         }
 
@@ -307,7 +308,7 @@ namespace cAlgo
                 if (Bars.ClosePrices[index] < fvg.Bottom)
                 {
                     fvg.Broken = true;
-                    BullFvgCancel[index] = 1;
+                    BullFvgCancel[index] = Bars.LowPrices[index];
                     if (RemoveBrokenFvg)
                     {
                         RemoveFvgVisuals(fvg);
@@ -317,7 +318,8 @@ namespace cAlgo
                 else if (!fvg.Active && Bars.LowPrices[index] < fvg.Top)
                 {
                     fvg.Active = true;
-                    BullFvgRetrace[index] = 1;
+                    BullFvgRetrace[index] = Bars.LowPrices[index];
+                    DrawLongSignalArrow(index);
                     var diff = Bars.ClosePrices[index] + _minTf;
                     CreateTargets(fvg, index, true, diff);
                     if (ShowMinFramework)
@@ -338,7 +340,7 @@ namespace cAlgo
                 if (Bars.ClosePrices[index] > fvg.Top)
                 {
                     fvg.Broken = true;
-                    BearFvgCancel[index] = 1;
+                    BearFvgCancel[index] = Bars.HighPrices[index];
                     if (RemoveBrokenFvg)
                     {
                         RemoveFvgVisuals(fvg);
@@ -348,7 +350,8 @@ namespace cAlgo
                 else if (!fvg.Active && Bars.HighPrices[index] > fvg.Bottom)
                 {
                     fvg.Active = true;
-                    BearFvgRetrace[index] = 1;
+                    BearFvgRetrace[index] = Bars.HighPrices[index];
+                    DrawShortSignalArrow(index);
                     var diff = Bars.ClosePrices[index] - _minTf;
                     CreateTargets(fvg, index, false, diff);
                     if (ShowMinFramework)
@@ -373,7 +376,7 @@ namespace cAlgo
                     if (Bars.HighPrices[index] > target.Price)
                     {
                         target.Active = false;
-                        BullTargetReached[index] = 1;
+                        BullTargetReached[index] = Bars.HighPrices[index];
                     }
                 }
             }
@@ -392,7 +395,7 @@ namespace cAlgo
                     if (Bars.LowPrices[index] < target.Price)
                     {
                         target.Active = false;
-                        BearTargetReached[index] = 1;
+                        BearTargetReached[index] = Bars.LowPrices[index];
                     }
                 }
             }
@@ -450,7 +453,8 @@ namespace cAlgo
                     continue;
 
                 var x1 = ExtendLeft ? p.Index : index;
-                var line = Chart.DrawTrendLine($"tar_{fvg.Id}_{p.Index}", x1, p.Price, index, p.Price, color, 1, LineStyle.DotsRare);
+                var x2 = index + 5;
+                var line = Chart.DrawTrendLine($"tar_{fvg.Id}_{p.Index}", x1, p.Price, x2, p.Price, color, 1, LineStyle.DotsRare);
                 fvg.Targets.Add(new TargetLevel { Active = true, Price = p.Price, Line = line });
             }
         }
@@ -465,7 +469,7 @@ namespace cAlgo
 
                 if (!fvg.Active || (RemoveBrokenFvg && fvg.Broken) || Bars.ClosePrices[index] < fvg.Bottom)
                 {
-                    BullFvgCancel[index] = 1;
+                    BullFvgCancel[index] = Bars.LowPrices[index];
                     RemoveFvgVisuals(fvg);
                     _bullFvgs.RemoveAt(i);
                 }
@@ -479,7 +483,7 @@ namespace cAlgo
 
                 if (!fvg.Active || (RemoveBrokenFvg && fvg.Broken) || Bars.ClosePrices[index] > fvg.Top)
                 {
-                    BearFvgCancel[index] = 1;
+                    BearFvgCancel[index] = Bars.HighPrices[index];
                     RemoveFvgVisuals(fvg);
                     _bearFvgs.RemoveAt(i);
                 }
@@ -622,7 +626,7 @@ namespace cAlgo
 
         private void DrawSessionBoundary(int index, string text)
         {
-            var line = Chart.DrawTrendLine("sb_line_" + index, index, Bars.LowPrices[index], index, Bars.HighPrices[index], SessionColor, 2, LineStyle.Solid);
+            var line = Chart.DrawVerticalLine("sb_line_" + index, Bars.OpenTimes[index], SessionColor, 2, LineStyle.Solid);
             _sessionLines.Add(line);
             _lastSessionName = text;
         }
@@ -673,14 +677,26 @@ namespace cAlgo
 
         private void ResetOutputs(int index)
         {
-            BullFvgFormed[index] = 0;
-            BullFvgCancel[index] = 0;
-            BullFvgRetrace[index] = 0;
-            BullTargetReached[index] = 0;
-            BearFvgFormed[index] = 0;
-            BearFvgCancel[index] = 0;
-            BearFvgRetrace[index] = 0;
-            BearTargetReached[index] = 0;
+            BullFvgFormed[index] = double.NaN;
+            BullFvgCancel[index] = double.NaN;
+            BullFvgRetrace[index] = double.NaN;
+            BullTargetReached[index] = double.NaN;
+            BearFvgFormed[index] = double.NaN;
+            BearFvgCancel[index] = double.NaN;
+            BearFvgRetrace[index] = double.NaN;
+            BearTargetReached[index] = double.NaN;
+        }
+
+        private void DrawLongSignalArrow(int index)
+        {
+            var y = Bars.LowPrices[index] - Symbol.TickSize * SignalArrowOffsetTicks;
+            Chart.DrawIcon($"long_signal_{index}", ChartIconType.UpArrow, index, y, Color.Lime);
+        }
+
+        private void DrawShortSignalArrow(int index)
+        {
+            var y = Bars.HighPrices[index] + Symbol.TickSize * SignalArrowOffsetTicks;
+            Chart.DrawIcon($"short_signal_{index}", ChartIconType.DownArrow, index, y, Color.Red);
         }
 
         private sealed class PivotPoint
