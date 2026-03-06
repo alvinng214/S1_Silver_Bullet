@@ -593,25 +593,30 @@ namespace cAlgo
             }
         }
 
-        // Break Up   → red   DownArrow above bar  (support trendline broken downward)
-        // Break Down → green UpArrow   below bar  (resistance trendline broken upward)
-        // React Up   → green UpArrow   below bar  (price bounced off support)
-        // React Down → red   DownArrow above bar  (price bounced off resistance)
+        // Break Up   → red   ▼ above bar  (support trendline broken downward)
+        // Break Down → green ▲ below bar  (resistance trendline broken upward)
+        // React Up   → green ▲ below bar  (price bounced off support)
+        // React Down → red   ▼ above bar  (price bounced off resistance)
         private void DrawSignals(int index, string key, bool isUp, bool breakAlert, bool reactAlert)
         {
+            var pip = Symbol.PipSize;
             if (breakAlert)
             {
+                ChartText t;
                 if (isUp)
-                    Chart.DrawIcon($"ATL_B_{key}_{index}", IconType.DownArrow, index, Bars.HighPrices[index], Color.Red);
+                    t = Chart.DrawText($"ATL_B_{key}_{index}", "▼", index, Bars.HighPrices[index] + pip, Color.Red);
                 else
-                    Chart.DrawIcon($"ATL_B_{key}_{index}", IconType.UpArrow,   index, Bars.LowPrices[index],  Color.Green);
+                    t = Chart.DrawText($"ATL_B_{key}_{index}", "▲", index, Bars.LowPrices[index]  - pip, Color.Green);
+                t.FontSize = 12;
             }
             if (reactAlert)
             {
+                ChartText t;
                 if (isUp)
-                    Chart.DrawIcon($"ATL_R_{key}_{index}", IconType.UpArrow,   index, Bars.LowPrices[index],  Color.Green);
+                    t = Chart.DrawText($"ATL_R_{key}_{index}", "▲", index, Bars.LowPrices[index]  - pip, Color.Green);
                 else
-                    Chart.DrawIcon($"ATL_R_{key}_{index}", IconType.DownArrow, index, Bars.HighPrices[index], Color.Red);
+                    t = Chart.DrawText($"ATL_R_{key}_{index}", "▼", index, Bars.HighPrices[index] + pip, Color.Red);
+                t.FontSize = 12;
             }
         }
 
