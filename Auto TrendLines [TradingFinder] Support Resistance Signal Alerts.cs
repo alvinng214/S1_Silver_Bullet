@@ -161,39 +161,6 @@ namespace cAlgo
         [Parameter("Width", DefaultValue = 1, Group = "Minor Internal Down TrendLine")]
         public int Width_MnInDown { get; set; }
 
-        [Output("Break Major External Up", LineColor = "Red")]
-        public IndicatorDataSeries Break_MjExUp { get; set; }
-        [Output("React Major External Up", LineColor = "Lime")]
-        public IndicatorDataSeries React_MjExUp { get; set; }
-        [Output("Break Major External Down", LineColor = "Lime")]
-        public IndicatorDataSeries Break_MjExDown { get; set; }
-        [Output("React Major External Down", LineColor = "Red")]
-        public IndicatorDataSeries React_MjExDown { get; set; }
-        [Output("Break Major Internal Up", LineColor = "Red")]
-        public IndicatorDataSeries Break_MjInUp { get; set; }
-        [Output("React Major Internal Up", LineColor = "Lime")]
-        public IndicatorDataSeries React_MjInUp { get; set; }
-        [Output("Break Major Internal Down", LineColor = "Lime")]
-        public IndicatorDataSeries Break_MjInDown { get; set; }
-        [Output("React Major Internal Down", LineColor = "Red")]
-        public IndicatorDataSeries React_MjInDown { get; set; }
-        [Output("Break Minor External Up", LineColor = "Red")]
-        public IndicatorDataSeries Break_MnExUp { get; set; }
-        [Output("React Minor External Up", LineColor = "Lime")]
-        public IndicatorDataSeries React_MnExUp { get; set; }
-        [Output("Break Minor External Down", LineColor = "Lime")]
-        public IndicatorDataSeries Break_MnExDown { get; set; }
-        [Output("React Minor External Down", LineColor = "Red")]
-        public IndicatorDataSeries React_MnExDown { get; set; }
-        [Output("Break Minor Internal Up", LineColor = "Red")]
-        public IndicatorDataSeries Break_MnInUp { get; set; }
-        [Output("React Minor Internal Up", LineColor = "Lime")]
-        public IndicatorDataSeries React_MnInUp { get; set; }
-        [Output("Break Minor Internal Down", LineColor = "Lime")]
-        public IndicatorDataSeries Break_MnInDown { get; set; }
-        [Output("React Minor Internal Down", LineColor = "Red")]
-        public IndicatorDataSeries React_MnInDown { get; set; }
-
         private readonly List<string> _arrayType = new List<string>();
         private readonly List<double> _arrayValue = new List<double>();
         private readonly List<int> _arrayIndex = new List<int>();
@@ -264,14 +231,14 @@ namespace cAlgo
             var a7 = CorrectionChecker(index, "MnInUp", mhlm, true, Show_MnInUp, Delete_Pre_MnInUp, Color_MnInUp, Style_MnInUp, Extend_MnInUp, Width_MnInUp, Alert_MnInUp_B, Alert_MnInUp_R);
             var a8 = CorrectionChecker(index, "MnInDown", mlhm, false, Show_MnInDown, Delete_Pre_MnInDown, Color_MnInDown, Style_MnInDown, Extend_MnInDown, Width_MnInDown, Alert_MnInDown_B, Alert_MnInDown_R);
 
-            Break_MjExUp[index] = a1.breakAlert ? 1 : 0; React_MjExUp[index] = a1.reactAlert ? 1 : 0;
-            Break_MjExDown[index] = a2.breakAlert ? 1 : 0; React_MjExDown[index] = a2.reactAlert ? 1 : 0;
-            Break_MjInUp[index] = a3.breakAlert ? 1 : 0; React_MjInUp[index] = a3.reactAlert ? 1 : 0;
-            Break_MjInDown[index] = a4.breakAlert ? 1 : 0; React_MjInDown[index] = a4.reactAlert ? 1 : 0;
-            Break_MnExUp[index] = a5.breakAlert ? 1 : 0; React_MnExUp[index] = a5.reactAlert ? 1 : 0;
-            Break_MnExDown[index] = a6.breakAlert ? 1 : 0; React_MnExDown[index] = a6.reactAlert ? 1 : 0;
-            Break_MnInUp[index] = a7.breakAlert ? 1 : 0; React_MnInUp[index] = a7.reactAlert ? 1 : 0;
-            Break_MnInDown[index] = a8.breakAlert ? 1 : 0; React_MnInDown[index] = a8.reactAlert ? 1 : 0;
+            DrawSignals(index, "MjExUp",   true,  a1.breakAlert, a1.reactAlert);
+            DrawSignals(index, "MjExDown", false, a2.breakAlert, a2.reactAlert);
+            DrawSignals(index, "MjInUp",   true,  a3.breakAlert, a3.reactAlert);
+            DrawSignals(index, "MjInDown", false, a4.breakAlert, a4.reactAlert);
+            DrawSignals(index, "MnExUp",   true,  a5.breakAlert, a5.reactAlert);
+            DrawSignals(index, "MnExDown", false, a6.breakAlert, a6.reactAlert);
+            DrawSignals(index, "MnInUp",   true,  a7.breakAlert, a7.reactAlert);
+            DrawSignals(index, "MnInDown", false, a8.breakAlert, a8.reactAlert);
         }
 
         private (bool breakAlert, bool reactAlert) CorrectionChecker(int index, string key, PointerState p, bool isUp, bool showLine, bool deletePrev, Color color, LineStyleInput style, ExtendInput extend, int width, OnOff breakOn, OnOff reactOn)
@@ -615,12 +582,37 @@ namespace cAlgo
             return y1 + m * (t - t1).TotalSeconds;
         }
 
+        private static readonly string[] SignalKeys = { "MjExUp", "MjExDown", "MjInUp", "MjInDown", "MnExUp", "MnExDown", "MnInUp", "MnInDown" };
+
         private void ResetSignals(int index)
         {
-            Break_MjExUp[index] = React_MjExUp[index] = Break_MjExDown[index] = React_MjExDown[index] = 0;
-            Break_MjInUp[index] = React_MjInUp[index] = Break_MjInDown[index] = React_MjInDown[index] = 0;
-            Break_MnExUp[index] = React_MnExUp[index] = Break_MnExDown[index] = React_MnExDown[index] = 0;
-            Break_MnInUp[index] = React_MnInUp[index] = Break_MnInDown[index] = React_MnInDown[index] = 0;
+            foreach (var key in SignalKeys)
+            {
+                Chart.RemoveObject($"ATL_B_{key}_{index}");
+                Chart.RemoveObject($"ATL_R_{key}_{index}");
+            }
+        }
+
+        // Break Up   → red   DownArrow above bar  (support trendline broken downward)
+        // Break Down → green UpArrow   below bar  (resistance trendline broken upward)
+        // React Up   → green UpArrow   below bar  (price bounced off support)
+        // React Down → red   DownArrow above bar  (price bounced off resistance)
+        private void DrawSignals(int index, string key, bool isUp, bool breakAlert, bool reactAlert)
+        {
+            if (breakAlert)
+            {
+                if (isUp)
+                    Chart.DrawIcon($"ATL_B_{key}_{index}", IconType.DownArrow, index, Bars.HighPrices[index], Color.Red);
+                else
+                    Chart.DrawIcon($"ATL_B_{key}_{index}", IconType.UpArrow,   index, Bars.LowPrices[index],  Color.Green);
+            }
+            if (reactAlert)
+            {
+                if (isUp)
+                    Chart.DrawIcon($"ATL_R_{key}_{index}", IconType.UpArrow,   index, Bars.LowPrices[index],  Color.Green);
+                else
+                    Chart.DrawIcon($"ATL_R_{key}_{index}", IconType.DownArrow, index, Bars.HighPrices[index], Color.Red);
+            }
         }
 
         private sealed class PointerState
