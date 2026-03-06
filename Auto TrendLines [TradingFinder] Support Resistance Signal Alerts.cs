@@ -478,14 +478,14 @@ namespace cAlgo
             if (_arrayValue.Count > 1 && !double.IsNaN(_prevLastZzValue) &&
                 _prevLastZzValue != _arrayValue[_arrayValue.Count - 1])
             {
-                var last      = _arrayValue[_arrayValue.Count - 1];
-                var lastType  = _arrayType[_arrayType.Count - 1];
+                var last        = _arrayValue[_arrayValue.Count - 1];
+                var zzLastType  = _arrayType[_arrayType.Count - 1];
                 // Compare last character of current vs previous-bar type to decide push vs update
                 var prevSuffix = _prevLastZzType != null ? Suffix(_prevLastZzType) : string.Empty;
-                var lastSuffix = Suffix(lastType);
+                var lastSuffix = Suffix(zzLastType);
                 if (prevSuffix != lastSuffix)
                 {
-                    _arrayTypeAdv.Add("m" + lastType);
+                    _arrayTypeAdv.Add("m" + zzLastType);
                     _arrayValueAdv.Add(last);
                     _arrayIndexAdv.Add(_arrayIndex[_arrayIndex.Count - 1]);
                 }
