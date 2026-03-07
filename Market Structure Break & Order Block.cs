@@ -22,6 +22,12 @@ namespace cAlgo
         [Parameter("Show Last Bearish Blocks", Group = "Settings", DefaultValue = 3, MinValue = 0)]
         public int ShowBearishBlocks { get; set; }
 
+        [Parameter("Show Last Bullish Breaker/Mitigation Blocks", Group = "Settings", DefaultValue = 3, MinValue = 0)]
+        public int ShowBullishBreakerBlocks { get; set; }
+
+        [Parameter("Show Last Bearish Breaker/Mitigation Blocks", Group = "Settings", DefaultValue = 3, MinValue = 0)]
+        public int ShowBearishBreakerBlocks { get; set; }
+
         public enum LabelSizeOpt { Tiny, Small, Normal, Large, Huge }
 
         [Parameter("Text Size", Group = "Settings", DefaultValue = LabelSizeOpt.Tiny)]
@@ -96,6 +102,10 @@ namespace cAlgo
         private readonly List<int> _marketSeries = new List<int>();
         private readonly List<int> _l0iSeries = new List<int>();
         private readonly List<int> _h0iSeries = new List<int>();
+        private readonly List<int> _buObIndexSeries = new List<int>();
+        private readonly List<int> _beObIndexSeries = new List<int>();
+        private readonly List<int> _buBbIndexSeries = new List<int>();
+        private readonly List<int> _beBbIndexSeries = new List<int>();
 
         private int _trend = 1;
         private int _market = 1;
@@ -183,10 +193,43 @@ namespace cAlgo
             }
             _marketSeries.Add(_market);
 
-            var buObIndex = FindLastCandleIndex(h1i, GetSeriesValue(_l0iSeries, index - ZigZagLength, l0i), true, index, true);
-            var beObIndex = FindLastCandleIndex(l1i, GetSeriesValue(_h0iSeries, index - ZigZagLength, h0i), false, index, true);
-            var beBbIndex = FindLastCandleIndex(h1i - ZigZagLength, l1i, true, index, false);
-            var buBbIndex = FindLastCandleIndex(l1i - ZigZagLength, h1i, false, index, false);
+            var buObIndex = index > 0 ? _buObIndexSeries[index - 1] : index;
+            var buObRangeEnd = GetSeriesValue(_l0iSeries, index - ZigZagLength, l0i);
+            ScanPineRange(h1i, buObRangeEnd, i =>
+            {
+                var source = index - i;
+                if (source >= 0 && source <= index && Bars.OpenPrices[source] > Bars.ClosePrices[source])
+                    buObIndex = source;
+            });
+            _buObIndexSeries.Add(buObIndex);
+
+            var beObIndex = index > 0 ? _beObIndexSeries[index - 1] : index;
+            var beObRangeEnd = GetSeriesValue(_h0iSeries, index - ZigZagLength, h0i);
+            ScanPineRange(l1i, beObRangeEnd, i =>
+            {
+                var source = index - i;
+                if (source >= 0 && source <= index && Bars.OpenPrices[source] < Bars.ClosePrices[source])
+                    beObIndex = source;
+            });
+            _beObIndexSeries.Add(beObIndex);
+
+            var beBbIndex = index > 0 ? _beBbIndexSeries[index - 1] : index;
+            ScanPineRange(h1i - ZigZagLength, l1i, i =>
+            {
+                var source = index - i;
+                if (source >= 0 && source <= index && Bars.OpenPrices[source] > Bars.ClosePrices[source])
+                    beBbIndex = source;
+            });
+            _beBbIndexSeries.Add(beBbIndex);
+
+            var buBbIndex = index > 0 ? _buBbIndexSeries[index - 1] : index;
+            ScanPineRange(l1i - ZigZagLength, h1i, i =>
+            {
+                var source = index - i;
+                if (source >= 0 && source <= index && Bars.OpenPrices[source] < Bars.ClosePrices[source])
+                    buBbIndex = source;
+            });
+            _buBbIndexSeries.Add(buBbIndex);
 
             if (marketChanged)
             {
@@ -209,9 +252,9 @@ namespace cAlgo
             }
 
             ApplyVisibilityLimit(_buObBoxes, ShowBullishBlocks);
-            ApplyVisibilityLimit(_buBbBoxes, ShowBullishBlocks);
+            ApplyVisibilityLimit(_buBbBoxes, ShowBullishBreakerBlocks);
             ApplyVisibilityLimit(_beObBoxes, ShowBearishBlocks);
-            ApplyVisibilityLimit(_beBbBoxes, ShowBearishBlocks);
+            ApplyVisibilityLimit(_beBbBoxes, ShowBearishBreakerBlocks);
 
             ProcessBullZones(_buObBoxes, index, "Price in the BU-OB zone");
             ProcessBearZones(_beObBoxes, index, "Price in the BE-OB zone");
@@ -263,25 +306,13 @@ namespace cAlgo
             return !double.IsNaN(value) && idx >= 0;
         }
 
-        private int FindLastCandleIndex(int startAbs, int endAbs, bool bearishBody, int current, bool useFallbackCurrent)
+        private static void ScanPineRange(int start, int end, Action<int> visitor)
         {
-            var idx = current;
-            var start = Math.Max(0, Math.Min(startAbs, endAbs));
-            var end = Math.Max(startAbs, endAbs);
+            if (start > end)
+                return;
 
             for (var i = start; i <= end; i++)
-            {
-                if (i < 0 || i > current)
-                    continue;
-
-                var bearish = Bars.OpenPrices[i] > Bars.ClosePrices[i];
-                var bullish = Bars.OpenPrices[i] < Bars.ClosePrices[i];
-
-                if ((bearishBody && bearish) || (!bearishBody && bullish))
-                    idx = i;
-            }
-
-            return useFallbackCurrent ? idx : Math.Max(0, idx);
+                visitor(i);
         }
 
         private void CreateZone(List<Zone> target, int left, int index, string text, Color fill, Color border, Color textColor)
