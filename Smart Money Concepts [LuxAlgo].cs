@@ -197,6 +197,7 @@ namespace cAlgo
 
         private ChartRectangle _premiumBox, _equilibriumBox, _discountBox;
         private int _obIdCounter = 0;
+        private const int MaxStoredOrderBlocksPerSide = 500;
 
         private double _trailingTop = double.MinValue;
         private double _trailingBottom = double.MaxValue;
@@ -563,7 +564,7 @@ namespace cAlgo
                 Time = _times[parsedIndex]
             };
 
-            if (list.Count >= 100)
+            if (list.Count >= MaxStoredOrderBlocksPerSide)
             {
                 var tail = list[list.Count - 1];
                 DeleteObVisual(tail);
@@ -614,6 +615,14 @@ namespace cAlgo
                     continue;
                 }
 
+                if (i >= keep)
+                {
+                    // Keep historical order blocks in memory for parity with Pine logic,
+                    // but only render the latest configured amount.
+                    DeleteObVisual(ob);
+                    continue;
+                }
+
                 var right = Math.Min(index + 1, Bars.Count - 1);
                 var baseColor = color;
                 var style = LineStyle.Solid;
@@ -638,12 +647,6 @@ namespace cAlgo
                 }
             }
 
-            while (list.Count > keep)
-            {
-                var rm = list[list.Count - 1];
-                DeleteObVisual(rm);
-                list.RemoveAt(list.Count - 1);
-            }
         }
 
         private void DeleteObVisual(OrderBlock ob)
