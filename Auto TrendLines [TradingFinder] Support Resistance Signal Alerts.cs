@@ -378,11 +378,10 @@ namespace cAlgo
             UpdatePointers();
 
             // Step 6: Correction_Checker + alert for all 8 trendlines
-            bool isLive   = index == Bars.Count - 1;
             bool isNewBar = _lastBarOpenTime != DateTime.MinValue
                          && Bars.OpenTimes[index] != _lastBarOpenTime;
 
-            ProcessAllTrendLines(index, isLive, isNewBar);
+            ProcessAllTrendLines(index, isNewBar);
 
             // Step 7: Save end-of-bar state for next bar's [1] comparisons
             _t0Prev = _t0;
@@ -993,13 +992,13 @@ namespace cAlgo
         // Pine lines 567-575 (Correction_Checker calls)
         // =====================================================================
 
-        private void ProcessAllTrendLines(int index, bool isLive, bool isNewBar)
+        private void ProcessAllTrendLines(int index, bool isNewBar)
         {
             // MjExUp  → MLL anchors
             ProcessTrendLine(index, 0, true,
                 Show_MjExUp,   Delete_Pre_MjExUp,
                 ParseColor(Color_MjExUp,   "#016b05"),   ParseStyle(Style_MjExUp), ParseExtend(Extend_MjExUp),   Width_MjExUp,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MjExUp_B,   Alert_MjExUp_R,
                 "Break Major External Up TrendLine",   "React Major External Up TrendLine");
 
@@ -1007,7 +1006,7 @@ namespace cAlgo
             ProcessTrendLine(index, 1, false,
                 Show_MjExDown, Delete_Pre_MjExDown,
                 ParseColor(Color_MjExDown, "#aa0202"),   ParseStyle(Style_MjExDown), ParseExtend(Extend_MjExDown), Width_MjExDown,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MjExDown_B, Alert_MjExDown_R,
                 "Break Major External Down TrendLine", "React Major External Down TrendLine");
 
@@ -1015,7 +1014,7 @@ namespace cAlgo
             ProcessTrendLine(index, 2, true,
                 Show_MjInUp,   Delete_Pre_MjInUp,
                 ParseColor(Color_MjInUp,   "#016b05"),   ParseStyle(Style_MjInUp), ParseExtend(Extend_MjInUp),   Width_MjInUp,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MjInUp_B,   Alert_MjInUp_R,
                 "Break Major Internal Up TrendLine",   "React Major Internal Up TrendLine");
 
@@ -1023,7 +1022,7 @@ namespace cAlgo
             ProcessTrendLine(index, 3, false,
                 Show_MjInDown, Delete_Pre_MjInDown,
                 ParseColor(Color_MjInDown, "#aa0202"),   ParseStyle(Style_MjInDown), ParseExtend(Extend_MjInDown), Width_MjInDown,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MjInDown_B, Alert_MjInDown_R,
                 "Break Major Internal Down TrendLine", "React Major Internal Down TrendLine");
 
@@ -1031,7 +1030,7 @@ namespace cAlgo
             ProcessTrendLine(index, 4, true,
                 Show_MnExUp,   Delete_Pre_MnExUp,
                 ParseColor(Color_MnExUp,   "#016b05a6"), ParseStyle(Style_MnExUp), ParseExtend(Extend_MnExUp),   Width_MnExUp,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MnExUp_B,   Alert_MnExUp_R,
                 "Break Minor External Up TrendLine",   "React Minor External Up TrendLine");
 
@@ -1039,7 +1038,7 @@ namespace cAlgo
             ProcessTrendLine(index, 5, false,
                 Show_MnExDown, Delete_Pre_MnExDown,
                 ParseColor(Color_MnExDown, "#aa0202a6"), ParseStyle(Style_MnExDown), ParseExtend(Extend_MnExDown), Width_MnExDown,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MnExDown_B, Alert_MnExDown_R,
                 "Break Minor External Down TrendLine", "React Minor External Down TrendLine");
 
@@ -1047,7 +1046,7 @@ namespace cAlgo
             ProcessTrendLine(index, 6, true,
                 Show_MnInUp,   Delete_Pre_MnInUp,
                 ParseColor(Color_MnInUp,   "#016b05a6"), ParseStyle(Style_MnInUp), ParseExtend(Extend_MnInUp),   Width_MnInUp,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MnInUp_B,   Alert_MnInUp_R,
                 "Break Minor Internal Up TrendLine",   "React Minor Internal Up TrendLine");
 
@@ -1055,7 +1054,7 @@ namespace cAlgo
             ProcessTrendLine(index, 7, false,
                 Show_MnInDown, Delete_Pre_MnInDown,
                 ParseColor(Color_MnInDown, "#aa0202a6"), ParseStyle(Style_MnInDown), ParseExtend(Extend_MnInDown), Width_MnInDown,
-                isLive, isNewBar,
+                isNewBar,
                 Alert_MnInDown_B, Alert_MnInDown_R,
                 "Break Minor Internal Down TrendLine", "React Minor Internal Down TrendLine");
         }
@@ -1082,7 +1081,7 @@ namespace cAlgo
 
         private void ProcessTrendLine(int index, int tlIdx, bool isUp,
             bool show, bool deletePrev, Color color, LineStyle lineStyle, TrendLineExtendOption extendMode, int width,
-            bool isLive, bool isNewBar,
+            bool isNewBar,
             ToggleOption alertBreakSetting, ToggleOption alertReactSetting,
             string breakMsg, string reactMsg)
         {
@@ -1160,48 +1159,49 @@ namespace cAlgo
             }
 
             // ---- BLOCK 2: Per-bar validity check (Pine lines 538-541) ----
+            // Pine semantics:
+            // if close is still on the valid side and Permit_set => extend line
+            // else Permit_set := false
+            bool validThisBar = false;
             if (state.PermitSet && state.ActiveLine != null)
             {
                 double lp  = LinePrice(x0, y0, x1, y1, index);
                 double cls = Bars.ClosePrices[index];
-                bool   onSide = isUp ? cls > lp : cls < lp;
+                validThisBar = isUp ? cls > lp : cls < lp;
 
-                if (!onSide)
-                {
-                    state.PermitSet = false;
-                    ApplyLineExtension(state.ActiveLine, x0, y0, x1, y1, index, extendMode, false);  // freeze line at break bar
-                }
-                else
-                {
+                if (validThisBar)
                     ApplyLineExtension(state.ActiveLine, x0, y0, x1, y1, index, extendMode, true);
-                }
+            }
+
+            if (!validThisBar)
+            {
+                state.PermitSet = false;
+                if (state.ActiveLine != null)
+                    ApplyLineExtension(state.ActiveLine, x0, y0, x1, y1, index, extendMode, false);  // freeze line at break bar
             }
 
             // ---- ALERT LOGIC (Pine lines 543-548) ----
-            // Only fire on the live bar (barstate.isconfirmed equivalent)
-            if (isLive)
+            // Pine barstate.isconfirmed is true on historical bars and on live bar close.
+            // In cTrader indicator backfill, each historical bar is processed once, so
+            // compute and plot alerts on every Calculate call.
+            bool alertBreak = state.PermitSetPrev && !state.PermitSet;
+
+            bool alertReact = false;
+            if (state.PermitSet && state.ActiveLine != null)
             {
-                // Break: was valid last bar, not valid this bar
-                bool alertBreak = state.PermitSetPrev && !state.PermitSet;
-
-                // React: close on correct side, but wick crossed the line
-                bool alertReact = false;
-                if (state.PermitSet && state.ActiveLine != null)
-                {
-                    double lp   = LinePrice(x0, y0, x1, y1, index);
-                    double cls  = Bars.ClosePrices[index];
-                    double high = Bars.HighPrices[index];
-                    double low  = Bars.LowPrices[index];
-                    // Up:   close above line AND low dipped below it
-                    // Down: close below line AND high spiked above it
-                    alertReact = isUp
-                        ? (cls > lp && low < lp)
-                        : (cls < lp && high > lp);
-                }
-
-                EmitAlert(index, tlIdx, alertBreak, alertReact,
-                    alertBreakSetting, alertReactSetting, breakMsg, reactMsg, isNewBar);
+                double lp   = LinePrice(x0, y0, x1, y1, index);
+                double cls  = Bars.ClosePrices[index];
+                double high = Bars.HighPrices[index];
+                double low  = Bars.LowPrices[index];
+                // Up:   close above line AND low dipped below it
+                // Down: close below line AND high spiked above it
+                alertReact = isUp
+                    ? (cls > lp && low < lp)
+                    : (cls < lp && high > lp);
             }
+
+            EmitAlert(index, tlIdx, alertBreak, alertReact,
+                alertBreakSetting, alertReactSetting, breakMsg, reactMsg, isNewBar);
         }
 
         // =====================================================================
