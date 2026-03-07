@@ -254,6 +254,8 @@ namespace cAlgo
             if (stopLossPips <= 0)
                 return;
 
+            var takeProfitPips = stopLossPips * 2.0;
+
             var riskAmount = Account.Balance * (RiskPercent / 100.0);
             var rawVolume = riskAmount / (stopLossPips * Symbol.PipValue);
             var volumeInUnits = Symbol.NormalizeVolumeInUnits(rawVolume, RoundingMode.Down);
@@ -263,7 +265,7 @@ namespace cAlgo
             if (volumeInUnits > Symbol.VolumeInUnitsMax)
                 volumeInUnits = Symbol.VolumeInUnitsMax;
 
-            ExecuteMarketOrder(tradeType, SymbolName, volumeInUnits, InstanceName, stopLossPips, null);
+            ExecuteMarketOrder(tradeType, SymbolName, volumeInUnits, InstanceName, stopLossPips, takeProfitPips);
         }
 
         private void ApplyGoldenZoneFilter(int index, ref int cond)
