@@ -43,6 +43,34 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class AutoTrendLinesTFlab : Indicator
     {
+        public enum ToggleOption
+        {
+            On,
+            Off
+        }
+
+        public enum AlertFrequencyOption
+        {
+            All,
+            OncePerBar,
+            PerBarClose
+        }
+
+        public enum TrendLineStyleOption
+        {
+            Solid,
+            Dashed,
+            Dotted
+        }
+
+        public enum TrendLineExtendOption
+        {
+            None,
+            Right,
+            Both,
+            Left
+        }
+
         // =====================================================================
         // PARAMETERS — Logic
         // =====================================================================
@@ -57,51 +85,51 @@ namespace cAlgo
         [Parameter("Alert Name", DefaultValue = "Auto TrendLines Alerts [TradingFinder]", Group = "Alert")]
         public string AlertName { get; set; }
 
-        [Parameter("Message Frequency", DefaultValue = "Once Per Bar", Group = "Alert")]
-        public string Frequency { get; set; }
+        [Parameter("Message Frequency", DefaultValue = AlertFrequencyOption.OncePerBar, Group = "Alert")]
+        public AlertFrequencyOption Frequency { get; set; }
 
         [Parameter("Show Alert time by Time Zone", DefaultValue = "UTC", Group = "Alert")]
         public string AlertTimeZone { get; set; }
 
-        [Parameter("Break Major External Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjExUp_B { get; set; }
-        [Parameter("React Major External Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjExUp_R { get; set; }
+        [Parameter("Break Major External Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjExUp_B { get; set; }
+        [Parameter("React Major External Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjExUp_R { get; set; }
 
-        [Parameter("Break Major External Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjExDown_B { get; set; }
-        [Parameter("React Major External Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjExDown_R { get; set; }
+        [Parameter("Break Major External Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjExDown_B { get; set; }
+        [Parameter("React Major External Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjExDown_R { get; set; }
 
-        [Parameter("Break Major Internal Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjInUp_B { get; set; }
-        [Parameter("React Major Internal Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjInUp_R { get; set; }
+        [Parameter("Break Major Internal Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjInUp_B { get; set; }
+        [Parameter("React Major Internal Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjInUp_R { get; set; }
 
-        [Parameter("Break Major Internal Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjInDown_B { get; set; }
-        [Parameter("React Major Internal Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MjInDown_R { get; set; }
+        [Parameter("Break Major Internal Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjInDown_B { get; set; }
+        [Parameter("React Major Internal Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MjInDown_R { get; set; }
 
-        [Parameter("Break Minor External Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnExUp_B { get; set; }
-        [Parameter("React Minor External Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnExUp_R { get; set; }
+        [Parameter("Break Minor External Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnExUp_B { get; set; }
+        [Parameter("React Minor External Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnExUp_R { get; set; }
 
-        [Parameter("Break Minor External Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnExDown_B { get; set; }
-        [Parameter("React Minor External Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnExDown_R { get; set; }
+        [Parameter("Break Minor External Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnExDown_B { get; set; }
+        [Parameter("React Minor External Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnExDown_R { get; set; }
 
-        [Parameter("Break Minor Internal Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnInUp_B { get; set; }
-        [Parameter("React Minor Internal Up TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnInUp_R { get; set; }
+        [Parameter("Break Minor Internal Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnInUp_B { get; set; }
+        [Parameter("React Minor Internal Up TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnInUp_R { get; set; }
 
-        [Parameter("Break Minor Internal Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnInDown_B { get; set; }
-        [Parameter("React Minor Internal Down TrendLine Alert", DefaultValue = "On", Group = "Alert")]
-        public string Alert_MnInDown_R { get; set; }
+        [Parameter("Break Minor Internal Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnInDown_B { get; set; }
+        [Parameter("React Minor Internal Down TrendLine Alert", DefaultValue = ToggleOption.On, Group = "Alert")]
+        public ToggleOption Alert_MnInDown_R { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Major External Up
@@ -113,10 +141,10 @@ namespace cAlgo
         public bool Delete_Pre_MjExUp { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#016b05", Group = "Major External Up TrendLine")]
         public string Color_MjExUp { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Solid", Group = "Major External Up TrendLine")]
-        public string Style_MjExUp { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Major External Up TrendLine")]
-        public string Extend_MjExUp { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Solid, Group = "Major External Up TrendLine")]
+        public TrendLineStyleOption Style_MjExUp { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Major External Up TrendLine")]
+        public TrendLineExtendOption Extend_MjExUp { get; set; }
         [Parameter("Width", DefaultValue = 2, MinValue = 1, Group = "Major External Up TrendLine")]
         public int Width_MjExUp { get; set; }
 
@@ -130,10 +158,10 @@ namespace cAlgo
         public bool Delete_Pre_MjExDown { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#aa0202", Group = "Major External Down TrendLine")]
         public string Color_MjExDown { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Solid", Group = "Major External Down TrendLine")]
-        public string Style_MjExDown { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Major External Down TrendLine")]
-        public string Extend_MjExDown { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Solid, Group = "Major External Down TrendLine")]
+        public TrendLineStyleOption Style_MjExDown { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Major External Down TrendLine")]
+        public TrendLineExtendOption Extend_MjExDown { get; set; }
         [Parameter("Width", DefaultValue = 2, MinValue = 1, Group = "Major External Down TrendLine")]
         public int Width_MjExDown { get; set; }
 
@@ -147,10 +175,10 @@ namespace cAlgo
         public bool Delete_Pre_MjInUp { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#016b05", Group = "Major Internal Up TrendLine")]
         public string Color_MjInUp { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Solid", Group = "Major Internal Up TrendLine")]
-        public string Style_MjInUp { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Major Internal Up TrendLine")]
-        public string Extend_MjInUp { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Solid, Group = "Major Internal Up TrendLine")]
+        public TrendLineStyleOption Style_MjInUp { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Major Internal Up TrendLine")]
+        public TrendLineExtendOption Extend_MjInUp { get; set; }
         [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Major Internal Up TrendLine")]
         public int Width_MjInUp { get; set; }
 
@@ -164,10 +192,10 @@ namespace cAlgo
         public bool Delete_Pre_MjInDown { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#aa0202", Group = "Major Internal Down TrendLine")]
         public string Color_MjInDown { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Solid", Group = "Major Internal Down TrendLine")]
-        public string Style_MjInDown { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Major Internal Down TrendLine")]
-        public string Extend_MjInDown { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Solid, Group = "Major Internal Down TrendLine")]
+        public TrendLineStyleOption Style_MjInDown { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Major Internal Down TrendLine")]
+        public TrendLineExtendOption Extend_MjInDown { get; set; }
         [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Major Internal Down TrendLine")]
         public int Width_MjInDown { get; set; }
 
@@ -181,10 +209,10 @@ namespace cAlgo
         public bool Delete_Pre_MnExUp { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#016b05a6", Group = "Minor External Up TrendLine")]
         public string Color_MnExUp { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Dashed", Group = "Minor External Up TrendLine")]
-        public string Style_MnExUp { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Minor External Up TrendLine")]
-        public string Extend_MnExUp { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Dashed, Group = "Minor External Up TrendLine")]
+        public TrendLineStyleOption Style_MnExUp { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Minor External Up TrendLine")]
+        public TrendLineExtendOption Extend_MnExUp { get; set; }
         [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor External Up TrendLine")]
         public int Width_MnExUp { get; set; }
 
@@ -198,10 +226,10 @@ namespace cAlgo
         public bool Delete_Pre_MnExDown { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#aa0202a6", Group = "Minor External Down TrendLine")]
         public string Color_MnExDown { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Dashed", Group = "Minor External Down TrendLine")]
-        public string Style_MnExDown { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Minor External Down TrendLine")]
-        public string Extend_MnExDown { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Dashed, Group = "Minor External Down TrendLine")]
+        public TrendLineStyleOption Style_MnExDown { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Minor External Down TrendLine")]
+        public TrendLineExtendOption Extend_MnExDown { get; set; }
         [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor External Down TrendLine")]
         public int Width_MnExDown { get; set; }
 
@@ -215,10 +243,10 @@ namespace cAlgo
         public bool Delete_Pre_MnInUp { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#016b05a6", Group = "Minor Internal Up TrendLine")]
         public string Color_MnInUp { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Dotted", Group = "Minor Internal Up TrendLine")]
-        public string Style_MnInUp { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Minor Internal Up TrendLine")]
-        public string Extend_MnInUp { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Dotted, Group = "Minor Internal Up TrendLine")]
+        public TrendLineStyleOption Style_MnInUp { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Minor Internal Up TrendLine")]
+        public TrendLineExtendOption Extend_MnInUp { get; set; }
         [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor Internal Up TrendLine")]
         public int Width_MnInUp { get; set; }
 
@@ -232,10 +260,10 @@ namespace cAlgo
         public bool Delete_Pre_MnInDown { get; set; }
         [Parameter("Color (RRGGBB or AARRGGBB)", DefaultValue = "#aa0202a6", Group = "Minor Internal Down TrendLine")]
         public string Color_MnInDown { get; set; }
-        [Parameter("Style: Solid / Dashed / Dotted", DefaultValue = "Dotted", Group = "Minor Internal Down TrendLine")]
-        public string Style_MnInDown { get; set; }
-        [Parameter("Extend: None / Right / Both", DefaultValue = "None", Group = "Minor Internal Down TrendLine")]
-        public string Extend_MnInDown { get; set; }
+        [Parameter("Style", DefaultValue = TrendLineStyleOption.Dotted, Group = "Minor Internal Down TrendLine")]
+        public TrendLineStyleOption Style_MnInDown { get; set; }
+        [Parameter("Extend", DefaultValue = TrendLineExtendOption.None, Group = "Minor Internal Down TrendLine")]
+        public TrendLineExtendOption Extend_MnInDown { get; set; }
         [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor Internal Down TrendLine")]
         public int Width_MnInDown { get; set; }
 
@@ -970,7 +998,7 @@ namespace cAlgo
             // MjExUp  → MLL anchors
             ProcessTrendLine(index, 0, true,
                 Show_MjExUp,   Delete_Pre_MjExUp,
-                ParseColor(Color_MjExUp,   "#016b05"),   ParseStyle(Style_MjExUp),   Width_MjExUp,
+                ParseColor(Color_MjExUp,   "#016b05"),   ParseStyle(Style_MjExUp), ParseExtend(Extend_MjExUp),   Width_MjExUp,
                 isLive, isNewBar,
                 Alert_MjExUp_B,   Alert_MjExUp_R,
                 "Break Major External Up TrendLine",   "React Major External Up TrendLine");
@@ -978,7 +1006,7 @@ namespace cAlgo
             // MjExDown → MHH anchors
             ProcessTrendLine(index, 1, false,
                 Show_MjExDown, Delete_Pre_MjExDown,
-                ParseColor(Color_MjExDown, "#aa0202"),   ParseStyle(Style_MjExDown), Width_MjExDown,
+                ParseColor(Color_MjExDown, "#aa0202"),   ParseStyle(Style_MjExDown), ParseExtend(Extend_MjExDown), Width_MjExDown,
                 isLive, isNewBar,
                 Alert_MjExDown_B, Alert_MjExDown_R,
                 "Break Major External Down TrendLine", "React Major External Down TrendLine");
@@ -986,7 +1014,7 @@ namespace cAlgo
             // MjInUp  → MHL anchors
             ProcessTrendLine(index, 2, true,
                 Show_MjInUp,   Delete_Pre_MjInUp,
-                ParseColor(Color_MjInUp,   "#016b05"),   ParseStyle(Style_MjInUp),   Width_MjInUp,
+                ParseColor(Color_MjInUp,   "#016b05"),   ParseStyle(Style_MjInUp), ParseExtend(Extend_MjInUp),   Width_MjInUp,
                 isLive, isNewBar,
                 Alert_MjInUp_B,   Alert_MjInUp_R,
                 "Break Major Internal Up TrendLine",   "React Major Internal Up TrendLine");
@@ -994,7 +1022,7 @@ namespace cAlgo
             // MjInDown → MLH anchors
             ProcessTrendLine(index, 3, false,
                 Show_MjInDown, Delete_Pre_MjInDown,
-                ParseColor(Color_MjInDown, "#aa0202"),   ParseStyle(Style_MjInDown), Width_MjInDown,
+                ParseColor(Color_MjInDown, "#aa0202"),   ParseStyle(Style_MjInDown), ParseExtend(Extend_MjInDown), Width_MjInDown,
                 isLive, isNewBar,
                 Alert_MjInDown_B, Alert_MjInDown_R,
                 "Break Major Internal Down TrendLine", "React Major Internal Down TrendLine");
@@ -1002,7 +1030,7 @@ namespace cAlgo
             // MnExUp  → mLL anchors
             ProcessTrendLine(index, 4, true,
                 Show_MnExUp,   Delete_Pre_MnExUp,
-                ParseColor(Color_MnExUp,   "#016b05a6"), ParseStyle(Style_MnExUp),   Width_MnExUp,
+                ParseColor(Color_MnExUp,   "#016b05a6"), ParseStyle(Style_MnExUp), ParseExtend(Extend_MnExUp),   Width_MnExUp,
                 isLive, isNewBar,
                 Alert_MnExUp_B,   Alert_MnExUp_R,
                 "Break Minor External Up TrendLine",   "React Minor External Up TrendLine");
@@ -1010,7 +1038,7 @@ namespace cAlgo
             // MnExDown → mHH anchors
             ProcessTrendLine(index, 5, false,
                 Show_MnExDown, Delete_Pre_MnExDown,
-                ParseColor(Color_MnExDown, "#aa0202a6"), ParseStyle(Style_MnExDown), Width_MnExDown,
+                ParseColor(Color_MnExDown, "#aa0202a6"), ParseStyle(Style_MnExDown), ParseExtend(Extend_MnExDown), Width_MnExDown,
                 isLive, isNewBar,
                 Alert_MnExDown_B, Alert_MnExDown_R,
                 "Break Minor External Down TrendLine", "React Minor External Down TrendLine");
@@ -1018,7 +1046,7 @@ namespace cAlgo
             // MnInUp  → mHL anchors
             ProcessTrendLine(index, 6, true,
                 Show_MnInUp,   Delete_Pre_MnInUp,
-                ParseColor(Color_MnInUp,   "#016b05a6"), ParseStyle(Style_MnInUp),   Width_MnInUp,
+                ParseColor(Color_MnInUp,   "#016b05a6"), ParseStyle(Style_MnInUp), ParseExtend(Extend_MnInUp),   Width_MnInUp,
                 isLive, isNewBar,
                 Alert_MnInUp_B,   Alert_MnInUp_R,
                 "Break Minor Internal Up TrendLine",   "React Minor Internal Up TrendLine");
@@ -1026,7 +1054,7 @@ namespace cAlgo
             // MnInDown → mLH anchors
             ProcessTrendLine(index, 7, false,
                 Show_MnInDown, Delete_Pre_MnInDown,
-                ParseColor(Color_MnInDown, "#aa0202a6"), ParseStyle(Style_MnInDown), Width_MnInDown,
+                ParseColor(Color_MnInDown, "#aa0202a6"), ParseStyle(Style_MnInDown), ParseExtend(Extend_MnInDown), Width_MnInDown,
                 isLive, isNewBar,
                 Alert_MnInDown_B, Alert_MnInDown_R,
                 "Break Minor Internal Down TrendLine", "React Minor Internal Down TrendLine");
@@ -1053,9 +1081,9 @@ namespace cAlgo
         // =====================================================================
 
         private void ProcessTrendLine(int index, int tlIdx, bool isUp,
-            bool show, bool deletePrev, Color color, LineStyle lineStyle, int width,
+            bool show, bool deletePrev, Color color, LineStyle lineStyle, TrendLineExtendOption extendMode, int width,
             bool isLive, bool isNewBar,
-            string alertBreakSetting, string alertReactSetting,
+            ToggleOption alertBreakSetting, ToggleOption alertReactSetting,
             string breakMsg, string reactMsg)
         {
             TlState state = _tlStates[tlIdx];
@@ -1114,7 +1142,7 @@ namespace cAlgo
                         string lineId   = $"ATL_{tlIdx}_{x0}_{x1}";
                         var    newLine  = Chart.DrawTrendLine(lineId, x0, y0, x1, y1, color, width, lineStyle);
                         // Option A: extend to infinity while valid (mirrors Pine set_xy2 per bar)
-                        newLine.ExtendToInfinity = true;
+                        ApplyLineExtension(newLine, x0, y0, x1, y1, index, extendMode, true);
 
                         state.PrevLine  = state.ActiveLine;
                         state.ActiveLine = newLine;
@@ -1127,7 +1155,7 @@ namespace cAlgo
                     state.PermitSet = false;
                     // Freeze any existing active line
                     if (state.ActiveLine != null)
-                        state.ActiveLine.ExtendToInfinity = false;
+                        ApplyLineExtension(state.ActiveLine, x0, y0, x1, y1, index, extendMode, false);
                 }
             }
 
@@ -1141,9 +1169,12 @@ namespace cAlgo
                 if (!onSide)
                 {
                     state.PermitSet = false;
-                    state.ActiveLine.ExtendToInfinity = false;  // freeze line at break bar
+                    ApplyLineExtension(state.ActiveLine, x0, y0, x1, y1, index, extendMode, false);  // freeze line at break bar
                 }
-                // If onSide: ExtendToInfinity remains true, no action needed (Option A)
+                else
+                {
+                    ApplyLineExtension(state.ActiveLine, x0, y0, x1, y1, index, extendMode, true);
+                }
             }
 
             // ---- ALERT LOGIC (Pine lines 543-548) ----
@@ -1185,21 +1216,21 @@ namespace cAlgo
 
         private void EmitAlert(int index, int tlIdx,
             bool alertBreak, bool alertReact,
-            string breakSetting, string reactSetting,
+            ToggleOption breakSetting, ToggleOption reactSetting,
             string breakMsg, string reactMsg,
             bool isNewBar)
         {
-            string freq = Frequency ?? "Once Per Bar";
+            AlertFrequencyOption freq = Frequency;
 
             // --- Break ---
-            if (string.Equals(breakSetting, "On", StringComparison.OrdinalIgnoreCase))
+            if (breakSetting == ToggleOption.On)
             {
                 bool fire = false;
-                if (string.Equals(freq, "All", StringComparison.OrdinalIgnoreCase))
+                if (freq == AlertFrequencyOption.All)
                 {
                     fire = alertBreak;
                 }
-                else if (string.Equals(freq, "Once Per Bar", StringComparison.OrdinalIgnoreCase))
+                else if (freq == AlertFrequencyOption.OncePerBar)
                 {
                     if (alertBreak && _tlStates[tlIdx].LastAlertBreakBar != index)
                     {
@@ -1207,7 +1238,7 @@ namespace cAlgo
                         _tlStates[tlIdx].LastAlertBreakBar = index;
                     }
                 }
-                else if (string.Equals(freq, "Per Bar Close", StringComparison.OrdinalIgnoreCase))
+                else if (freq == AlertFrequencyOption.PerBarClose)
                 {
                     if (isNewBar && _prevBarBreakSignal[tlIdx])
                         fire = true;
@@ -1223,14 +1254,14 @@ namespace cAlgo
             }
 
             // --- React ---
-            if (string.Equals(reactSetting, "On", StringComparison.OrdinalIgnoreCase))
+            if (reactSetting == ToggleOption.On)
             {
                 bool fire = false;
-                if (string.Equals(freq, "All", StringComparison.OrdinalIgnoreCase))
+                if (freq == AlertFrequencyOption.All)
                 {
                     fire = alertReact;
                 }
-                else if (string.Equals(freq, "Once Per Bar", StringComparison.OrdinalIgnoreCase))
+                else if (freq == AlertFrequencyOption.OncePerBar)
                 {
                     if (alertReact && _tlStates[tlIdx].LastAlertReactBar != index)
                     {
@@ -1238,7 +1269,7 @@ namespace cAlgo
                         _tlStates[tlIdx].LastAlertReactBar = index;
                     }
                 }
-                else if (string.Equals(freq, "Per Bar Close", StringComparison.OrdinalIgnoreCase))
+                else if (freq == AlertFrequencyOption.PerBarClose)
                 {
                     if (isNewBar && _prevBarReactSignal[tlIdx])
                         fire = true;
@@ -1320,21 +1351,56 @@ namespace cAlgo
         // LINE STYLE PARSING (Pine: line.style_solid / dashed / dotted)
         // =====================================================================
 
-        private static LineStyle ParseStyle(string s)
+        private static LineStyle ParseStyle(TrendLineStyleOption style)
         {
-            if (string.IsNullOrWhiteSpace(s)) return LineStyle.Solid;
-            switch (s.ToLowerInvariant().Trim())
+            switch (style)
             {
-                case "dashed":
-                case "dashes":
-                case "lines":
+                case TrendLineStyleOption.Dashed:
                     return LineStyle.Lines;
-                case "dotted":
-                case "dots":
+                case TrendLineStyleOption.Dotted:
                     return LineStyle.Dots;
                 default:
                     return LineStyle.Solid;
             }
+        }
+
+        private static TrendLineExtendOption ParseExtend(TrendLineExtendOption extend)
+        {
+            return extend;
+        }
+
+        private DateTime TimeOf(int index)
+        {
+            if (index < 0)
+                index = 0;
+            if (index >= Bars.Count)
+                index = Bars.Count - 1;
+            return Bars.OpenTimes[index];
+        }
+
+        private void ApplyLineExtension(ChartTrendLine line, int x0, double y0, int x1, double y1, int index, TrendLineExtendOption extendMode, bool active)
+        {
+            if (line == null || index < 0)
+                return;
+
+            bool infinityMode = extendMode == TrendLineExtendOption.Right ||
+                                extendMode == TrendLineExtendOption.Both ||
+                                extendMode == TrendLineExtendOption.Left;
+
+            if (active && infinityMode)
+            {
+                line.ExtendToInfinity = true;
+                return;
+            }
+
+            line.ExtendToInfinity = false;
+
+            int endIndex = active
+                ? (extendMode == TrendLineExtendOption.None ? index + 1 : index)
+                : index;
+
+            line.Time2 = TimeOf(endIndex);
+            line.Y2 = LinePrice(x0, y0, x1, y1, endIndex);
         }
     }
 }
