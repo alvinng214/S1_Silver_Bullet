@@ -38,6 +38,15 @@
 //  • extend.both : cTrader right-extension only → ExtendToInfinity = true.
 //  • Line tracks right while valid (Option A): ExtendToInfinity=true while valid,
 //    frozen at break bar on PermitSet→false transition.
+//
+// BUG FIX (v2):
+//  Block 2 and React check must use the ACCEPTED line's stored coordinates
+//  (state.ActiveX0/Y0/X1/Y1), NOT the current pointer values (x0/y0/x1/y1).
+//  In Pine, line.get_price(Line_Origin, bar_index) always queries the line object
+//  created when the scan last passed. When Block 1 fires but scan fails, Line_Origin
+//  stays pointing to the old line. The old C# code read _ptrX0/1[tlIdx] which had
+//  already been updated to the new (rejected) anchor → wrong line price → spurious
+//  breaks/reacts and missed signals.
 // =============================================================================
 
 using System;
@@ -332,6 +341,12 @@ namespace cAlgo
             public int   LastAnchorX0            = 0;      // X_0[1] equivalent
             public int   LastAlertBreakBar        = -1;
             public int   LastAlertReactBar        = -1;
+            // Coordinates of the last ACCEPTED line — mirrors Pine line.get_price(Line_Origin,...)
+            // Updated ONLY when Block 1 permit scan passes.
+            public int    ActiveX0 = 0;
+            public double ActiveY0 = 0.0;
+            public int    ActiveX1 = 0;
+            public double ActiveY1 = 0.0;
         }
         private readonly TlState[] _tlStates = new TlState[8];
 
@@ -986,6 +1001,9 @@ namespace cAlgo
                         state.PrevLine   = state.ActiveLine;
                         state.ActiveLine = newLine;
                     }
+                    // Store the coordinates of this ACCEPTED line — used by Block 2 & React
+                    state.ActiveX0 = x0; state.ActiveY0 = y0;
+                    state.ActiveX1 = x1; state.ActiveY1 = y1;
                     state.PermitSet = true;
                 }
                 // BUG4 FIX: when scan fails, do NOT touch PermitSet.
@@ -996,13 +1014,14 @@ namespace cAlgo
             if (state.PermitSet)
             {
                 // BUG5 FIX: no active line → PermitSet must be false (Pine: close>na=false)
-                if (state.ActiveLine == null)
+                if (state.ActiveLine == null && state.ActiveX0 == 0)
                 {
                     state.PermitSet = false;
                 }
                 else
                 {
-                    double lp    = LinePrice(x0, y0, x1, y1, index);
+                    // Use the stored ACCEPTED line coords — mirrors Pine line.get_price(Line_Origin,...)
+                    double lp    = LinePrice(state.ActiveX0, state.ActiveY0, state.ActiveX1, state.ActiveY1, index);
                     double cls   = Bars.ClosePrices[index];
                     bool   onSide = isUp ? cls > lp : cls < lp;
 
@@ -1010,9 +1029,12 @@ namespace cAlgo
                     {
                         state.PermitSet = false;
                         // BUG6 FIX: freeze line at the break bar (not at the original x1)
-                        state.ActiveLine.ExtendToInfinity = false;
-                        state.ActiveLine.Time2 = Bars.OpenTimes[index];
-                        state.ActiveLine.Y2    = lp;
+                        if (state.ActiveLine != null)
+                        {
+                            state.ActiveLine.ExtendToInfinity = false;
+                            state.ActiveLine.Time2 = Bars.OpenTimes[index];
+                            state.ActiveLine.Y2    = lp;
+                        }
                     }
                     // If onSide: ExtendToInfinity stays true — line tracks right naturally
                 }
@@ -1024,9 +1046,10 @@ namespace cAlgo
                 bool alertBreak = state.PermitSetPrev && !state.PermitSet;
                 bool alertReact = false;
 
-                if (state.PermitSet && state.ActiveLine != null)
+                if (state.PermitSet && (state.ActiveLine != null || state.ActiveX0 != 0))
                 {
-                    double lp  = LinePrice(x0, y0, x1, y1, index);
+                    // Use the stored ACCEPTED line coords — mirrors Pine line.get_price(Line_Origin,...)
+                    double lp  = LinePrice(state.ActiveX0, state.ActiveY0, state.ActiveX1, state.ActiveY1, index);
                     double cls  = Bars.ClosePrices[index];
                     double high = Bars.HighPrices[index];
                     double low  = Bars.LowPrices[index];
