@@ -38,15 +38,34 @@
 //  • extend.both : cTrader right-extension only → ExtendToInfinity = true.
 //  • Line tracks right while valid (Option A): ExtendToInfinity=true while valid,
 //    frozen at break bar on PermitSet→false transition.
+//  • Cold-start: first ~10 bars may miss signals anchored to pre-history bars
+//    (Pine has longer lookback; C# starts fresh at bar 0 of loaded history).
 //
-// BUG FIX (v2):
-//  Block 2 and React check must use the ACCEPTED line's stored coordinates
-//  (state.ActiveX0/Y0/X1/Y1), NOT the current pointer values (x0/y0/x1/y1).
-//  In Pine, line.get_price(Line_Origin, bar_index) always queries the line object
-//  created when the scan last passed. When Block 1 fires but scan fails, Line_Origin
-//  stays pointing to the old line. The old C# code read _ptrX0/1[tlIdx] which had
-//  already been updated to the new (rejected) anchor → wrong line price → spurious
-//  breaks/reacts and missed signals.
+// BUG FIXES (v3 — verified by Python simulation against TradingView ground truth):
+//  FIX 1 — Removed _skipSyncThisBar flag.
+//    Pine does NOT suppress SyncAdvArray on the bar when Lock1 fires.
+//    The old C# flag was preventing a legitimate 'm' entry push that Pine performs,
+//    starving minor trendline Pointers (mLL/mHH/mHL/mLH) of correct anchors.
+//    Effect: fixed all missing Minor trendline signals.
+//
+//  FIX 2 — Corrected Block B in UpdateMajorMinor (Pine lines 408-429).
+//    Pine Block B has EXACTLY 3 branches: mH | mLH | (mHH or MHH).
+//    Old C# had:
+//      a) Missing "MHH" in the (mHH) condition.
+//      b) A spurious 3rd condition for mHL/mLL/MHL/MLL that does NOT exist in Pine.
+//         This was causing incorrect Major promotions, corrupting the ADV array,
+//         and generating excess Break/React signals for Major trendlines.
+//    Effect: fixed all excess Major signals.
+//
+//  FIX 3 — Signals emitted for all confirmed bars (not just isLive).
+//    Pine's barstate.isconfirmed fires at bar close for EVERY bar including history.
+//    Old C# only drew icons for the current live bar → all historical icons invisible.
+//    Historical bars (index < Bars.Count-1) are always confirmed in cTrader.
+//    PerBarClose mode now fires immediately on historical bars, and on isNewBar
+//    for the live bar.
+//
+//  FIX 4 — Separate LongSignalOffsetPips / ShortSignalOffsetPips parameters.
+//    Replaces single SignalOffsetPips. Default 5 pips each for clear visual separation.
 // =============================================================================
 
 using System;
@@ -142,8 +161,11 @@ namespace cAlgo
         [Parameter("Short Signal Color", DefaultValue = "Red", Group = "Signal Icons")]
         public Color ShortSignalColor { get; set; }
 
-        [Parameter("Signal Offset (pips)", DefaultValue = 2.0, MinValue = 0.0, Group = "Signal Icons")]
-        public double SignalOffsetPips { get; set; }
+        [Parameter("Long Signal Offset (pips)", DefaultValue = 5.0, MinValue = 0.0, Group = "Signal Icons")]
+        public double LongSignalOffsetPips { get; set; }
+
+        [Parameter("Short Signal Offset (pips)", DefaultValue = 5.0, MinValue = 0.0, Group = "Signal Icons")]
+        public double ShortSignalOffsetPips { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Major External Up
@@ -303,7 +325,6 @@ namespace cAlgo
         // ADV seeding locks
         private bool _lock0          = true;
         private bool _lock1          = true;
-        private bool _skipSyncThisBar = false;
 
         // Running last confirmed pivot values (ta.valuewhen equivalents)
         private double _lastHighPivotValue = double.NaN;
@@ -393,11 +414,17 @@ namespace cAlgo
             UpdatePointers();
 
             // 6. Correction_Checker + alerts for all 8 TLs
-            bool isLive   = (index == Bars.Count - 1);
-            bool isNewBar = (_lastBarOpenTime != DateTime.MinValue)
-                         && (Bars.OpenTimes[index] != _lastBarOpenTime);
+            // isHistorical = bar is already confirmed (Calculate called once per historical bar)
+            // isLive       = current live bar (Calculate called on every tick)
+            // isNewBar     = first tick of a new bar (previous bar just closed = confirmed)
+            // For alerts: fire on confirmed bars. Historical bars are always confirmed.
+            // On live bar: OncePerBar/All fire on ticks; PerBarClose fires only on isNewBar.
+            bool isHistorical = (index < Bars.Count - 1);
+            bool isLive       = !isHistorical;
+            bool isNewBar     = (_lastBarOpenTime != DateTime.MinValue)
+                             && (Bars.OpenTimes[index] != _lastBarOpenTime);
 
-            ProcessAllTrendLines(index, isLive, isNewBar);
+            ProcessAllTrendLines(index, isHistorical, isLive, isNewBar);
 
             // 7. Save end-of-bar state for next bar's [1] comparisons
             _t0Prev = _t0;
@@ -651,7 +678,7 @@ namespace cAlgo
                 _advValue.Insert(1, _zzValue[1]);
                 _advIndex.Insert(1, _zzIndex[1]);
                 _lock1 = false;
-                _skipSyncThisBar = true;  // prevent SyncAdvArray from double-adding
+                // NOTE: Pine does NOT suppress SyncAdvArray here — no skip flag.
             }
         }
 
@@ -664,7 +691,6 @@ namespace cAlgo
 
         private void SyncAdvArray()
         {
-            if (_skipSyncThisBar) { _skipSyncThisBar = false; return; }
             if (_zzType.Count <= 1 || _advType.Count == 0) return;
 
             int    zzLast        = _zzType.Count - 1;
@@ -746,6 +772,7 @@ namespace cAlgo
             }
 
             // ---- B) lastAdvVal > MajorHighLevel (Pine 408-429) ----
+            // Pine Block B has EXACTLY 3 branches: mH, mLH, (mHH|MHH). Nothing else.
             {
                 int    last = _advType.Count - 1;
                 string t    = _advType[last];
@@ -757,25 +784,20 @@ namespace cAlgo
                         _advType[last]  = "MH";
                         _majorHighLevel = _advValue[last];
                     }
-                    else if (t == "mLH" || t == "mHH")
+                    else if (t == "mLH")
                     {
                         string p = "M" + ZzType();
                         if (p.Length > 1) _advType[last] = p;
                         _majorHighLevel = _advValue[last];
                     }
-                    else if (t == "mHL" || t == "mLL" || t == "MHL" || t == "MLL")
+                    else if (t == "mHH" || t == "MHH")   // Pine: 'mHH' or 'MHH'
                     {
-                        if (last >= 1)
-                        {
-                            string t2 = _advType[last - 1];
-                            if (t2 == "mLH" || t2 == "mHH")
-                            {
-                                string p = "M" + ZzType(1);
-                                if (p.Length > 1) _advType[last - 1] = p;
-                                _majorHighLevel = _advValue[last - 1];
-                            }
-                        }
+                        string p = "M" + ZzType();
+                        if (p.Length > 1) _advType[last] = p;
+                        _majorHighLevel = _advValue[last];
                     }
+                    // NOTE: Pine Block B has NO further branches.
+                    // The old C# code incorrectly had a 3rd condition for mHL/mLL/MHL/MLL here.
                 }
             }
 
@@ -869,61 +891,61 @@ namespace cAlgo
         // TRENDLINE DISPATCH — all 8 TLs
         // =====================================================================
 
-        private void ProcessAllTrendLines(int index, bool isLive, bool isNewBar)
+        private void ProcessAllTrendLines(int index, bool isHistorical, bool isLive, bool isNewBar)
         {
             ProcessTrendLine(index, 0, true,
                 Show_MjExUp, Delete_Pre_MjExUp,
                 ParseColor(Color_MjExUp, "#016b05"), MapStyle(Style_MjExUp), Width_MjExUp,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MjExUp_B,   Alert_MjExUp_R,
                 "Break Major External Up TrendLine",   "React Major External Up TrendLine");
 
             ProcessTrendLine(index, 1, false,
                 Show_MjExDown, Delete_Pre_MjExDown,
                 ParseColor(Color_MjExDown, "#aa0202"), MapStyle(Style_MjExDown), Width_MjExDown,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MjExDown_B, Alert_MjExDown_R,
                 "Break Major External Down TrendLine", "React Major External Down TrendLine");
 
             ProcessTrendLine(index, 2, true,
                 Show_MjInUp, Delete_Pre_MjInUp,
                 ParseColor(Color_MjInUp, "#016b05"), MapStyle(Style_MjInUp), Width_MjInUp,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MjInUp_B,   Alert_MjInUp_R,
                 "Break Major Internal Up TrendLine",   "React Major Internal Up TrendLine");
 
             ProcessTrendLine(index, 3, false,
                 Show_MjInDown, Delete_Pre_MjInDown,
                 ParseColor(Color_MjInDown, "#aa0202"), MapStyle(Style_MjInDown), Width_MjInDown,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MjInDown_B, Alert_MjInDown_R,
                 "Break Major Internal Down TrendLine", "React Major Internal Down TrendLine");
 
             ProcessTrendLine(index, 4, true,
                 Show_MnExUp, Delete_Pre_MnExUp,
                 ParseColor(Color_MnExUp, "#016b05a6"), MapStyle(Style_MnExUp), Width_MnExUp,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MnExUp_B,   Alert_MnExUp_R,
                 "Break Minor External Up TrendLine",   "React Minor External Up TrendLine");
 
             ProcessTrendLine(index, 5, false,
                 Show_MnExDown, Delete_Pre_MnExDown,
                 ParseColor(Color_MnExDown, "#aa0202a6"), MapStyle(Style_MnExDown), Width_MnExDown,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MnExDown_B, Alert_MnExDown_R,
                 "Break Minor External Down TrendLine", "React Minor External Down TrendLine");
 
             ProcessTrendLine(index, 6, true,
                 Show_MnInUp, Delete_Pre_MnInUp,
                 ParseColor(Color_MnInUp, "#016b05a6"), MapStyle(Style_MnInUp), Width_MnInUp,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MnInUp_B,   Alert_MnInUp_R,
                 "Break Minor Internal Up TrendLine",   "React Minor Internal Up TrendLine");
 
             ProcessTrendLine(index, 7, false,
                 Show_MnInDown, Delete_Pre_MnInDown,
                 ParseColor(Color_MnInDown, "#aa0202a6"), MapStyle(Style_MnInDown), Width_MnInDown,
-                isLive, isNewBar,
+                isHistorical, isLive, isNewBar,
                 Alert_MnInDown_B, Alert_MnInDown_R,
                 "Break Minor Internal Down TrendLine", "React Minor Internal Down TrendLine");
         }
@@ -949,7 +971,7 @@ namespace cAlgo
 
         private void ProcessTrendLine(int index, int tlIdx, bool isUp,
             bool show, bool deletePrev, Color color, LineStyle lineStyle, int width,
-            bool isLive, bool isNewBar,
+            bool isHistorical, bool isLive, bool isNewBar,
             bool alertBreakEnabled, bool alertReactEnabled,
             string breakMsg, string reactMsg)
         {
@@ -1006,21 +1028,18 @@ namespace cAlgo
                     state.ActiveX1 = x1; state.ActiveY1 = y1;
                     state.PermitSet = true;
                 }
-                // BUG4 FIX: when scan fails, do NOT touch PermitSet.
-                // The per-bar check (Block 2) will handle the old line.
+                // When scan fails, do NOT touch PermitSet. Block 2 handles the old line.
             }
 
             // ---- BLOCK 2: Per-bar validity ----
             if (state.PermitSet)
             {
-                // BUG5 FIX: no active line → PermitSet must be false (Pine: close>na=false)
                 if (state.ActiveLine == null && state.ActiveX0 == 0)
                 {
                     state.PermitSet = false;
                 }
                 else
                 {
-                    // Use the stored ACCEPTED line coords — mirrors Pine line.get_price(Line_Origin,...)
                     double lp    = LinePrice(state.ActiveX0, state.ActiveY0, state.ActiveX1, state.ActiveY1, index);
                     double cls   = Bars.ClosePrices[index];
                     bool   onSide = isUp ? cls > lp : cls < lp;
@@ -1028,7 +1047,7 @@ namespace cAlgo
                     if (!onSide)
                     {
                         state.PermitSet = false;
-                        // BUG6 FIX: freeze line at the break bar (not at the original x1)
+                        // Freeze line at the break bar
                         if (state.ActiveLine != null)
                         {
                             state.ActiveLine.ExtendToInfinity = false;
@@ -1036,33 +1055,30 @@ namespace cAlgo
                             state.ActiveLine.Y2    = lp;
                         }
                     }
-                    // If onSide: ExtendToInfinity stays true — line tracks right naturally
                 }
             }
 
-            // ---- ALERTS (live bars only) ----
-            if (isLive)
+            // ---- ALERTS ----
+            // Fire for all confirmed bars:
+            //   • Historical bars are always confirmed (Calculate called once per bar during loading)
+            //   • Live bar fires for OncePerBar/All on every tick; PerBarClose fires on isNewBar
+            bool alertBreak = state.PermitSetPrev && !state.PermitSet;
+            bool alertReact = false;
+
+            if (state.PermitSet && state.ActiveX0 != 0)
             {
-                bool alertBreak = state.PermitSetPrev && !state.PermitSet;
-                bool alertReact = false;
-
-                if (state.PermitSet && (state.ActiveLine != null || state.ActiveX0 != 0))
-                {
-                    // Use the stored ACCEPTED line coords — mirrors Pine line.get_price(Line_Origin,...)
-                    double lp  = LinePrice(state.ActiveX0, state.ActiveY0, state.ActiveX1, state.ActiveY1, index);
-                    double cls  = Bars.ClosePrices[index];
-                    double high = Bars.HighPrices[index];
-                    double low  = Bars.LowPrices[index];
-                    // Up:   close above line AND low dipped below it
-                    // Down: close below line AND high spiked above it
-                    alertReact = isUp
-                        ? (cls > lp && low  < lp)
-                        : (cls < lp && high > lp);
-                }
-
-                EmitAlert(index, tlIdx, isUp, alertBreak, alertReact,
-                    alertBreakEnabled, alertReactEnabled, breakMsg, reactMsg, isNewBar);
+                double lp   = LinePrice(state.ActiveX0, state.ActiveY0, state.ActiveX1, state.ActiveY1, index);
+                double cls  = Bars.ClosePrices[index];
+                double high = Bars.HighPrices[index];
+                double low  = Bars.LowPrices[index];
+                alertReact = isUp
+                    ? (cls > lp && low  < lp)
+                    : (cls < lp && high > lp);
             }
+
+            EmitAlert(index, tlIdx, isUp, alertBreak, alertReact,
+                alertBreakEnabled, alertReactEnabled, breakMsg, reactMsg,
+                isHistorical, isNewBar);
         }
 
         // =====================================================================
@@ -1084,7 +1100,7 @@ namespace cAlgo
             bool alertBreak, bool alertReact,
             bool breakEnabled, bool reactEnabled,
             string breakMsg, string reactMsg,
-            bool isNewBar)
+            bool isHistorical, bool isNewBar)
         {
             // ---- Break ----
             if (breakEnabled)
@@ -1100,7 +1116,12 @@ namespace cAlgo
                         { fire = true; _tlStates[tlIdx].LastAlertBreakBar = index; }
                         break;
                     case AlertFreq.PerBarClose:
-                        if (isNewBar && _prevBarBreakSignal[tlIdx]) fire = true;
+                        // Historical bars are already confirmed → fire immediately.
+                        // Live bar → fire at open of next bar using saved previous-bar signal.
+                        if (isHistorical && alertBreak)
+                            fire = true;
+                        else if (!isHistorical && isNewBar && _prevBarBreakSignal[tlIdx])
+                            fire = true;
                         break;
                 }
                 if (fire)
@@ -1131,7 +1152,10 @@ namespace cAlgo
                         { fire = true; _tlStates[tlIdx].LastAlertReactBar = index; }
                         break;
                     case AlertFreq.PerBarClose:
-                        if (isNewBar && _prevBarReactSignal[tlIdx]) fire = true;
+                        if (isHistorical && alertReact)
+                            fire = true;
+                        else if (!isHistorical && isNewBar && _prevBarReactSignal[tlIdx])
+                            fire = true;
                         break;
                 }
                 if (fire)
@@ -1148,7 +1172,7 @@ namespace cAlgo
                 }
             }
 
-            // Save for PerBarClose mode
+            // Save for PerBarClose mode (live bar only)
             _prevBarBreakSignal[tlIdx] = alertBreak;
             _prevBarReactSignal[tlIdx] = alertReact;
         }
@@ -1164,7 +1188,9 @@ namespace cAlgo
             double barHigh, double barLow)
         {
             Color  c      = isLong ? LongSignalColor : ShortSignalColor;
-            double offset = SignalOffsetPips * Symbol.PipSize;
+            double offset = isLong
+                ? LongSignalOffsetPips  * Symbol.PipSize
+                : ShortSignalOffsetPips * Symbol.PipSize;
             double price  = isLong ? barLow - offset : barHigh + offset;
 
             ChartIconType icon;
