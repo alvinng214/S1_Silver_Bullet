@@ -272,6 +272,16 @@ namespace cAlgo
         [Output("Short Signal", LineColor = "Red", PlotType = PlotType.Points, Thickness = 6)]
         public IndicatorDataSeries ShortSignal { get; set; }
 
+        // OB price levels exposed for cBot stop-loss placement.
+        // LongObBottom  = ob.Bottom of the bullish OB that triggered the long signal.
+        // ShortObTop    = ob.Top    of the bearish OB that triggered the short signal.
+        // Both are NaN on all other bars.
+        [Output("Long OB Bottom", LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
+        public IndicatorDataSeries LongObBottom { get; set; }
+
+        [Output("Short OB Top", LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
+        public IndicatorDataSeries ShortObTop { get; set; }
+
         // ────────────────────────────────────────────────────────────────────────
         //  Private inner types
         // ────────────────────────────────────────────────────────────────────────
@@ -279,10 +289,11 @@ namespace cAlgo
         /// <summary>Pending entry state set the moment an OB or FVG is touched.</summary>
         private sealed class SignalState
         {
-            public double Point;    // price level to watch for the confirmed bounce
+            public double Point;      // price level to watch for the confirmed bounce
+            public double ObSlLevel;  // OB Bottom (bull) or OB Top (bear) for SL reference
             public bool IsBull;
-            public bool Entry;      // true once signal has been fired
-            public int Index;       // chart index when the state was created
+            public bool Entry;        // true once signal has been fired
+            public int Index;         // chart index when the state was created
         }
 
         /// <summary>Lightweight record for FVG zones that feeds the signal engine.</summary>
@@ -401,6 +412,8 @@ namespace cAlgo
         {
             LongSignal[index]  = double.NaN;
             ShortSignal[index] = double.NaN;
+            LongObBottom[index] = double.NaN;
+            ShortObTop[index]   = double.NaN;
             ResetSignals(index);
 
             // Always keep HA arrays and parsed arrays in sync (needed by signal engine)
@@ -758,7 +771,7 @@ namespace cAlgo
                                 Bars.OpenTimes[index],
                                 ob.Top,
                                 InternalBullishOrderBlockColor);
-                            _signal = NewSignal(index, ob.Top, true);
+                            _signal = NewSignal(index, ob.Top, true, ob.Bottom);
                         }
                     }
                     else if (!bullish && Bars.HighPrices[index] >= ob.Bottom)
@@ -772,7 +785,7 @@ namespace cAlgo
                                 Bars.OpenTimes[index],
                                 ob.Bottom,
                                 InternalBearishOrderBlockColor);
-                            _signal = NewSignal(index, ob.Bottom, false);
+                            _signal = NewSignal(index, ob.Bottom, false, ob.Top);
                         }
                     }
                 }
@@ -1156,6 +1169,17 @@ namespace cAlgo
                 if (cond == -1 || condFvg == -1)
                     ShortSignal[index] = Bars.HighPrices[index] + offset;
             }
+
+            // Always emit OB SL reference levels regardless of ShowSignalDots
+            // so the cBot can read them even when dots are hidden.
+            if (cond == 1)
+                LongObBottom[index]  = _signal.ObSlLevel;
+            if (cond == -1)
+                ShortObTop[index]    = _signal.ObSlLevel;
+            if (condFvg == 1)
+                LongObBottom[index]  = !double.IsNaN(LongObBottom[index]) ? LongObBottom[index] : _signalFvg.ObSlLevel;
+            if (condFvg == -1)
+                ShortObTop[index]    = !double.IsNaN(ShortObTop[index])   ? ShortObTop[index]   : _signalFvg.ObSlLevel;
         }
 
         private void DrawSignalIcon(string id, ChartIconType type, int index, double y, Color color, double delta)
@@ -1169,14 +1193,15 @@ namespace cAlgo
             line.ExtendToInfinity = false;
         }
 
-        private SignalState NewSignal(int index, double point, bool isBull)
+        private SignalState NewSignal(int index, double point, bool isBull, double obSlLevel = double.NaN)
         {
             return new SignalState
             {
-                Point  = point,
-                IsBull = isBull,
-                Entry  = false,
-                Index  = index
+                Point      = point,
+                ObSlLevel  = double.IsNaN(obSlLevel) ? point : obSlLevel,
+                IsBull     = isBull,
+                Entry      = false,
+                Index      = index
             };
         }
 
