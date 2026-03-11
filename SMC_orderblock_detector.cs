@@ -130,6 +130,15 @@ namespace cAlgo
         [Parameter("Bearish OB", DefaultValue = "#CCB22833", Group = "Order Blocks")]
         public Color SwingBearishOrderBlockColor { get; set; }
 
+        [Parameter("Show All Historical OBs", DefaultValue = false, Group = "Order Blocks")]
+        public bool ShowAllHistoricalObs { get; set; }
+
+        [Parameter("Show Mitigated OBs", DefaultValue = false, Group = "Order Blocks")]
+        public bool ShowMitigatedObs { get; set; }
+
+        [Parameter("Mitigated OB Opacity (%)", DefaultValue = 30, MinValue = 1, MaxValue = 99, Group = "Order Blocks")]
+        public int MitigatedObOpacity { get; set; }
+
         // EQH / EQL
         [Parameter("Equal High/Low", DefaultValue = true, Group = "EQH/EQL")]
         public bool ShowEqualHighsLowsInput { get; set; }
@@ -322,6 +331,8 @@ namespace cAlgo
             public bool SignalFired;   // set true when the OB-Detector touch logic fires
             public ChartRectangle Box;
             public DateTime Time;
+            public DateTime MitigatedAt;   // time the OB was broken (used to freeze the box right edge)
+            public string MitigatedBoxId;  // separate chart object id for the frozen historical box
         }
 
         // ────────────────────────────────────────────────────────────────────────
@@ -334,6 +345,8 @@ namespace cAlgo
         private readonly List<OrderBlock> _internalBearObs = new List<OrderBlock>();
         private readonly List<OrderBlock> _swingBullObs   = new List<OrderBlock>();
         private readonly List<OrderBlock> _swingBearObs   = new List<OrderBlock>();
+        // Mitigated (broken) OBs kept for historical display
+        private readonly List<OrderBlock> _mitigatedObs   = new List<OrderBlock>();
 
         private double _lastSwingHigh = double.NaN;
         private double _lastSwingLow  = double.NaN;
@@ -730,6 +743,30 @@ namespace cAlgo
             ManageObListWithSignals(_internalBearObs, index, false, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBearishOrderBlockColor);
             ManageObListWithSignals(_swingBullObs,    index, true,  SwingOrderBlocksSizeInput,    ShowSwingOrderBlocksInput,    SwingBullishOrderBlockColor);
             ManageObListWithSignals(_swingBearObs,    index, false, SwingOrderBlocksSizeInput,    ShowSwingOrderBlocksInput,    SwingBearishOrderBlockColor);
+            ManageMitigatedObs();
+        }
+
+        /// <summary>
+        /// Removes mitigated OB visuals when the ShowMitigatedObs toggle is turned off,
+        /// and prunes the list.  When the toggle is on, boxes are already frozen and
+        /// need no further updates.
+        /// </summary>
+        private void ManageMitigatedObs()
+        {
+            if (!ShowMitigatedObs)
+            {
+                // Remove any frozen boxes that are still on the chart
+                for (var i = _mitigatedObs.Count - 1; i >= 0; i--)
+                {
+                    var ob = _mitigatedObs[i];
+                    if (ob.MitigatedBoxId != null)
+                    {
+                        Chart.RemoveObject(ob.MitigatedBoxId);
+                        ob.MitigatedBoxId = null;
+                    }
+                }
+                _mitigatedObs.Clear();
+            }
         }
 
         /// <summary>
@@ -799,7 +836,42 @@ namespace cAlgo
                                      || ( bullish && bullishSource < ob.Bottom);
                 if (crossedOrderBlock)
                 {
-                    DeleteObVisual(ob);
+                    // Mark when it was mitigated and freeze the right edge of its box
+                    ob.Mitigated    = true;
+                    ob.MitigatedAt  = Bars.OpenTimes[index];
+
+                    if (ShowMitigatedObs)
+                    {
+                        // Freeze the live box at the mitigation bar and re-colour it dimmed
+                        var alpha     = (int)Math.Round(255.0 * MitigatedObOpacity / 100.0);
+                        var dimColor  = Color.FromArgb(alpha, color.R, color.G, color.B);
+                        var mitId     = $"mit_{ob.Id}";
+
+                        if (ob.Box != null)
+                        {
+                            // Re-use the existing rectangle: stop extending, apply dim colour
+                            ob.Box.Time2    = ob.MitigatedAt;
+                            ob.Box.Color    = dimColor;
+                            ob.Box.IsFilled = true;
+                            ob.MitigatedBoxId = ob.Id;
+                            ob.Box = null; // detach so the active loop no longer updates it
+                        }
+                        else
+                        {
+                            // Box was never drawn (outside keep range) – draw it now frozen
+                            var rect = Chart.DrawRectangle(mitId, ob.Time, ob.Top, ob.MitigatedAt, ob.Bottom, dimColor);
+                            rect.IsFilled   = true;
+                            rect.Color      = dimColor;
+                            ob.MitigatedBoxId = mitId;
+                        }
+
+                        _mitigatedObs.Add(ob);
+                    }
+                    else
+                    {
+                        DeleteObVisual(ob);
+                    }
+
                     list.RemoveAt(i);
                     continue;
                 }
@@ -810,7 +882,7 @@ namespace cAlgo
                     continue;
                 }
 
-                if (i >= keep)
+                if (!ShowAllHistoricalObs && i >= keep)
                 {
                     DeleteObVisual(ob);
                     continue;
