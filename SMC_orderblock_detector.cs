@@ -121,7 +121,7 @@ namespace cAlgo
         [Parameter("Internal OB Size", DefaultValue = 5, MinValue = 1, MaxValue = 20, Group = "Order Blocks")]
         public int InternalOrderBlocksSizeInput { get; set; }
 
-        [Parameter("Swing Order Blocks", DefaultValue = false, Group = "Order Blocks")]
+        [Parameter("Swing Order Blocks", DefaultValue = true, Group = "Order Blocks")]
         public bool ShowSwingOrderBlocksInput { get; set; }
 
         [Parameter("Swing OB Size", DefaultValue = 5, MinValue = 1, MaxValue = 20, Group = "Order Blocks")]
@@ -151,10 +151,10 @@ namespace cAlgo
         [Parameter("Bearish OB", DefaultValue = "#CCB22833", Group = "Order Blocks")]
         public Color SwingBearishOrderBlockColor { get; set; }
 
-        [Parameter("Show All Historical OBs", DefaultValue = false, Group = "Order Blocks")]
+        [Parameter("Show All Historical OBs", DefaultValue = true, Group = "Order Blocks")]
         public bool ShowAllHistoricalObs { get; set; }
 
-        [Parameter("Show Mitigated OBs", DefaultValue = false, Group = "Order Blocks")]
+        [Parameter("Show Mitigated OBs", DefaultValue = true, Group = "Order Blocks")]
         public bool ShowMitigatedObs { get; set; }
 
         [Parameter("Mitigated OB Opacity (%)", DefaultValue = 30, MinValue = 1, MaxValue = 99, Group = "Order Blocks")]
@@ -233,13 +233,13 @@ namespace cAlgo
         [Parameter("Line Width Liquidated", DefaultValue = 1, MinValue = 1, MaxValue = 4, Group = "Signal Display")]
         public int LineWidthLiquidated { get; set; }
 
-        [Parameter("Show Signal Dots", DefaultValue = true, Group = "Signal Display")]
+        [Parameter("Show Signal Dots", DefaultValue = false, Group = "Signal Display")]
         public bool ShowSignalDots { get; set; }
 
         [Parameter("Show Signals OB", DefaultValue = true, Group = "Signal Display")]
         public bool ShowSignalsOb { get; set; }
 
-        [Parameter("Show Signals FVG", DefaultValue = true, Group = "Signal Display")]
+        [Parameter("Show Signals FVG", DefaultValue = false, Group = "Signal Display")]
         public bool ShowSignalsFvg { get; set; }
 
         [Parameter("Signal Offset (pips)", DefaultValue = 2.0, MinValue = 0.0, Step = 0.1, Group = "Signal Display")]
