@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using cAlgo.API;
 using cAlgo.API.Internals;
 
@@ -36,12 +37,12 @@ namespace cAlgo
 
         public enum RiskRewardOption
         {
-            OneToOne      = 0,   // 1:1
-            OneToOneHalf  = 1,   // 1:1.5
-            OneToTwo      = 2,   // 1:2
-            OneToThree    = 3,   // 1:3
-            OneToFour     = 4,   // 1:4
-            OneToFive     = 5    // 1:5
+            [Description("1:1")]   OneToOne      = 0,
+            [Description("1:1.5")] OneToOneHalf  = 1,
+            [Description("1:2")]   OneToTwo      = 2,
+            [Description("1:3")]   OneToThree    = 3,
+            [Description("1:4")]   OneToFour     = 4,
+            [Description("1:5")]   OneToFive     = 5
         }
 
         [Parameter("Trade on Internal OB Signals", DefaultValue = true, Group = "Trade Triggers")]
