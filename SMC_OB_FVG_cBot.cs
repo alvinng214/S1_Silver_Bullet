@@ -34,6 +34,16 @@ namespace cAlgo
         //  TRADE TRIGGER TOGGLES
         // ════════════════════════════════════════════════════════════════════════
 
+        public enum RiskRewardOption
+        {
+            OneToOne      = 0,   // 1:1
+            OneToOneHalf  = 1,   // 1:1.5
+            OneToTwo      = 2,   // 1:2
+            OneToThree    = 3,   // 1:3
+            OneToFour     = 4,   // 1:4
+            OneToFive     = 5    // 1:5
+        }
+
         [Parameter("Trade on Internal OB Signals", DefaultValue = true, Group = "Trade Triggers")]
         public bool TradeInternalOb { get; set; }
 
@@ -45,6 +55,12 @@ namespace cAlgo
 
         [Parameter("SL Buffer (pips)", DefaultValue = 5.0, MinValue = 0.0, Step = 0.1, Group = "Trade Triggers")]
         public double SlBufferPips { get; set; }
+
+        [Parameter("Enable Take Profit", DefaultValue = true, Group = "Trade Triggers")]
+        public bool TakeProfitEnabled { get; set; }
+
+        [Parameter("Risk : Reward Ratio", DefaultValue = RiskRewardOption.OneToTwo, Group = "Trade Triggers")]
+        public RiskRewardOption RiskReward { get; set; }
 
         // ════════════════════════════════════════════════════════════════════════
         //  SMART MONEY CONCEPTS — mirrors every parameter in SMC_OrderBlock_Detector
@@ -566,8 +582,25 @@ namespace cAlgo
             volumeInUnits = Math.Max(volumeInUnits, Symbol.VolumeInUnitsMin);
             volumeInUnits = Math.Min(volumeInUnits, Symbol.VolumeInUnitsMax);
 
+            // Calculate TP pips from R:R ratio (null = no TP)
+            double? tpDistancePips = null;
+            if (TakeProfitEnabled)
+            {
+                double rrMultiplier = RiskReward switch
+                {
+                    RiskRewardOption.OneToOne     => 1.0,
+                    RiskRewardOption.OneToOneHalf => 1.5,
+                    RiskRewardOption.OneToTwo     => 2.0,
+                    RiskRewardOption.OneToThree   => 3.0,
+                    RiskRewardOption.OneToFour    => 4.0,
+                    RiskRewardOption.OneToFive    => 5.0,
+                    _                             => 2.0
+                };
+                tpDistancePips = slDistancePips * rrMultiplier;
+            }
+
             // Execute with SL in pips (cTrader's ExecuteMarketOrder takes pips, not abs price)
-            ExecuteMarketOrder(tradeType, SymbolName, volumeInUnits, label, slDistancePips, null);
+            ExecuteMarketOrder(tradeType, SymbolName, volumeInUnits, label, slDistancePips, tpDistancePips);
         }
     }
 }
