@@ -296,6 +296,20 @@ namespace cAlgo
         [Output("Short OB Top",   LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
         public IndicatorDataSeries ShortObTop   { get; set; }
 
+        // Per-type OB signal series – non-NaN when that specific OB type fires;
+        // value = OB bottom (long) or OB top (short) for use as SL reference.
+        [Output("Long Internal OB Bottom",  LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
+        public IndicatorDataSeries LongInternalObBottom  { get; set; }
+
+        [Output("Short Internal OB Top",    LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
+        public IndicatorDataSeries ShortInternalObTop    { get; set; }
+
+        [Output("Long Swing OB Bottom",     LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
+        public IndicatorDataSeries LongSwingObBottom     { get; set; }
+
+        [Output("Short Swing OB Top",       LineColor = "Transparent", PlotType = PlotType.Points, Thickness = 1)]
+        public IndicatorDataSeries ShortSwingObTop       { get; set; }
+
         // ────────────────────────────────────────────────────────────────────────
         //  Private inner types
         // ────────────────────────────────────────────────────────────────────────
@@ -388,7 +402,9 @@ namespace cAlgo
         private DateTime _trailingLastBottomTime = DateTime.MinValue;
 
         // ── Signal engine ─────────────────────────────────────────────────────
-        private SignalState _signal;
+        private SignalState _signal;           // legacy combined-OB signal (unused by bot – kept for compat)
+        private SignalState _signalInternal;   // pending Internal-OB confirmation
+        private SignalState _signalSwing;      // pending Swing-OB  confirmation
         private SignalState _signalFvg;
 
         private readonly List<FvgRecord> _fvgRecords = new List<FvgRecord>();
@@ -408,8 +424,10 @@ namespace cAlgo
             _dayLow    = _weekLow    = _monthLow   = double.MaxValue;
             _trailingTop    = double.MinValue;
             _trailingBottom = double.MaxValue;
-            _signal    = NewEmptySignal();
-            _signalFvg = NewEmptySignal();
+            _signal         = NewEmptySignal();
+            _signalInternal = NewEmptySignal();
+            _signalSwing    = NewEmptySignal();
+            _signalFvg      = NewEmptySignal();
         }
 
         // ────────────────────────────────────────────────────────────────────────
@@ -417,10 +435,14 @@ namespace cAlgo
         // ────────────────────────────────────────────────────────────────────────
         public override void Calculate(int index)
         {
-            LongSignal[index]   = double.NaN;
-            ShortSignal[index]  = double.NaN;
-            LongObBottom[index] = double.NaN;
-            ShortObTop[index]   = double.NaN;
+            LongSignal[index]           = double.NaN;
+            ShortSignal[index]          = double.NaN;
+            LongObBottom[index]         = double.NaN;
+            ShortObTop[index]           = double.NaN;
+            LongInternalObBottom[index] = double.NaN;
+            ShortInternalObTop[index]   = double.NaN;
+            LongSwingObBottom[index]    = double.NaN;
+            ShortSwingObTop[index]      = double.NaN;
             ResetSignals(index);
 
             EnsureHeikinAshi(index);
@@ -462,9 +484,29 @@ namespace cAlgo
                                   ? _haClose[index]
                                   : Bars.ClosePrices[index];
 
-            var cond    = 0;
-            var condFvg = 0;
+            // ── Per-type OB confirmation (independent states, no cross-interference) ──
+            var condInternal = 0;
+            var condSwing    = 0;
+            var condFvg      = 0;
 
+            if (!double.IsNaN(_signalInternal.Point))
+            {
+                if (signalClose > _signalInternal.Point && _signalInternal.IsBull && candleDir == 1 && !_signalInternal.Entry)
+                { _signalInternal.Entry = true; condInternal = 1; }
+                else if (signalClose < _signalInternal.Point && !_signalInternal.IsBull && candleDir == -1 && !_signalInternal.Entry)
+                { _signalInternal.Entry = true; condInternal = -1; }
+            }
+
+            if (!double.IsNaN(_signalSwing.Point))
+            {
+                if (signalClose > _signalSwing.Point && _signalSwing.IsBull && candleDir == 1 && !_signalSwing.Entry)
+                { _signalSwing.Entry = true; condSwing = 1; }
+                else if (signalClose < _signalSwing.Point && !_signalSwing.IsBull && candleDir == -1 && !_signalSwing.Entry)
+                { _signalSwing.Entry = true; condSwing = -1; }
+            }
+
+            // Legacy _signal check (used by DrawSignals for chart arrows / LongObBottom backward compat)
+            var cond = 0;
             if (!double.IsNaN(_signal.Point))
             {
                 if (signalClose > _signal.Point && _signal.IsBull && candleDir == 1 && !_signal.Entry)
@@ -481,7 +523,7 @@ namespace cAlgo
                 { _signalFvg.Entry = true; condFvg = -1; }
             }
 
-            DrawSignals(index, cond, condFvg);
+            DrawSignals(index, cond, condFvg, condInternal, condSwing);
         }
 
         // ════════════════════════════════════════════════════════════════════════
@@ -726,10 +768,10 @@ namespace cAlgo
         {
             if (index < 3) return;
 
-            ManageObListWithSignals(_internalBullObs, index, true,  InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBullishOrderBlockColor);
-            ManageObListWithSignals(_internalBearObs, index, false, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBearishOrderBlockColor);
-            ManageObListWithSignals(_swingBullObs,    index, true,  SwingOrderBlocksSizeInput,    ShowSwingOrderBlocksInput,    SwingBullishOrderBlockColor);
-            ManageObListWithSignals(_swingBearObs,    index, false, SwingOrderBlocksSizeInput,    ShowSwingOrderBlocksInput,    SwingBearishOrderBlockColor);
+            ManageObListWithSignals(_internalBullObs, index, true,  InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBullishOrderBlockColor, true);
+            ManageObListWithSignals(_internalBearObs, index, false, InternalOrderBlocksSizeInput, ShowInternalOrderBlocksInput, InternalBearishOrderBlockColor, true);
+            ManageObListWithSignals(_swingBullObs,    index, true,  SwingOrderBlocksSizeInput,    ShowSwingOrderBlocksInput,    SwingBullishOrderBlockColor,    false);
+            ManageObListWithSignals(_swingBearObs,    index, false, SwingOrderBlocksSizeInput,    ShowSwingOrderBlocksInput,    SwingBearishOrderBlockColor,    false);
             ManageMitigatedObs();
         }
 
@@ -770,7 +812,8 @@ namespace cAlgo
             bool             bullish,
             int              keep,
             bool             show,
-            Color            color)
+            Color            color,
+            bool             isInternal)
         {
             for (var i = list.Count - 1; i >= 0; i--)
             {
@@ -793,7 +836,10 @@ namespace cAlgo
                         if (ob.Index + MinDist < index && !isSameBreakBar && cooldownSatisfied)
                         {
                             DrawLiquidationLine($"ob_touch_{ob.Id}", ob.Time, Bars.OpenTimes[index], ob.Top, InternalBullishOrderBlockColor);
-                            _signal = NewSignal(index, ob.Top, true, ob.Bottom);
+                            var sig = NewSignal(index, ob.Top, true, ob.Bottom);
+                            _signal = sig;
+                            if (isInternal) _signalInternal = sig;
+                            else            _signalSwing    = sig;
                         }
                     }
                     else if (!bullish && Bars.HighPrices[index] >= ob.Bottom)
@@ -810,7 +856,10 @@ namespace cAlgo
                         if (ob.Index + MinDist < index && !isSameBreakBar && cooldownSatisfied)
                         {
                             DrawLiquidationLine($"ob_touch_{ob.Id}", ob.Time, Bars.OpenTimes[index], ob.Bottom, InternalBearishOrderBlockColor);
-                            _signal = NewSignal(index, ob.Bottom, false, ob.Top);
+                            var sig = NewSignal(index, ob.Bottom, false, ob.Top);
+                            _signal = sig;
+                            if (isInternal) _signalInternal = sig;
+                            else            _signalSwing    = sig;
                         }
                     }
                 }
@@ -1134,7 +1183,7 @@ namespace cAlgo
         // ════════════════════════════════════════════════════════════════════════
         //  Signal Engine helpers
         // ════════════════════════════════════════════════════════════════════════
-        private void DrawSignals(int index, int cond, int condFvg)
+        private void DrawSignals(int index, int cond, int condFvg, int condInternal, int condSwing)
         {
             var offset = SignalOffsetPips * Symbol.PipSize;
 
@@ -1153,10 +1202,17 @@ namespace cAlgo
                 if (cond == -1 || condFvg == -1) ShortSignal[index] = Bars.HighPrices[index] + offset;
             }
 
+            // Legacy combined OB output (backward compat – used by chart arrows above)
             if (cond == 1)    LongObBottom[index] = _signal.ObSlLevel;
             if (cond == -1)   ShortObTop[index]   = _signal.ObSlLevel;
             if (condFvg == 1)  LongObBottom[index] = !double.IsNaN(LongObBottom[index]) ? LongObBottom[index] : _signalFvg.ObSlLevel;
             if (condFvg == -1) ShortObTop[index]   = !double.IsNaN(ShortObTop[index])   ? ShortObTop[index]   : _signalFvg.ObSlLevel;
+
+            // Per-type OB outputs – each type fires independently without cross-interference
+            if (condInternal == 1)  LongInternalObBottom[index] = _signalInternal.ObSlLevel;
+            if (condInternal == -1) ShortInternalObTop[index]   = _signalInternal.ObSlLevel;
+            if (condSwing    == 1)  LongSwingObBottom[index]    = _signalSwing.ObSlLevel;
+            if (condSwing    == -1) ShortSwingObTop[index]      = _signalSwing.ObSlLevel;
         }
 
         private void DrawSignalIcon(string id, ChartIconType type, int index, double y, Color color, double delta)

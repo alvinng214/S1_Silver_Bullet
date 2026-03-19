@@ -300,9 +300,10 @@ namespace cAlgo
         //  PRIVATE FIELDS
         // ════════════════════════════════════════════════════════════════════════
 
-        // Indicator instance that fires OB signals (Internal and/or Swing OBs).
-        // LongObBottom[bar]  → bottom of the bullish OB that triggered the signal (SL reference).
-        // ShortObTop[bar]    → top    of the bearish OB that triggered the signal (SL reference).
+        // Indicator instance that fires OB signals.
+        // Uses per-type output series so Internal and Swing OBs fire independently:
+        //   LongInternalObBottom / ShortInternalObTop  → Internal OB signals (SL = OB level)
+        //   LongSwingObBottom    / ShortSwingObTop     → Swing   OB signals (SL = OB level)
         private SMC_OrderBlock_Detector _obIndicator;
 
         // Indicator instance that fires FVG signals.
@@ -500,25 +501,33 @@ namespace cAlgo
                 return;
 
             // ── OB Signals ────────────────────────────────────────────────────────
-            // LongObBottom[bar]  → non-NaN  : Signal OB long  fired (value = OB bottom = SL reference)
-            // ShortObTop[bar]    → non-NaN  : Signal OB short fired (value = OB top   = SL reference)
+            // Each type uses its own output series so they fire independently.
+            // LongInternalObBottom / ShortInternalObTop  → Internal OB signal (value = OB level for SL)
+            // LongSwingObBottom    / ShortSwingObTop     → Swing   OB signal (value = OB level for SL)
             if (_obIndicator != null)
             {
-                double obLongSlLevel  = _obIndicator.LongObBottom[bar];
-                double obShortSlLevel = _obIndicator.ShortObTop[bar];
-
-                if (!double.IsNaN(obLongSlLevel))
+                if (TradeInternalOb)
                 {
-                    // Long OB trade: SL = OB candle low − SlBufferPips
-                    double slAbsolute = obLongSlLevel - SlBufferPips * Symbol.PipSize;
-                    PlaceTrade(TradeType.Buy, slAbsolute, "SMC_OB_Long");
+                    double longSl  = _obIndicator.LongInternalObBottom[bar];
+                    double shortSl = _obIndicator.ShortInternalObTop[bar];
+
+                    if (!double.IsNaN(longSl))
+                        PlaceTrade(TradeType.Buy,  longSl  - SlBufferPips * Symbol.PipSize, "SMC_IntOB_Long");
+
+                    if (!double.IsNaN(shortSl))
+                        PlaceTrade(TradeType.Sell, shortSl + SlBufferPips * Symbol.PipSize, "SMC_IntOB_Short");
                 }
 
-                if (!double.IsNaN(obShortSlLevel))
+                if (TradeSwingOb)
                 {
-                    // Short OB trade: SL = OB candle high + SlBufferPips
-                    double slAbsolute = obShortSlLevel + SlBufferPips * Symbol.PipSize;
-                    PlaceTrade(TradeType.Sell, slAbsolute, "SMC_OB_Short");
+                    double longSl  = _obIndicator.LongSwingObBottom[bar];
+                    double shortSl = _obIndicator.ShortSwingObTop[bar];
+
+                    if (!double.IsNaN(longSl))
+                        PlaceTrade(TradeType.Buy,  longSl  - SlBufferPips * Symbol.PipSize, "SMC_SwingOB_Long");
+
+                    if (!double.IsNaN(shortSl))
+                        PlaceTrade(TradeType.Sell, shortSl + SlBufferPips * Symbol.PipSize, "SMC_SwingOB_Short");
                 }
             }
 
