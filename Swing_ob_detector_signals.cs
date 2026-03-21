@@ -42,7 +42,7 @@ namespace cAlgo
     // ════════════════════════════════════════════════════════════════════════════
 
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
-    public class Swing_OB_Detector : Indicator
+    public class Swing_OB_Detector_Signals : Indicator
     {
         // ════════════════════════════════════════════════════════════════════════
         //  Parameters — Swing Detection
