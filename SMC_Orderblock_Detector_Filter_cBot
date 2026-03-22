@@ -1,0 +1,908 @@
+using System;
+using System.Collections.Generic;
+using cAlgo.API;
+using cAlgo.API.Internals;
+
+namespace cAlgo
+{
+    // ════════════════════════════════════════════════════════════════════════════
+    //  SMC_Orderblock_Detector_Filter_cBot
+    //
+    //  ── ENTRY TRIGGER ────────────────────────────────────────────────────────
+    //  Detection logic taken verbatim from order_block_detector_cbot_single.cs.
+    //  FVG detection added from Order-Block Detector.cs (indicator).
+    //  Both OB and FVG triggers are independently toggled.
+    //  OB takes priority when both fire on the same bar.
+    //
+    //  ── SMC FILTER ENGINE ────────────────────────────────────────────────────
+    //  A self-contained embedded copy of the OB detection engine from
+    //  SMC_orderblock_detector.cs (no indicator reference).
+    //  Maintains live pools of UNMITIGATED (unbroken) Internal and Swing OBs.
+    //  An OB remains in the pool from the moment it is created (by a structure
+    //  break) until price fully mitigates it (HighLow mode: High > ob.Top for
+    //  bear OBs, Low < ob.Bottom for bull OBs).
+    //  Three independent filters — any combination can be enabled:
+    //
+    //  Filter 1 – Internal OB:
+    //    Long  allowed only when at least one ACTIVE (unmitigated) bullish
+    //           Internal OB was touched by any of the last Filter1Lookback bars.
+    //    Short allowed only when at least one ACTIVE bearish  Internal OB was
+    //           touched by any of the last Filter1Lookback bars.
+    //    "Touched" = a bar's Low ≤ ob.Top (bull) or High ≥ ob.Bottom (bear).
+    //
+    //  Filter 2 – Swing OB:
+    //    Same as Filter 1 but applied to the Swing OB pool.
+    //
+    //  Filter 3 – Internal OR Swing OB:
+    //    Long  allowed when EITHER a bullish Internal OR a bullish Swing OB
+    //           was touched within the last Filter3Lookback bars.
+    //    Short allowed when EITHER a bearish  Internal OR a bearish  Swing OB
+    //           was touched within the last Filter3Lookback bars.
+    //
+    //  KEY DESIGN — unmitigated = unbroken:
+    //    OBs are NEVER consumed on first touch.  They stay in the pool as long
+    //    as they are unbroken.  The filter scans the CURRENT active pool and
+    //    checks whether any of the last N closed bars touched any OB still in it.
+    //    This means even a touch that happened many bars ago is valid, provided
+    //    the OB has NOT been mitigated since then.
+    //
+    //  Disabled filters always pass (trade is allowed regardless).
+    //  All active filters must pass simultaneously for a trade to fire.
+    //
+    //  ── TRADE RULES ──────────────────────────────────────────────────────────
+    //  SL = lowest low / highest high over StopLossLookbackBars before signal.
+    //  TP = SL distance × RiskRewardRatio.
+    //  Volume = Balance × RiskPercent% / (SL pips × PipValue).
+    // ════════════════════════════════════════════════════════════════════════════
+
+    [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class SMC_Orderblock_Detector_Filter_cBot : Robot
+    {
+        // ════════════════════════════════════════════════════════════════════════
+        //  Inner types
+        // ════════════════════════════════════════════════════════════════════════
+
+        // ── Entry trigger inner types ─────────────────────────────────────────
+
+        private sealed class EntryObRecord
+        {
+            public double   Max;
+            public double   Min;
+            public bool     IsBull;
+            public DateTime DetectionTime;
+            public int      DetectionChartIndex;
+        }
+
+        private sealed class EntryFvgRecord
+        {
+            public double   Max;
+            public double   Min;
+            public bool     IsBull;
+            public DateTime DetectionTime;
+            public int      DetectionChartIndex;
+        }
+
+        private sealed class EntrySignalState
+        {
+            public double Point = double.NaN;
+            public bool   IsBull;
+            public bool   Entry;
+            public int    Index;
+        }
+
+        // ── SMC filter inner type ─────────────────────────────────────────────
+
+        private sealed class SmcObRecord
+        {
+            public int      Index;               // pivot bar (parsedIndex)
+            public double   Top;
+            public double   Bottom;
+            public bool     Bullish;
+            public bool     Internal;
+            public int      StructureBreakIndex;  // bar that created this OB
+            public DateTime Time;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Entry Trigger
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Enable OB Trigger",  DefaultValue = true,  Group = "Entry Trigger")]
+        public bool EnableObTrigger  { get; set; }
+
+        [Parameter("Enable FVG Trigger", DefaultValue = false, Group = "Entry Trigger")]
+        public bool EnableFvgTrigger { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Entry Trigger Timeframe
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Use Chart Timeframe", DefaultValue = true,   Group = "Entry Trigger — Timeframe")]
+        public bool UseChartTimeframe { get; set; }
+
+        [Parameter("OB/FVG Timeframe",    DefaultValue = "Hour", Group = "Entry Trigger — Timeframe")]
+        public TimeFrame InputTimeFrame { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Entry Trigger Signals
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Min Dist OB (bars)",  DefaultValue = 1, MinValue = 1, Group = "Entry Trigger — Signals")]
+        public int MinDist { get; set; }
+
+        [Parameter("Min Dist FVG (bars)", DefaultValue = 1, MinValue = 1, Group = "Entry Trigger — Signals")]
+        public int MinDistFvg { get; set; }
+
+        [Parameter("Use Heikin-Ashi", DefaultValue = false, Group = "Entry Trigger — Signals")]
+        public bool UseHeikinAshi { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Risk
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("SL Lookback Bars", DefaultValue = 5, MinValue = 1, Group = "Risk")]
+        public int StopLossLookbackBars { get; set; }
+
+        [Parameter("Risk %", DefaultValue = 1.0, MinValue = 0.01, Step = 0.01, Group = "Risk")]
+        public double RiskPercent { get; set; }
+
+        [Parameter("Risk:Reward Ratio", DefaultValue = 2.0, MinValue = 0.1, Step = 0.1, Group = "Risk")]
+        public double RiskRewardRatio { get; set; }
+
+        [Parameter("Instance Name", DefaultValue = "SMC_OB_Filter_cBot", Group = "Risk")]
+        public string InstanceName { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — SMC Filter Detection
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Swings Length", DefaultValue = 50, MinValue = 10, Group = "SMC Filter — Detection")]
+        public int SmcSwingsLength { get; set; }
+
+        [Parameter("Internal Pivot Length", DefaultValue = 5, MinValue = 1, MaxValue = 50, Group = "SMC Filter — Detection")]
+        public int SmcInternalPivotLength { get; set; }
+
+        [Parameter("OB Filter ATR Period", DefaultValue = 200, MinValue = 1, MaxValue = 500, Group = "SMC Filter — Detection")]
+        public int SmcObFilterAtrPeriod { get; set; }
+
+        [Parameter("SMC Min Dist (bars)", DefaultValue = 1, MinValue = 1, Group = "SMC Filter — Detection")]
+        public int SmcMinDist { get; set; }
+
+        [Parameter("Min Bars After Structure Break", DefaultValue = 0, MinValue = 0, MaxValue = 200, Group = "SMC Filter — Detection")]
+        public int SmcMinBarsAfterStructureBreak { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Filter 1 (Internal OB)
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Enable Filter 1 (Internal OB)", DefaultValue = false, Group = "Filter 1 — Internal OB")]
+        public bool EnableFilter1 { get; set; }
+
+        [Parameter("Filter 1 Lookback (bars)", DefaultValue = 10, MinValue = 1, Group = "Filter 1 — Internal OB")]
+        public int Filter1Lookback { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Filter 2 (Swing OB)
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Enable Filter 2 (Swing OB)", DefaultValue = false, Group = "Filter 2 — Swing OB")]
+        public bool EnableFilter2 { get; set; }
+
+        [Parameter("Filter 2 Lookback (bars)", DefaultValue = 10, MinValue = 1, Group = "Filter 2 — Swing OB")]
+        public int Filter2Lookback { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — Filter 3 (Internal or Swing OB)
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Enable Filter 3 (Internal or Swing OB)", DefaultValue = false, Group = "Filter 3 — Internal or Swing OB")]
+        public bool EnableFilter3 { get; set; }
+
+        [Parameter("Filter 3 Lookback (bars)", DefaultValue = 10, MinValue = 1, Group = "Filter 3 — Internal or Swing OB")]
+        public int Filter3Lookback { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Private fields — Entry trigger
+        //  (identical to order_block_detector_cbot_single.cs + FVG additions)
+        // ════════════════════════════════════════════════════════════════════════
+
+        private Bars                    _sourceBars;
+        private List<EntryObRecord>     _obRecords  = new List<EntryObRecord>();
+        private List<EntryFvgRecord>    _fvgRecords = new List<EntryFvgRecord>();
+        private EntrySignalState        _signal     = NewEmptyEntrySignal();
+        private EntrySignalState        _signalFvg  = NewEmptyEntrySignal();
+
+        private int _lastDetectedObSourceIndex  = -1;
+        private int _lastDetectedFvgSourceIndex = -1;
+
+        private readonly List<double> _haSourceOpen  = new List<double>();
+        private readonly List<double> _haSourceClose = new List<double>();
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Private fields — SMC filter engine
+        //  (embedded detection from SMC_orderblock_detector.cs, display-free)
+        // ════════════════════════════════════════════════════════════════════════
+
+        // OB pools
+        private readonly List<SmcObRecord> _smcInternalBullObs = new List<SmcObRecord>();
+        private readonly List<SmcObRecord> _smcInternalBearObs = new List<SmcObRecord>();
+        private readonly List<SmcObRecord> _smcSwingBullObs    = new List<SmcObRecord>();
+        private readonly List<SmcObRecord> _smcSwingBearObs    = new List<SmcObRecord>();
+
+        // Parsed arrays for SMC OB anchoring (volatility-adjusted pivot selection)
+        private readonly List<double> _parsedHighs = new List<double>();
+        private readonly List<double> _parsedLows  = new List<double>();
+
+        // Swing structure state (mirrors SMC indicator)
+        private int    _swingLeg;
+        private double _lastSwingHigh      = double.NaN;
+        private double _lastSwingLow       = double.NaN;
+        private int    _lastSwingHighIndex = -1;
+        private int    _lastSwingLowIndex  = -1;
+        private bool   _swingHighCrossed;
+        private bool   _swingLowCrossed;
+
+        // Internal structure state (mirrors SMC indicator)
+        private int    _internalLeg;
+        private double _internalHighLevel   = double.NaN;
+        private double _internalLowLevel    = double.NaN;
+        private int    _internalHighIndex   = -1;
+        private int    _internalLowIndex    = -1;
+        private bool   _internalHighCrossed;
+        private bool   _internalLowCrossed;
+
+        private int       _smcObIdCounter;
+        private const int MaxSmcObs = 500;
+        private int       _smcWarmup;
+        private int       _lastParsedIndex = -1;   // tracks how far parsed arrays are filled
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  OnStart
+        // ════════════════════════════════════════════════════════════════════════
+
+        protected override void OnStart()
+        {
+            var tf = UseChartTimeframe ? Bars.TimeFrame : InputTimeFrame;
+            _sourceBars = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
+            _smcWarmup  = Math.Max(SmcSwingsLength, SmcInternalPivotLength) + 5;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  OnBar
+        //
+        //  Step 1 — SMC filter detection (must run for every bar, even warmup,
+        //           so that the OB pool is fully built by signal bars).
+        //  Step 2 — Entry trigger detection (OB + optional FVG).
+        //  Step 3 — Signal evaluation.
+        //  Step 4 — Filter check.
+        //  Step 5 — Trade execution.
+        // ════════════════════════════════════════════════════════════════════════
+
+        protected override void OnBar()
+        {
+            var index = Bars.Count - 2;    // closed bar
+
+            // ── Step 1: SMC filter (runs for every bar) ───────────────────────
+            RunSmcFilter(index);
+
+            // ── Step 2: Entry trigger ─────────────────────────────────────────
+            if (index < 2) return;
+
+            var sourceIndex = FindBarIndexAtOrBefore(_sourceBars, Bars.OpenTimes[index]);
+            if (sourceIndex < 2) return;
+
+            EnsureHeikinAshiSource(sourceIndex);
+
+            if (EnableObTrigger)
+                DetectOrderBlock(index, sourceIndex);
+
+            var sHigh  = _sourceBars.HighPrices[sourceIndex];
+            var sLow   = _sourceBars.LowPrices[sourceIndex];
+            var sClose = _sourceBars.ClosePrices[sourceIndex];
+
+            if (EnableObTrigger)
+                HandleMitigationOb(index, sLow, sHigh);
+
+            if (EnableFvgTrigger)
+            {
+                DetectFvg(index, sourceIndex);
+                HandleMitigationFvg(index, sLow, sHigh);
+            }
+
+            // ── Step 3: Signal evaluation ─────────────────────────────────────
+            var candleDir   = Bars.ClosePrices[index] > Bars.OpenPrices[index] ? 1 : -1;
+            var signalClose = UseHeikinAshi ? _haSourceClose[sourceIndex] : sClose;
+            var cond        = 0;
+            var condFvg     = 0;
+
+            if (EnableObTrigger && !double.IsNaN(_signal.Point))
+            {
+                if (signalClose > _signal.Point && _signal.IsBull && candleDir == 1 && !_signal.Entry)
+                { _signal.Entry = true; cond = 1; }
+                else if (signalClose < _signal.Point && !_signal.IsBull && candleDir == -1 && !_signal.Entry)
+                { _signal.Entry = true; cond = -1; }
+            }
+
+            if (EnableFvgTrigger && !double.IsNaN(_signalFvg.Point))
+            {
+                if (signalClose > _signalFvg.Point && _signalFvg.IsBull && candleDir == 1 && !_signalFvg.Entry)
+                { _signalFvg.Entry = true; condFvg = 1; }
+                else if (signalClose < _signalFvg.Point && !_signalFvg.IsBull && candleDir == -1 && !_signalFvg.Entry)
+                { _signalFvg.Entry = true; condFvg = -1; }
+            }
+
+            // OB trigger takes priority over FVG trigger.
+            var finalCond = cond != 0 ? cond : condFvg;
+            if (finalCond == 0) return;
+
+            // ── Step 4: Filter check ──────────────────────────────────────────
+            if (!CheckFilters(index, finalCond)) return;
+
+            // ── Step 5: Execute trade ─────────────────────────────────────────
+            ExecuteSignalTrade(index, finalCond);
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Filter check
+        //
+        //  Each enabled filter scans the CURRENT active (unmitigated) OB pool
+        //  directly.  For every OB still in the pool (= still unbroken), it
+        //  checks whether any of the last Lookback closed bars touched that OB.
+        //  "Touched" = Low ≤ ob.Top (bullish OB) or High ≥ ob.Bottom (bearish OB).
+        //
+        //  Because OBs are only removed when mitigated, every OB in the pool is
+        //  unbroken by definition.  A touch can have happened many bars ago and
+        //  still counts — the OB just must not have been broken since.
+        // ════════════════════════════════════════════════════════════════════════
+
+        private bool CheckFilters(int index, int cond)
+        {
+            // Filter 1 — at least one unmitigated Internal OB was touched within lookback
+            if (EnableFilter1)
+            {
+                var pool = cond > 0 ? _smcInternalBullObs : _smcInternalBearObs;
+                if (!HasActiveTouchInLookback(pool, index, Filter1Lookback, cond > 0))
+                {
+                    Print("[Filter1 BLOCKED] {0} signal at bar {1}: no unmitigated internal OB touched in last {2} bars.",
+                          cond > 0 ? "Long" : "Short", index, Filter1Lookback);
+                    return false;
+                }
+            }
+
+            // Filter 2 — at least one unmitigated Swing OB was touched within lookback
+            if (EnableFilter2)
+            {
+                var pool = cond > 0 ? _smcSwingBullObs : _smcSwingBearObs;
+                if (!HasActiveTouchInLookback(pool, index, Filter2Lookback, cond > 0))
+                {
+                    Print("[Filter2 BLOCKED] {0} signal at bar {1}: no unmitigated swing OB touched in last {2} bars.",
+                          cond > 0 ? "Long" : "Short", index, Filter2Lookback);
+                    return false;
+                }
+            }
+
+            // Filter 3 — at least one unmitigated Internal OR Swing OB was touched within lookback
+            if (EnableFilter3)
+            {
+                var isBull     = cond > 0;
+                var internalOk = HasActiveTouchInLookback(
+                                     isBull ? _smcInternalBullObs : _smcInternalBearObs,
+                                     index, Filter3Lookback, isBull);
+                var swingOk    = HasActiveTouchInLookback(
+                                     isBull ? _smcSwingBullObs : _smcSwingBearObs,
+                                     index, Filter3Lookback, isBull);
+
+                if (!internalOk && !swingOk)
+                {
+                    Print("[Filter3 BLOCKED] {0} signal at bar {1}: no unmitigated internal or swing OB touched in last {2} bars.",
+                          cond > 0 ? "Long" : "Short", index, Filter3Lookback);
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Scans every OB currently in the live pool (all unmitigated/unbroken)
+        /// and returns true if any of the last <paramref name="lookback"/> closed
+        /// bars touched at least one of them.
+        ///
+        /// For a bullish OB: touch = bar's Low ≤ ob.Top.
+        /// For a bearish OB: touch = bar's High ≥ ob.Bottom.
+        ///
+        /// The lookback scans bars [signalBar-lookback .. signalBar] inclusive.
+        /// </summary>
+        private bool HasActiveTouchInLookback(
+            List<SmcObRecord> pool,
+            int               signalBar,
+            int               lookback,
+            bool              bullish)
+        {
+            if (pool.Count == 0) return false;
+
+            var from = Math.Max(0, signalBar - lookback);
+
+            foreach (var ob in pool)
+            {
+                for (var b = from; b <= signalBar; b++)
+                {
+                    if (bullish  && Bars.LowPrices[b]  <= ob.Top)    return true;
+                    if (!bullish && Bars.HighPrices[b]  >= ob.Bottom) return true;
+                }
+            }
+            return false;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  SMC filter detection engine
+        //  Self-contained copy of the OB detection logic from
+        //  SMC_orderblock_detector.cs — no chart drawing, pure state tracking.
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void RunSmcFilter(int index)
+        {
+            // Fill parsed arrays for every bar from where we left off up to index.
+            // This must cover the FULL history because StoreSmcOrderBlock indexes
+            // into _parsedHighs/_parsedLows by absolute bar index.
+            // OnBar() only fires for NEW bars, so without this loop the arrays
+            // would only have ~1 entry while breakIndex is in the thousands,
+            // causing the StoreSmcOrderBlock guard to fire and block every OB.
+            for (var i = _lastParsedIndex + 1; i <= index; i++)
+                UpdateParsedArrays(i);
+            _lastParsedIndex = index;
+
+            if (index < _smcWarmup) return;
+
+            var iLen = Math.Max(1, SmcInternalPivotLength);
+            var sLen = Math.Max(5, SmcSwingsLength);
+
+            // ── Internal leg (iBOS / iCHoCH pivot tracking) ───────────────────
+            var internalLegNow = ComputeLeg(index, iLen, _internalLeg);
+            var internalDc     = internalLegNow - _internalLeg;
+            if (internalDc != 0)
+            {
+                if (internalDc == 1)
+                {
+                    _internalLowLevel   = Bars.LowPrices[index - iLen];
+                    _internalLowIndex   = index - iLen;
+                    _internalLowCrossed = false;
+                }
+                else
+                {
+                    _internalHighLevel   = Bars.HighPrices[index - iLen];
+                    _internalHighIndex   = index - iLen;
+                    _internalHighCrossed = false;
+                }
+            }
+            _internalLeg = internalLegNow;
+
+            // ── Swing leg (BOS / CHoCH pivot tracking) ────────────────────────
+            var swingLegNow = ComputeLeg(index, sLen, _swingLeg);
+            var swingDc     = swingLegNow - _swingLeg;
+            if (swingDc != 0)
+            {
+                if (swingDc == 1)
+                {
+                    _lastSwingLow      = Bars.LowPrices[index - sLen];
+                    _lastSwingLowIndex = index - sLen;
+                    _swingLowCrossed   = false;
+                }
+                else
+                {
+                    _lastSwingHigh      = Bars.HighPrices[index - sLen];
+                    _lastSwingHighIndex = index - sLen;
+                    _swingHighCrossed   = false;
+                }
+            }
+            _swingLeg = swingLegNow;
+
+            // ── Structure crosses → create OBs ────────────────────────────────
+            // Internal (iBOS / iCHoCH) — use Close source (mirrors indicator default)
+            if (!double.IsNaN(_internalHighLevel) && !_internalHighCrossed
+                && Bars.ClosePrices[index] > _internalHighLevel)
+            {
+                _internalHighCrossed = true;
+                StoreSmcOrderBlock(_internalHighIndex, isInternal: true, bias: 1, breakIndex: index);
+            }
+            if (!double.IsNaN(_internalLowLevel) && !_internalLowCrossed
+                && Bars.ClosePrices[index] < _internalLowLevel)
+            {
+                _internalLowCrossed = true;
+                StoreSmcOrderBlock(_internalLowIndex, isInternal: true, bias: -1, breakIndex: index);
+            }
+
+            // Swing (BOS / CHoCH)
+            if (!double.IsNaN(_lastSwingHigh) && !_swingHighCrossed
+                && Bars.ClosePrices[index] > _lastSwingHigh)
+            {
+                _swingHighCrossed = true;
+                StoreSmcOrderBlock(_lastSwingHighIndex, isInternal: false, bias: 1, breakIndex: index);
+            }
+            if (!double.IsNaN(_lastSwingLow) && !_swingLowCrossed
+                && Bars.ClosePrices[index] < _lastSwingLow)
+            {
+                _swingLowCrossed = true;
+                StoreSmcOrderBlock(_lastSwingLowIndex, isInternal: false, bias: -1, breakIndex: index);
+            }
+
+            // ── OB lifecycle (mitigation only) ────────────────────────────────
+            ManageSmcObList(_smcInternalBullObs, index, bullish: true);
+            ManageSmcObList(_smcInternalBearObs, index, bullish: false);
+            ManageSmcObList(_smcSwingBullObs,    index, bullish: true);
+            ManageSmcObList(_smcSwingBearObs,    index, bullish: false);
+        }
+
+        /// <summary>
+        /// Creates an SMC OrderBlock from the pivot bar that preceded a
+        /// structure break.  Mirrors StoreOrderBlockFromPivot in the indicator.
+        /// bias = +1 (bullish): search for bar with lowest parsed-low.
+        /// bias = -1 (bearish): search for bar with highest parsed-high.
+        /// </summary>
+        private void StoreSmcOrderBlock(int pivotIndex, bool isInternal, int bias, int breakIndex)
+        {
+            if (pivotIndex < 0 || pivotIndex >= breakIndex || breakIndex >= _parsedHighs.Count)
+                return;
+
+            var parsedIndex = pivotIndex;
+            if (bias == -1)
+            {
+                var maxV = double.MinValue;
+                for (var i = pivotIndex; i <= breakIndex; i++)
+                    if (_parsedHighs[i] > maxV) { maxV = _parsedHighs[i]; parsedIndex = i; }
+            }
+            else
+            {
+                var minV = double.MaxValue;
+                for (var i = pivotIndex; i <= breakIndex; i++)
+                    if (_parsedLows[i] < minV) { minV = _parsedLows[i]; parsedIndex = i; }
+            }
+
+            var bullish = (bias == 1);
+            var ob = new SmcObRecord
+            {
+                Index               = parsedIndex,
+                Top                 = _parsedHighs[parsedIndex],
+                Bottom              = _parsedLows[parsedIndex],
+                Bullish             = bullish,
+                Internal            = isInternal,
+                StructureBreakIndex = breakIndex,
+                Time                = Bars.OpenTimes[parsedIndex]
+            };
+            _smcObIdCounter++;
+
+            var list = isInternal
+                ? (bullish ? _smcInternalBullObs : _smcInternalBearObs)
+                : (bullish ? _smcSwingBullObs    : _smcSwingBearObs);
+
+            if (list.Count >= MaxSmcObs) list.RemoveAt(list.Count - 1);
+            list.Insert(0, ob);
+        }
+
+        /// <summary>
+        /// Removes mitigated (broken) OBs from the pool.
+        /// An OB is mitigated when price fully crosses through it (HighLow mode):
+        ///   Bullish OB: Low  &lt; ob.Bottom → mitigated, removed.
+        ///   Bearish OB: High &gt; ob.Top    → mitigated, removed.
+        ///
+        /// OBs that are merely TOUCHED (Low ≤ ob.Top for bull, High ≥ ob.Bottom
+        /// for bear) are intentionally kept in the pool — they remain unbroken
+        /// and available for filter evaluation on all future bars.
+        ///
+        /// The filter (HasActiveTouchInLookback) scans this pool directly, so
+        /// every OB in the list is guaranteed to be currently unmitigated.
+        /// </summary>
+        private void ManageSmcObList(List<SmcObRecord> list, int index, bool bullish)
+        {
+            for (var i = list.Count - 1; i >= 0; i--)
+            {
+                var ob        = list[i];
+                var mitigated = ( bullish && Bars.LowPrices[index]  < ob.Bottom)
+                             || (!bullish && Bars.HighPrices[index] > ob.Top);
+                if (mitigated) list.RemoveAt(i);
+            }
+        }
+
+        // ── Parsed arrays (SMC volatility-adjusted OB anchoring) ──────────────
+        private void UpdateParsedArrays(int index)
+        {
+            var atr     = AverageTrueRangeSimple(index, SmcObFilterAtrPeriod);
+            var highVol = (Bars.HighPrices[index] - Bars.LowPrices[index]) >= 2.0 * atr;
+            _parsedHighs.Add(highVol ? Bars.LowPrices[index]  : Bars.HighPrices[index]);
+            _parsedLows.Add( highVol ? Bars.HighPrices[index] : Bars.LowPrices[index]);
+        }
+
+        // ── Swing / internal leg direction ────────────────────────────────────
+        private int ComputeLeg(int index, int size, int previousLeg)
+        {
+            if (index - size < 1) return previousLeg;
+            var highest = double.MinValue;
+            var lowest  = double.MaxValue;
+            for (var i = Math.Max(0, index - size + 1); i <= index; i++)
+            {
+                if (Bars.HighPrices[i] > highest) highest = Bars.HighPrices[i];
+                if (Bars.LowPrices[i]  < lowest)  lowest  = Bars.LowPrices[i];
+            }
+            if (Bars.HighPrices[index - size] > highest) return 0;
+            if (Bars.LowPrices[index  - size] < lowest)  return 1;
+            return previousLeg;
+        }
+
+        // ── Simple ATR (manual, no indicator dependency) ──────────────────────
+        private double AverageTrueRangeSimple(int index, int period)
+        {
+            var start = Math.Max(1, index - period + 1);
+            var sum = 0.0; var n = 0;
+            for (var i = start; i <= index; i++)
+            {
+                var pc = Bars.ClosePrices[i - 1];
+                sum += Math.Max(Bars.HighPrices[i] - Bars.LowPrices[i],
+                       Math.Max(Math.Abs(Bars.HighPrices[i] - pc),
+                                Math.Abs(Bars.LowPrices[i]  - pc)));
+                n++;
+            }
+            return n > 0 ? sum / n : Symbol.TickSize;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Entry trigger — OB detection
+        //  Verbatim from order_block_detector_cbot_single.cs
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void DetectOrderBlock(int chartIndex, int sourceIndex)
+        {
+            if (sourceIndex == _lastDetectedObSourceIndex)
+                return;
+
+            var candleDir     = _sourceBars.ClosePrices[sourceIndex]     > _sourceBars.OpenPrices[sourceIndex]     ? 1 : -1;
+            var candleDirPrev = _sourceBars.ClosePrices[sourceIndex - 1] > _sourceBars.OpenPrices[sourceIndex - 1] ? 1 : -1;
+
+            bool   detected = false;
+            bool   isBull   = false;
+            double max      = 0;
+            double min      = 0;
+
+            if (candleDir == 1 && candleDirPrev == -1
+                && _sourceBars.HighPrices[sourceIndex] > _sourceBars.HighPrices[sourceIndex - 1])
+            {
+                detected = true;
+                isBull   = true;
+                max      = _sourceBars.HighPrices[sourceIndex - 1];
+                min      = _sourceBars.LowPrices[sourceIndex - 1];
+            }
+
+            if (candleDir == -1 && candleDirPrev == 1
+                && _sourceBars.LowPrices[sourceIndex] < _sourceBars.LowPrices[sourceIndex - 1])
+            {
+                detected = true;
+                isBull   = false;
+                max      = _sourceBars.HighPrices[sourceIndex - 1];
+                min      = _sourceBars.LowPrices[sourceIndex - 1];
+            }
+
+            if (!detected) return;
+
+            _obRecords.Insert(0, new EntryObRecord
+            {
+                Max                 = max,
+                Min                 = min,
+                IsBull              = isBull,
+                DetectionTime       = _sourceBars.OpenTimes[sourceIndex],
+                DetectionChartIndex = chartIndex
+            });
+
+            _lastDetectedObSourceIndex = sourceIndex;
+        }
+
+        private void HandleMitigationOb(int index, double sLow, double sHigh)
+        {
+            for (var i = _obRecords.Count - 1; i >= 0; i--)
+            {
+                var r   = _obRecords[i];
+                var now = Bars.OpenTimes[index];
+
+                if (r.IsBull)
+                {
+                    if ((sLow <= r.Max || Bars.LowPrices[index] <= r.Max) && r.DetectionTime < now)
+                    {
+                        _obRecords.RemoveAt(i);
+                        if (r.DetectionChartIndex + MinDist < index)
+                            _signal = NewEntrySignal(index, r.Max, true);
+                    }
+                }
+                else
+                {
+                    if ((sHigh >= r.Min || Bars.HighPrices[index] >= r.Min) && r.DetectionTime < now)
+                    {
+                        _obRecords.RemoveAt(i);
+                        if (r.DetectionChartIndex + MinDist < index)
+                            _signal = NewEntrySignal(index, r.Min, false);
+                    }
+                }
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Entry trigger — FVG detection
+        //  Adapted from Order-Block Detector.cs indicator (display code stripped)
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void DetectFvg(int chartIndex, int sourceIndex)
+        {
+            if (sourceIndex < 2 || sourceIndex == _lastDetectedFvgSourceIndex)
+                return;
+
+            bool   detected = false;
+            bool   isBull   = false;
+            double max      = 0;
+            double min      = 0;
+
+            // Bullish FVG: current low is above the high from 2 bars ago
+            if (_sourceBars.LowPrices[sourceIndex] > _sourceBars.HighPrices[sourceIndex - 2])
+            {
+                detected = true;
+                isBull   = true;
+                max      = _sourceBars.LowPrices[sourceIndex];
+                min      = _sourceBars.HighPrices[sourceIndex - 2];
+            }
+
+            // Bearish FVG: current high is below the low from 2 bars ago
+            if (_sourceBars.LowPrices[sourceIndex - 2] > _sourceBars.HighPrices[sourceIndex])
+            {
+                detected = true;
+                isBull   = false;
+                max      = _sourceBars.LowPrices[sourceIndex - 2];
+                min      = _sourceBars.HighPrices[sourceIndex];
+            }
+
+            if (!detected) return;
+
+            _fvgRecords.Insert(0, new EntryFvgRecord
+            {
+                Max                 = max,
+                Min                 = min,
+                IsBull              = isBull,
+                DetectionTime       = _sourceBars.OpenTimes[sourceIndex],
+                DetectionChartIndex = chartIndex
+            });
+
+            _lastDetectedFvgSourceIndex = sourceIndex;
+        }
+
+        private void HandleMitigationFvg(int index, double sLow, double sHigh)
+        {
+            for (var i = _fvgRecords.Count - 1; i >= 0; i--)
+            {
+                var r   = _fvgRecords[i];
+                var now = Bars.OpenTimes[index];
+
+                if (r.IsBull)
+                {
+                    if ((sLow <= r.Max || Bars.LowPrices[index] <= r.Max) && r.DetectionTime < now)
+                    {
+                        _fvgRecords.RemoveAt(i);
+                        if (r.DetectionChartIndex + MinDistFvg < index)
+                            _signalFvg = NewEntrySignal(index, r.Max, true);
+                    }
+                }
+                else
+                {
+                    if ((sHigh >= r.Min || Bars.HighPrices[index] >= r.Min) && r.DetectionTime < now)
+                    {
+                        _fvgRecords.RemoveAt(i);
+                        if (r.DetectionChartIndex + MinDistFvg < index)
+                            _signalFvg = NewEntrySignal(index, r.Min, false);
+                    }
+                }
+            }
+        }
+
+        // ── Entry signal helpers ──────────────────────────────────────────────
+
+        private EntrySignalState NewEntrySignal(int index, double point, bool isBull)
+            => new EntrySignalState { Point = point, IsBull = isBull, Entry = false, Index = index };
+
+        private static EntrySignalState NewEmptyEntrySignal()
+            => new EntrySignalState { Point = double.NaN, Entry = false };
+
+        // ── Heikin-Ashi (entry trigger) ───────────────────────────────────────
+        private void EnsureHeikinAshiSource(int sourceIndex)
+        {
+            while (_haSourceClose.Count <= sourceIndex)
+            {
+                var i     = _haSourceClose.Count;
+                var close = (_sourceBars.OpenPrices[i]  + _sourceBars.HighPrices[i]
+                           + _sourceBars.LowPrices[i]   + _sourceBars.ClosePrices[i]) / 4.0;
+                var open  = i == 0
+                    ? (_sourceBars.OpenPrices[i] + _sourceBars.ClosePrices[i]) / 2.0
+                    : (_haSourceOpen[i - 1] + _haSourceClose[i - 1]) / 2.0;
+                _haSourceOpen.Add(open);
+                _haSourceClose.Add(close);
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Trade execution
+        //  Verbatim from order_block_detector_cbot_single.cs
+        // ════════════════════════════════════════════════════════════════════════
+
+        private void ExecuteSignalTrade(int signalBarIndex, int direction)
+        {
+            var tradeType = direction > 0 ? TradeType.Buy : TradeType.Sell;
+            var stopLossPrice = direction > 0
+                ? GetLowestLowBeforeSignal(signalBarIndex, StopLossLookbackBars)
+                : GetHighestHighBeforeSignal(signalBarIndex, StopLossLookbackBars);
+
+            if (double.IsNaN(stopLossPrice)) return;
+
+            var entryPrice   = direction > 0 ? Symbol.Ask : Symbol.Bid;
+            var stopLossPips = direction > 0
+                ? (entryPrice - stopLossPrice) / Symbol.PipSize
+                : (stopLossPrice - entryPrice) / Symbol.PipSize;
+
+            if (stopLossPips <= 0)
+            {
+                Print("Skipped trade: invalid SL. direction={0} entry={1} sl={2}",
+                      direction, entryPrice, stopLossPrice);
+                return;
+            }
+
+            var riskAmount       = Account.Balance * (RiskPercent / 100.0);
+            var rawVolumeInUnits = riskAmount / (stopLossPips * Symbol.PipValue);
+            var volumeInUnits    = Symbol.NormalizeVolumeInUnits(rawVolumeInUnits, RoundingMode.Down);
+
+            if (volumeInUnits < Symbol.VolumeInUnitsMin) volumeInUnits = Symbol.VolumeInUnitsMin;
+            if (volumeInUnits > Symbol.VolumeInUnitsMax) volumeInUnits = Symbol.VolumeInUnitsMax;
+
+            var takeProfitPips = stopLossPips * RiskRewardRatio;
+            if (takeProfitPips <= 0)
+            {
+                Print("Skipped trade: invalid TP. R:R={0}", RiskRewardRatio);
+                return;
+            }
+
+            ExecuteMarketOrder(tradeType, SymbolName, volumeInUnits, InstanceName,
+                               stopLossPips, takeProfitPips);
+        }
+
+        private double GetLowestLowBeforeSignal(int signalBarIndex, int lookbackBars)
+        {
+            var from = Math.Max(0, signalBarIndex - lookbackBars + 1);
+            var to   = signalBarIndex;
+            if (to < from) return double.NaN;
+            var lowest = double.MaxValue;
+            for (var i = from; i <= to; i++) lowest = Math.Min(lowest, Bars.LowPrices[i]);
+            return lowest;
+        }
+
+        private double GetHighestHighBeforeSignal(int signalBarIndex, int lookbackBars)
+        {
+            var from = Math.Max(0, signalBarIndex - lookbackBars + 1);
+            var to   = signalBarIndex;
+            if (to < from) return double.NaN;
+            var highest = double.MinValue;
+            for (var i = from; i <= to; i++) highest = Math.Max(highest, Bars.HighPrices[i]);
+            return highest;
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  Utility — binary search bar lookup
+        //  Verbatim from order_block_detector_cbot_single.cs
+        // ════════════════════════════════════════════════════════════════════════
+
+        private static int FindBarIndexAtOrBefore(Bars bars, DateTime t)
+        {
+            var times = bars.OpenTimes;
+            var left  = 0;
+            var right = times.Count - 1;
+            var ans   = -1;
+            while (left <= right)
+            {
+                var mid = (left + right) / 2;
+                if (times[mid] <= t) { ans = mid; left  = mid + 1; }
+                else                  {            right = mid - 1; }
+            }
+            return ans;
+        }
+    }
+}
