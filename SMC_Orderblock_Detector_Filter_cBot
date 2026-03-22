@@ -198,6 +198,42 @@ namespace cAlgo
         public int Filter2Lookback { get; set; }
 
         // ════════════════════════════════════════════════════════════════════════
+        //  Parameters — OB Quality Filters
+        //
+        //  These two filters control which OBs in the pool are eligible as a
+        //  filter match.  An OB that fails either quality test is skipped when
+        //  scanning the pool — it can never satisfy Filter 1 or Filter 2.
+        //
+        //  Quality Filter A — Min Bars From OB Origin:
+        //    An OB only qualifies if the signal bar is at least N bars away from
+        //    the OB's origin (pivot) bar.  Separate lookbacks for Internal and
+        //    Swing OBs allow fine-tuning each pool independently.
+        //    Purpose: avoids trades too close to freshly created OBs.
+        //
+        //  Quality Filter B — ATR Distance From OB Level:
+        //    An OB only qualifies if price has advanced at least
+        //    AtrDistanceMultiplier × ATR(signal bar) from the OB level.
+        //    Bull OB:  Bars.Close[signalBar] - ob.Top    ≥ Multiplier × ATR
+        //    Bear OB:  ob.Bottom - Bars.Close[signalBar] ≥ Multiplier × ATR
+        //    Purpose: ensures the OB has been left behind with meaningful distance.
+        // ════════════════════════════════════════════════════════════════════════
+
+        [Parameter("Enable Min Bars From OB Origin", DefaultValue = false, Group = "OB Quality Filters")]
+        public bool EnableMinBarsFromOrigin { get; set; }
+
+        [Parameter("Min Bars — Internal OB", DefaultValue = 5, MinValue = 1, Group = "OB Quality Filters")]
+        public int MinBarsFromOriginInternal { get; set; }
+
+        [Parameter("Min Bars — Swing OB", DefaultValue = 5, MinValue = 1, Group = "OB Quality Filters")]
+        public int MinBarsFromOriginSwing { get; set; }
+
+        [Parameter("Enable ATR Distance Filter", DefaultValue = false, Group = "OB Quality Filters")]
+        public bool EnableAtrDistanceFilter { get; set; }
+
+        [Parameter("ATR Distance Multiplier", DefaultValue = 1.0, MinValue = 0.1, Step = 0.1, Group = "OB Quality Filters")]
+        public double AtrDistanceMultiplier { get; set; }
+
+        // ════════════════════════════════════════════════════════════════════════
         //  Private fields — Entry trigger
         // ════════════════════════════════════════════════════════════════════════
 
@@ -394,13 +430,42 @@ namespace cAlgo
         private bool HasActiveTouchInLookback(List<SmcObRecord> pool, int signalBar, int lookback, bool bullish)
         {
             if (pool.Count == 0) return false;
-            var from = Math.Max(0, signalBar - lookback);
+
+            var from       = Math.Max(0, signalBar - lookback);
+            var currentAtr = double.IsNaN(_smcAtrWilder) ? 0.0 : _smcAtrWilder;
+            var closeNow   = Bars.ClosePrices[signalBar];
+
             foreach (var ob in pool)
+            {
+                // ── Quality Filter A: min bars from OB origin ─────────────────
+                // Skip this OB if the signal bar is fewer than N bars from the
+                // OB's pivot (origin) bar.  Separate thresholds for Internal/Swing.
+                if (EnableMinBarsFromOrigin)
+                {
+                    var minBars = ob.Internal ? MinBarsFromOriginInternal : MinBarsFromOriginSwing;
+                    if (signalBar - ob.Index < minBars) continue;
+                }
+
+                // ── Quality Filter B: ATR distance from OB level ──────────────
+                // Skip this OB if price has not advanced at least
+                // AtrDistanceMultiplier × ATR(signal bar) from the OB level.
+                //   Bull OB:  Close[signalBar] - ob.Top    ≥ Multiplier × ATR
+                //   Bear OB:  ob.Bottom - Close[signalBar] ≥ Multiplier × ATR
+                if (EnableAtrDistanceFilter && currentAtr > 0)
+                {
+                    var advance = bullish
+                        ? closeNow - ob.Top        // how far above the bull OB
+                        : ob.Bottom - closeNow;    // how far below the bear OB
+                    if (advance < AtrDistanceMultiplier * currentAtr) continue;
+                }
+
+                // ── Touch check: any bar in the lookback window touched this OB ─
                 for (var b = from; b <= signalBar; b++)
                 {
                     if ( bullish && Bars.LowPrices[b]  <= ob.Top)    return true;
                     if (!bullish && Bars.HighPrices[b] >= ob.Bottom) return true;
                 }
+            }
             return false;
         }
 
