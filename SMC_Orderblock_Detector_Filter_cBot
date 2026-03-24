@@ -150,6 +150,9 @@ namespace cAlgo
         [Parameter("Risk:Reward Ratio", DefaultValue = 2.0, MinValue = 0.1, Step = 0.1, Group = "Risk")]
         public double RiskRewardRatio { get; set; }
 
+        [Parameter("SL Buffer (pips)", DefaultValue = 0.0, MinValue = 0.0, Step = 0.1, Group = "Risk")]
+        public double StopLossBufferPips { get; set; }
+
         [Parameter("Instance Name", DefaultValue = "SMC_OB_Filter_cBot", Group = "Risk")]
         public string InstanceName { get; set; }
 
@@ -451,7 +454,7 @@ namespace cAlgo
                 // AtrDistanceMultiplier × ATR(signal bar) from the OB level.
                 //   Bull OB:  Close[signalBar] - ob.Top    ≥ Multiplier × ATR
                 //   Bear OB:  ob.Bottom - Close[signalBar] ≥ Multiplier × ATR
-                if (EnableAtrDistanceFilter && currentAtr > 0)
+                if (EnableAtrDistanceFilter && AtrDistanceMultiplier > 0 && currentAtr > 0)
                 {
                     var advance = bullish
                         ? closeNow - ob.Top        // how far above the bull OB
@@ -682,12 +685,12 @@ namespace cAlgo
                 if (r.IsBull)
                 {
                     if ((sLow <= r.Max || Bars.LowPrices[index] <= r.Max) && r.DetectionTime < now)
-                    { _obRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDist < index) _signal = NewEntrySignal(index, r.Max, true); }
+                    { _obRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDist < index && EntryAtrDistancePasses(index, r.Max, true))  _signal = NewEntrySignal(index, r.Max, true); }
                 }
                 else
                 {
                     if ((sHigh >= r.Min || Bars.HighPrices[index] >= r.Min) && r.DetectionTime < now)
-                    { _obRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDist < index) _signal = NewEntrySignal(index, r.Min, false); }
+                    { _obRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDist < index && EntryAtrDistancePasses(index, r.Min, false)) _signal = NewEntrySignal(index, r.Min, false); }
                 }
             }
         }
@@ -720,12 +723,12 @@ namespace cAlgo
                 if (r.IsBull)
                 {
                     if ((sLow <= r.Max || Bars.LowPrices[index] <= r.Max) && r.DetectionTime < now)
-                    { _fvgRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDistFvg < index) _signalFvg = NewEntrySignal(index, r.Max, true); }
+                    { _fvgRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDistFvg < index && EntryAtrDistancePasses(index, r.Max, true))  _signalFvg = NewEntrySignal(index, r.Max, true); }
                 }
                 else
                 {
                     if ((sHigh >= r.Min || Bars.HighPrices[index] >= r.Min) && r.DetectionTime < now)
-                    { _fvgRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDistFvg < index) _signalFvg = NewEntrySignal(index, r.Min, false); }
+                    { _fvgRecords.RemoveAt(i); if (r.DetectionChartIndex + MinDistFvg < index && EntryAtrDistancePasses(index, r.Min, false)) _signalFvg = NewEntrySignal(index, r.Min, false); }
                 }
             }
         }
@@ -734,6 +737,28 @@ namespace cAlgo
             => new EntrySignalState { Point = point, IsBull = isBull, Entry = false, Index = index };
         private static EntrySignalState NewEmptyEntrySignal()
             => new EntrySignalState { Point = double.NaN, Entry = false };
+
+        // Mirrors AtrDistancePasses in Order-Block Detector exactly.
+        // Uses _smcAtrWilder (Wilder RMA, period 200) — same field and algorithm
+        // as the indicator's _atrWilder so both files produce identical results
+        // when configured with the same multiplier.
+        //   Bull OB/FVG:  Close[index] - level ≥ Multiplier × ATR
+        //   Bear OB/FVG:  level - Close[index] ≥ Multiplier × ATR
+        // Returns true (signal allowed) when:
+        //   • filter is disabled, OR
+        //   • multiplier is 0, OR
+        //   • ATR not yet seeded (warmup), OR
+        //   • advance satisfies the threshold.
+        private bool EntryAtrDistancePasses(int index, double level, bool isBull)
+        {
+            if (!EnableAtrDistanceFilter)       return true;
+            if (AtrDistanceMultiplier <= 0)     return true;
+            if (double.IsNaN(_smcAtrWilder))    return true;
+            var advance = isBull
+                ? Bars.ClosePrices[index] - level
+                : level - Bars.ClosePrices[index];
+            return advance >= AtrDistanceMultiplier * _smcAtrWilder;
+        }
 
         private void EnsureHeikinAshiSource(int sourceIndex)
         {
@@ -770,6 +795,10 @@ namespace cAlgo
 
             if (stopLossPips <= 0)
             { Print("Skipped: invalid SL. dir={0} entry={1} sl={2}", direction, entryPrice, stopLossPrice); return; }
+
+            // Add the user-defined pip buffer to the raw SL distance.
+            // Buffer pushes the SL further from entry, giving the trade more room.
+            stopLossPips += StopLossBufferPips;
 
             var riskAmount       = Account.Balance * (RiskPercent / 100.0);
             var rawVolumeInUnits = riskAmount / (stopLossPips * Symbol.PipValue);
