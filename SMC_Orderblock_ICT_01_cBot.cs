@@ -100,10 +100,13 @@ namespace cAlgo
         //  Parameters — Risk Management
         // ═════════════════════════════════════════════════════════════════════
 
-        [Parameter("Risk Per Trade (%)", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 10.0, Group = "Risk Management")]
+        [Parameter("Risk Per Trade (%)", DefaultValue = 1.0, MinValue = 0.1, MaxValue = 100.0, Group = "Risk Management")]
         public double RiskPercent { get; set; }
 
-        [Parameter("Max Simultaneous Positions", DefaultValue = 3, MinValue = 1, MaxValue = 10, Group = "Risk Management")]
+        [Parameter("Risk:Reward Ratio", DefaultValue = 2.0, MinValue = 0.1, Step = 0.1, Group = "Risk Management")]
+        public double RiskRewardRatio { get; set; }
+
+        [Parameter("Max Simultaneous Positions", DefaultValue = 3, MinValue = 1, MaxValue = 100, Group = "Risk Management")]
         public int MaxOpenPositions { get; set; }
 
         [Parameter("Min SL Distance (pips)", DefaultValue = 3.0, MinValue = 0.1, Group = "Risk Management")]
@@ -111,6 +114,9 @@ namespace cAlgo
 
         [Parameter("Max SL Distance (pips)", DefaultValue = 500.0, MinValue = 10.0, Group = "Risk Management")]
         public double MaxSlPips { get; set; }
+
+        [Parameter("Instance Name", DefaultValue = "SMC_ICT01_cBot", Group = "Risk Management")]
+        public string InstanceName { get; set; }
 
         // ═════════════════════════════════════════════════════════════════════
         //  Parameters — SMC Filter — Swing Structure
@@ -136,31 +142,37 @@ namespace cAlgo
         // ═════════════════════════════════════════════════════════════════════
         //  Parameters — Filter 1 (Internal OB)
         //
-        //  Lookback = 0 (default): the ICT signal bar itself must be touching
-        //  an active Internal OB (Low ≤ ob.Top for long, High ≥ ob.Bottom for
-        //  short).  This enforces "trade originates FROM an OB."
-        //  Lookback > 0: any bar within the last N bars touching an OB passes
-        //  (looser — more like a confluence confirmation).
+        //  Defines how long after price touches a bullish/bearish Internal OB
+        //  an ICT signal is still accepted.
+        //
+        //  Flow per trade:
+        //    1. BOS / iBOS / CHoCH / iCHoCH breaks structure → Internal OB created.
+        //    2. Price returns and touches that OB (Low ≤ ob.Top for long,
+        //       High ≥ ob.Bottom for short).
+        //    3. An ICT_01 signal must appear within OB Touch Window bars of
+        //       that touch → trade triggered.
+        //
+        //  OB Touch Window = 0 → ICT signal must be on the exact touch bar.
+        //  OB Touch Window = 10 → ICT signal allowed up to 10 bars after touch.
         // ═════════════════════════════════════════════════════════════════════
 
         [Parameter("Enable Filter 1 (Internal OB)", DefaultValue = true, Group = "Filter 1 — Internal OB")]
         public bool EnableFilter1 { get; set; }
 
-        [Parameter("Filter 1 Lookback (bars)", DefaultValue = 10, MinValue = 0, Group = "Filter 1 — Internal OB")]
+        [Parameter("OB Touch Window — Internal (bars)", DefaultValue = 10, MinValue = 0, Group = "Filter 1 — Internal OB")]
         public int Filter1Lookback { get; set; }
 
         // ═════════════════════════════════════════════════════════════════════
         //  Parameters — Filter 2 (Swing OB)
         //
-        //  Same semantics as Filter 1.  Lookback = 0 requires the signal bar
-        //  to be at a Swing OB.  Both filters enabled → OR logic: either pool
-        //  passing is sufficient.
+        //  Same flow as Filter 1 but applied to the Swing OB pool.
+        //  When both filters are enabled, either pool passing is sufficient (OR).
         // ═════════════════════════════════════════════════════════════════════
 
         [Parameter("Enable Filter 2 (Swing OB)", DefaultValue = false, Group = "Filter 2 — Swing OB")]
         public bool EnableFilter2 { get; set; }
 
-        [Parameter("Filter 2 Lookback (bars)", DefaultValue = 10, MinValue = 0, Group = "Filter 2 — Swing OB")]
+        [Parameter("OB Touch Window — Swing (bars)", DefaultValue = 10, MinValue = 0, Group = "Filter 2 — Swing OB")]
         public int Filter2Lookback { get; set; }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -186,10 +198,8 @@ namespace cAlgo
         //  Constants
         // ═════════════════════════════════════════════════════════════════════
 
-        private const string BotLabel     = "SMC_ICT01_cBot";
-        private const double RrRatio      = 2.0;
-        private const int    IctAtrLength = 55;
-        private const int    MaxBslPivots = 10;
+        private const int IctAtrLength = 55;
+        private const int MaxBslPivots = 10;
 
         // ═════════════════════════════════════════════════════════════════════
         //  ICT_01 embedded fields
@@ -338,7 +348,7 @@ namespace cAlgo
             bool isShort = _ictIsShortSignal;
             if (!isLong && !isShort) return;
 
-            int openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+            int openCount = Positions.FindAll(InstanceName, SymbolName).Length;
             if (openCount >= MaxOpenPositions)
             {
                 Print("Bar {0}: max positions ({1}) reached.", signalBar, MaxOpenPositions);
@@ -352,7 +362,7 @@ namespace cAlgo
                     TryEnterLong(signalBar);
             }
 
-            openCount = Positions.FindAll(BotLabel, SymbolName).Length;
+            openCount = Positions.FindAll(InstanceName, SymbolName).Length;
             if (openCount >= MaxOpenPositions) return;
 
             if (isShort && _lastShortSignalBar != signalBar)
@@ -389,7 +399,7 @@ namespace cAlgo
             {
                 if (!f1.Value && !f2.Value)
                 {
-                    Print("[Filter BLOCKED] {0} at bar {1}: signal bar not at any unmitigated internal or swing OB (lookback {2}/{3}).",
+                    Print("[Filter BLOCKED] {0} at bar {1}: no unmitigated internal or swing OB touched within {2}/{3} bars of ICT signal.",
                           isBull ? "Long" : "Short", index, Filter1Lookback, Filter2Lookback);
                     return false;
                 }
@@ -397,13 +407,13 @@ namespace cAlgo
             }
             if (f1.HasValue && !f1.Value)
             {
-                Print("[Filter1 BLOCKED] {0} at bar {1}: signal bar not at any unmitigated internal OB (lookback {2}).",
+                Print("[Filter1 BLOCKED] {0} at bar {1}: no unmitigated internal OB touched within {2} bars of ICT signal.",
                       isBull ? "Long" : "Short", index, Filter1Lookback);
                 return false;
             }
             if (f2.HasValue && !f2.Value)
             {
-                Print("[Filter2 BLOCKED] {0} at bar {1}: signal bar not at any unmitigated swing OB (lookback {2}).",
+                Print("[Filter2 BLOCKED] {0} at bar {1}: no unmitigated swing OB touched within {2} bars of ICT signal.",
                       isBull ? "Long" : "Short", index, Filter2Lookback);
                 return false;
             }
@@ -448,9 +458,9 @@ namespace cAlgo
                 if (lastTouchBar < 0) continue;   // OB never touched — skip
 
                 // ── The ICT signal must appear within `lookback` bars of the
-                //    most recent touch.
-                //    lookback = 0  → signal must be on the same bar as the touch
-                //    lookback = 10 → signal allowed up to 10 bars after the touch
+                //    most recent OB touch for the trade to be allowed.
+                //    lookback = 0  → ICT signal must be on the same bar as the touch
+                //    lookback = 10 → ICT signal allowed up to 10 bars after the touch
                 if (signalBar - lastTouchBar <= lookback) return true;
             }
             return false;
@@ -873,8 +883,8 @@ namespace cAlgo
             double volume = GetRiskVolume(Account.Equity * (RiskPercent / 100.0), slPips);
             if (volume <= 0) { Print("Bar {0}: LONG skipped – volume is 0.", signalBar); return; }
             Print("Bar {0}: LONG  | Entry={1:F5} | SSL={2:F5} ({3:F1} pips) | TP={4:F1} pips | Vol={5}",
-                  signalBar, entry, sslLevel, slPips, slPips * RrRatio, volume);
-            ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, BotLabel, slPips, slPips * RrRatio);
+                  signalBar, entry, sslLevel, slPips, slPips * RiskRewardRatio, volume);
+            ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, InstanceName, slPips, slPips * RiskRewardRatio);
         }
 
         private void TryEnterShort(int signalBar)
@@ -890,8 +900,8 @@ namespace cAlgo
             double volume = GetRiskVolume(Account.Equity * (RiskPercent / 100.0), slPips);
             if (volume <= 0) { Print("Bar {0}: SHORT skipped – volume is 0.", signalBar); return; }
             Print("Bar {0}: SHORT | Entry={1:F5} | BSL={2:F5} ({3:F1} pips) | TP={4:F1} pips | Vol={5}",
-                  signalBar, entry, bslLevel, slPips, slPips * RrRatio, volume);
-            ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, BotLabel, slPips, slPips * RrRatio);
+                  signalBar, entry, bslLevel, slPips, slPips * RiskRewardRatio, volume);
+            ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, InstanceName, slPips, slPips * RiskRewardRatio);
         }
 
         private bool ValidateSlPips(int signalBar, string direction, double slPips)
