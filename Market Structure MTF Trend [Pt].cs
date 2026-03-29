@@ -69,7 +69,7 @@ namespace cAlgo
             public double PrevPivotLow;
             public int BosBarsSince;
             public string TfLabel;
-            public int PanelY;
+            public double PanelY;
         }
 
         [Parameter("Timeframe 1", Group = "TF1", DefaultValue = "15")]
@@ -151,6 +151,45 @@ namespace cAlgo
         [Parameter("Enable CHoCH Alerts", Group = "Alerts", DefaultValue = false)]
         public bool EnableChochAlerts { get; set; }
 
+        // ── Signal outputs — readable by a cBot, invisible in the panel ──────
+        // Each series emits 1.0 on the exact bar the event fires, 0.0 otherwise.
+
+        [Output("TF1 BoS Bull",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf1BosBull { get; set; }
+        [Output("TF1 BoS Bear",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf1BosBear { get; set; }
+        [Output("TF1 CHoCH Bull", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf1ChochBull { get; set; }
+        [Output("TF1 CHoCH Bear", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf1ChochBear { get; set; }
+
+        [Output("TF2 BoS Bull",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf2BosBull { get; set; }
+        [Output("TF2 BoS Bear",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf2BosBear { get; set; }
+        [Output("TF2 CHoCH Bull", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf2ChochBull { get; set; }
+        [Output("TF2 CHoCH Bear", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf2ChochBear { get; set; }
+
+        [Output("TF3 BoS Bull",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf3BosBull { get; set; }
+        [Output("TF3 BoS Bear",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf3BosBear { get; set; }
+        [Output("TF3 CHoCH Bull", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf3ChochBull { get; set; }
+        [Output("TF3 CHoCH Bear", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf3ChochBear { get; set; }
+
+        [Output("TF4 BoS Bull",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf4BosBull { get; set; }
+        [Output("TF4 BoS Bear",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf4BosBear { get; set; }
+        [Output("TF4 CHoCH Bull", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf4ChochBull { get; set; }
+        [Output("TF4 CHoCH Bear", LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
+        public IndicatorDataSeries Tf4ChochBear { get; set; }
+
         private readonly List<TfState> _states = new List<TfState>();
 
         protected override void Initialize()
@@ -169,9 +208,10 @@ namespace cAlgo
             var chartTime = Bars.OpenTimes[index];
             var chartPoints = new List<ChartPoint>(_states.Count);
 
+            var panelYValues = new[] { 1.00, 0.66, 0.33, 0.00 };
             for (var i = 0; i < _states.Count; i++)
             {
-                var panelY = 3 - i;
+                var panelY = panelYValues[i];
                 var point = BuildChartPoint(_states[i], index, chartTime, panelY);
                 chartPoints.Add(point);
 
@@ -182,6 +222,30 @@ namespace cAlgo
             }
 
             DrawTrendChanges(index, chartPoints);
+
+            // ── Populate cBot-readable signal outputs ─────────────────────────
+            // chartPoints[0] = TF1, [1] = TF2, [2] = TF3, [3] = TF4
+            SetSignalOutputs(index, chartPoints, 0, Tf1BosBull, Tf1BosBear, Tf1ChochBull, Tf1ChochBear);
+            SetSignalOutputs(index, chartPoints, 1, Tf2BosBull, Tf2BosBear, Tf2ChochBull, Tf2ChochBear);
+            SetSignalOutputs(index, chartPoints, 2, Tf3BosBull, Tf3BosBear, Tf3ChochBull, Tf3ChochBear);
+            SetSignalOutputs(index, chartPoints, 3, Tf4BosBull, Tf4BosBear, Tf4ChochBull, Tf4ChochBear);
+        }
+
+        private static void SetSignalOutputs(
+            int index, IList<ChartPoint> points, int tfIndex,
+            IndicatorDataSeries bosBull, IndicatorDataSeries bosBear,
+            IndicatorDataSeries chochBull, IndicatorDataSeries chochBear)
+        {
+            if (tfIndex >= points.Count)
+            {
+                bosBull[index] = bosBear[index] = chochBull[index] = chochBear[index] = 0.0;
+                return;
+            }
+            var p = points[tfIndex];
+            bosBull[index]   = p.BosEdge     &&  p.Trend ? 1.0 : 0.0;
+            bosBear[index]   = p.BosEdge     && !p.Trend ? 1.0 : 0.0;
+            chochBull[index] = p.TrendChanged &&  p.Trend ? 1.0 : 0.0;
+            chochBear[index] = p.TrendChanged && !p.Trend ? 1.0 : 0.0;
         }
 
         private void AddTfState(string key, string tfInput, int pivotLen, bool isLowerTf, bool showChoch, bool showBos, Color chochBull, Color chochBear, Color bosBull, Color bosBear)
@@ -205,7 +269,7 @@ namespace cAlgo
             });
         }
 
-        private ChartPoint BuildChartPoint(TfState s, int chartBarIndex, DateTime chartTime, int panelY)
+        private ChartPoint BuildChartPoint(TfState s, int chartBarIndex, DateTime chartTime, double panelY)
         {
             var tfBarIndex = ResolveTfBarForChartBar(s, chartTime);
             if (tfBarIndex < 0)
@@ -465,7 +529,7 @@ namespace cAlgo
             return firstInWindow;
         }
 
-        private void DrawPanelStripe(TfState s, int chartBarIndex, int y)
+        private void DrawPanelStripe(TfState s, int chartBarIndex, double y)
         {
             var startTime = Bars.OpenTimes[Math.Max(0, chartBarIndex - 1)];
             var endTime = Bars.OpenTimes[chartBarIndex];
@@ -473,7 +537,7 @@ namespace cAlgo
             line.IsInteractive = false;
         }
 
-        private void DrawTfLabel(TfState s, int y)
+        private void DrawTfLabel(TfState s, double y)
         {
             var text = IndicatorArea.DrawText($"ms_tf_{s.Key}", TimeframeLabel(s.TfInput), Bars.Count - 1, y, Color.Gray);
             text.HorizontalAlignment = HorizontalAlignment.Right;
