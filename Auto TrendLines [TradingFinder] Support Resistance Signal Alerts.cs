@@ -43,29 +43,14 @@
 //
 // BUG FIXES (v3 — verified by Python simulation against TradingView ground truth):
 //  FIX 1 — Removed _skipSyncThisBar flag.
-//    Pine does NOT suppress SyncAdvArray on the bar when Lock1 fires.
-//    The old C# flag was preventing a legitimate 'm' entry push that Pine performs,
-//    starving minor trendline Pointers (mLL/mHH/mHL/mLH) of correct anchors.
-//    Effect: fixed all missing Minor trendline signals.
-//
-//  FIX 2 — Corrected Block B in UpdateMajorMinor (Pine lines 408-429).
-//    Pine Block B has EXACTLY 3 branches: mH | mLH | (mHH or MHH).
-//    Old C# had:
-//      a) Missing "MHH" in the (mHH) condition.
-//      b) A spurious 3rd condition for mHL/mLL/MHL/MLL that does NOT exist in Pine.
-//         This was causing incorrect Major promotions, corrupting the ADV array,
-//         and generating excess Break/React signals for Major trendlines.
-//    Effect: fixed all excess Major signals.
-//
+//  FIX 2 — Corrected Block B in UpdateMajorMinor.
 //  FIX 3 — Signals emitted for all confirmed bars (not just isLive).
-//    Pine's barstate.isconfirmed fires at bar close for EVERY bar including history.
-//    Old C# only drew icons for the current live bar → all historical icons invisible.
-//    Historical bars (index < Bars.Count-1) are always confirmed in cTrader.
-//    PerBarClose mode now fires immediately on historical bars, and on isNewBar
-//    for the live bar.
-//
 //  FIX 4 — Separate LongSignalOffsetPips / ShortSignalOffsetPips parameters.
-//    Replaces single SignalOffsetPips. Default 5 pips each for clear visual separation.
+//
+// CHANGE — Color parameters are now color pickers instead of text boxes.
+//   All eight trendline Color parameters use the cTrader Color type,
+//   which renders as a color-picker toggle in the indicator settings panel.
+//   The ParseColor() helper has been removed as it is no longer needed.
 // =============================================================================
 
 using System;
@@ -94,7 +79,7 @@ namespace cAlgo
         public int PP { get; set; }
 
         // =====================================================================
-        // PARAMETERS — Alert (bool checkbox → dropdown true/false)
+        // PARAMETERS — Alert
         // =====================================================================
 
         [Parameter("Alert Name", DefaultValue = "Auto TrendLines Alerts [TradingFinder]", Group = "Alert")]
@@ -106,62 +91,60 @@ namespace cAlgo
         [Parameter("Show Alert time by Time Zone", DefaultValue = "UTC", Group = "Alert")]
         public string AlertTimeZone { get; set; }
 
-        [Parameter("Break Major External Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Major External Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MjExUp_B { get; set; }
-        [Parameter("React Major External Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Major External Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MjExUp_R { get; set; }
 
-        [Parameter("Break Major External Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Major External Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MjExDown_B { get; set; }
-        [Parameter("React Major External Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Major External Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MjExDown_R { get; set; }
 
-        [Parameter("Break Major Internal Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Major Internal Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MjInUp_B { get; set; }
-        [Parameter("React Major Internal Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Major Internal Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MjInUp_R { get; set; }
 
-        [Parameter("Break Major Internal Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Major Internal Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MjInDown_B { get; set; }
-        [Parameter("React Major Internal Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Major Internal Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MjInDown_R { get; set; }
 
-        [Parameter("Break Minor External Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Minor External Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MnExUp_B { get; set; }
-        [Parameter("React Minor External Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Minor External Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MnExUp_R { get; set; }
 
-        [Parameter("Break Minor External Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Minor External Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MnExDown_B { get; set; }
-        [Parameter("React Minor External Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Minor External Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MnExDown_R { get; set; }
 
-        [Parameter("Break Minor Internal Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Minor Internal Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MnInUp_B { get; set; }
-        [Parameter("React Minor Internal Up TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Minor Internal Up TrendLine",    DefaultValue = true, Group = "Alert")]
         public bool Alert_MnInUp_R { get; set; }
 
-        [Parameter("Break Minor Internal Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("Break Minor Internal Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MnInDown_B { get; set; }
-        [Parameter("React Minor Internal Down TrendLine", DefaultValue = true, Group = "Alert")]
+        [Parameter("React Minor Internal Down TrendLine",  DefaultValue = true, Group = "Alert")]
         public bool Alert_MnInDown_R { get; set; }
 
         // =====================================================================
         // PARAMETERS — Signal Icon Style
-        // Long  signal = upward  icon placed BELOW bar low
-        // Short signal = downward icon placed ABOVE bar high
         // =====================================================================
 
         [Parameter("Icon Shape", DefaultValue = SignalIcon.Triangle, Group = "Signal Icons")]
         public SignalIcon IconShape { get; set; }
 
-        [Parameter("Long Signal Color", DefaultValue = "Green", Group = "Signal Icons")]
+        [Parameter("Long Signal Color",  DefaultValue = "Green", Group = "Signal Icons")]
         public Color LongSignalColor { get; set; }
 
         [Parameter("Short Signal Color", DefaultValue = "Red", Group = "Signal Icons")]
         public Color ShortSignalColor { get; set; }
 
-        [Parameter("Long Signal Offset (pips)", DefaultValue = 5.0, MinValue = 0.0, Group = "Signal Icons")]
+        [Parameter("Long Signal Offset (pips)",  DefaultValue = 5.0, MinValue = 0.0, Group = "Signal Icons")]
         public double LongSignalOffsetPips { get; set; }
 
         [Parameter("Short Signal Offset (pips)", DefaultValue = 5.0, MinValue = 0.0, Group = "Signal Icons")]
@@ -169,201 +152,198 @@ namespace cAlgo
 
         // =====================================================================
         // PARAMETERS — Display: Major External Up
+        // Color is now a color-picker — no need to type hex codes.
+        // Default: opaque dark green  (#FF016B05, alpha=255)
         // =====================================================================
 
-        [Parameter("Show Major External Up TrendLine", DefaultValue = true, Group = "Major External Up TrendLine")]
+        [Parameter("Show Major External Up TrendLine",            DefaultValue = true,  Group = "Major External Up TrendLine")]
         public bool Show_MjExUp { get; set; }
-        [Parameter("Delete Previous Major External Up TrendLine", DefaultValue = true, Group = "Major External Up TrendLine")]
+        [Parameter("Delete Previous Major External Up TrendLine",  DefaultValue = true,  Group = "Major External Up TrendLine")]
         public bool Delete_Pre_MjExUp { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#016b05", Group = "Major External Up TrendLine")]
-        public string Color_MjExUp { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Solid, Group = "Major External Up TrendLine")]
+        [Parameter("Color",  DefaultValue = "#FF016B05", Group = "Major External Up TrendLine")]
+        public Color Color_MjExUp { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Solid, Group = "Major External Up TrendLine")]
         public TlStyle Style_MjExUp { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Major External Up TrendLine")]
         public TlExtend Extend_MjExUp { get; set; }
-        [Parameter("Width", DefaultValue = 2, MinValue = 1, Group = "Major External Up TrendLine")]
+        [Parameter("Width",  DefaultValue = 2, MinValue = 1, Group = "Major External Up TrendLine")]
         public int Width_MjExUp { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Major External Down
+        // Default: opaque dark red  (#FFAA0202, alpha=255)
         // =====================================================================
 
-        [Parameter("Show Major External Down TrendLine", DefaultValue = true, Group = "Major External Down TrendLine")]
+        [Parameter("Show Major External Down TrendLine",            DefaultValue = true,  Group = "Major External Down TrendLine")]
         public bool Show_MjExDown { get; set; }
-        [Parameter("Delete Previous Major External Down TrendLine", DefaultValue = true, Group = "Major External Down TrendLine")]
+        [Parameter("Delete Previous Major External Down TrendLine",  DefaultValue = true,  Group = "Major External Down TrendLine")]
         public bool Delete_Pre_MjExDown { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#aa0202", Group = "Major External Down TrendLine")]
-        public string Color_MjExDown { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Solid, Group = "Major External Down TrendLine")]
+        [Parameter("Color",  DefaultValue = "#FFAA0202", Group = "Major External Down TrendLine")]
+        public Color Color_MjExDown { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Solid, Group = "Major External Down TrendLine")]
         public TlStyle Style_MjExDown { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Major External Down TrendLine")]
         public TlExtend Extend_MjExDown { get; set; }
-        [Parameter("Width", DefaultValue = 2, MinValue = 1, Group = "Major External Down TrendLine")]
+        [Parameter("Width",  DefaultValue = 2, MinValue = 1, Group = "Major External Down TrendLine")]
         public int Width_MjExDown { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Major Internal Up
+        // Default: opaque dark green  (#FF016B05)
         // =====================================================================
 
-        [Parameter("Show Major Internal Up TrendLine", DefaultValue = true, Group = "Major Internal Up TrendLine")]
+        [Parameter("Show Major Internal Up TrendLine",            DefaultValue = true,  Group = "Major Internal Up TrendLine")]
         public bool Show_MjInUp { get; set; }
-        [Parameter("Delete Previous Major Internal Up TrendLine", DefaultValue = true, Group = "Major Internal Up TrendLine")]
+        [Parameter("Delete Previous Major Internal Up TrendLine",  DefaultValue = true,  Group = "Major Internal Up TrendLine")]
         public bool Delete_Pre_MjInUp { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#016b05", Group = "Major Internal Up TrendLine")]
-        public string Color_MjInUp { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Solid, Group = "Major Internal Up TrendLine")]
+        [Parameter("Color",  DefaultValue = "#FF016B05", Group = "Major Internal Up TrendLine")]
+        public Color Color_MjInUp { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Solid, Group = "Major Internal Up TrendLine")]
         public TlStyle Style_MjInUp { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Major Internal Up TrendLine")]
         public TlExtend Extend_MjInUp { get; set; }
-        [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Major Internal Up TrendLine")]
+        [Parameter("Width",  DefaultValue = 1, MinValue = 1, Group = "Major Internal Up TrendLine")]
         public int Width_MjInUp { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Major Internal Down
+        // Default: opaque dark red  (#FFAA0202)
         // =====================================================================
 
-        [Parameter("Show Major Internal Down TrendLine", DefaultValue = true, Group = "Major Internal Down TrendLine")]
+        [Parameter("Show Major Internal Down TrendLine",            DefaultValue = true,  Group = "Major Internal Down TrendLine")]
         public bool Show_MjInDown { get; set; }
-        [Parameter("Delete Previous Major Internal Down TrendLine", DefaultValue = true, Group = "Major Internal Down TrendLine")]
+        [Parameter("Delete Previous Major Internal Down TrendLine",  DefaultValue = true,  Group = "Major Internal Down TrendLine")]
         public bool Delete_Pre_MjInDown { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#aa0202", Group = "Major Internal Down TrendLine")]
-        public string Color_MjInDown { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Solid, Group = "Major Internal Down TrendLine")]
+        [Parameter("Color",  DefaultValue = "#FFAA0202", Group = "Major Internal Down TrendLine")]
+        public Color Color_MjInDown { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Solid, Group = "Major Internal Down TrendLine")]
         public TlStyle Style_MjInDown { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Major Internal Down TrendLine")]
         public TlExtend Extend_MjInDown { get; set; }
-        [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Major Internal Down TrendLine")]
+        [Parameter("Width",  DefaultValue = 1, MinValue = 1, Group = "Major Internal Down TrendLine")]
         public int Width_MjInDown { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Minor External Up
+        // Default: 65%-opaque dark green  (#A6016B05)
         // =====================================================================
 
-        [Parameter("Show Minor External Up TrendLine", DefaultValue = true, Group = "Minor External Up TrendLine")]
+        [Parameter("Show Minor External Up TrendLine",            DefaultValue = true,  Group = "Minor External Up TrendLine")]
         public bool Show_MnExUp { get; set; }
-        [Parameter("Delete Previous Minor External Up TrendLine", DefaultValue = true, Group = "Minor External Up TrendLine")]
+        [Parameter("Delete Previous Minor External Up TrendLine",  DefaultValue = true,  Group = "Minor External Up TrendLine")]
         public bool Delete_Pre_MnExUp { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#016b05a6", Group = "Minor External Up TrendLine")]
-        public string Color_MnExUp { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Dashed, Group = "Minor External Up TrendLine")]
+        [Parameter("Color",  DefaultValue = "#A6016B05", Group = "Minor External Up TrendLine")]
+        public Color Color_MnExUp { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Dashed, Group = "Minor External Up TrendLine")]
         public TlStyle Style_MnExUp { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Minor External Up TrendLine")]
         public TlExtend Extend_MnExUp { get; set; }
-        [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor External Up TrendLine")]
+        [Parameter("Width",  DefaultValue = 1, MinValue = 1, Group = "Minor External Up TrendLine")]
         public int Width_MnExUp { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Minor External Down
+        // Default: 65%-opaque dark red  (#A6AA0202)
         // =====================================================================
 
-        [Parameter("Show Minor External Down TrendLine", DefaultValue = true, Group = "Minor External Down TrendLine")]
+        [Parameter("Show Minor External Down TrendLine",            DefaultValue = true,  Group = "Minor External Down TrendLine")]
         public bool Show_MnExDown { get; set; }
-        [Parameter("Delete Previous Minor External Down TrendLine", DefaultValue = true, Group = "Minor External Down TrendLine")]
+        [Parameter("Delete Previous Minor External Down TrendLine",  DefaultValue = true,  Group = "Minor External Down TrendLine")]
         public bool Delete_Pre_MnExDown { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#aa0202a6", Group = "Minor External Down TrendLine")]
-        public string Color_MnExDown { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Dashed, Group = "Minor External Down TrendLine")]
+        [Parameter("Color",  DefaultValue = "#A6AA0202", Group = "Minor External Down TrendLine")]
+        public Color Color_MnExDown { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Dashed, Group = "Minor External Down TrendLine")]
         public TlStyle Style_MnExDown { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Minor External Down TrendLine")]
         public TlExtend Extend_MnExDown { get; set; }
-        [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor External Down TrendLine")]
+        [Parameter("Width",  DefaultValue = 1, MinValue = 1, Group = "Minor External Down TrendLine")]
         public int Width_MnExDown { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Minor Internal Up
+        // Default: 65%-opaque dark green  (#A6016B05)
         // =====================================================================
 
-        [Parameter("Show Minor Internal Up TrendLine", DefaultValue = true, Group = "Minor Internal Up TrendLine")]
+        [Parameter("Show Minor Internal Up TrendLine",            DefaultValue = true,  Group = "Minor Internal Up TrendLine")]
         public bool Show_MnInUp { get; set; }
-        [Parameter("Delete Previous Minor Internal Up TrendLine", DefaultValue = true, Group = "Minor Internal Up TrendLine")]
+        [Parameter("Delete Previous Minor Internal Up TrendLine",  DefaultValue = true,  Group = "Minor Internal Up TrendLine")]
         public bool Delete_Pre_MnInUp { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#016b05a6", Group = "Minor Internal Up TrendLine")]
-        public string Color_MnInUp { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Dotted, Group = "Minor Internal Up TrendLine")]
+        [Parameter("Color",  DefaultValue = "#A6016B05", Group = "Minor Internal Up TrendLine")]
+        public Color Color_MnInUp { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Dotted, Group = "Minor Internal Up TrendLine")]
         public TlStyle Style_MnInUp { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Minor Internal Up TrendLine")]
         public TlExtend Extend_MnInUp { get; set; }
-        [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor Internal Up TrendLine")]
+        [Parameter("Width",  DefaultValue = 1, MinValue = 1, Group = "Minor Internal Up TrendLine")]
         public int Width_MnInUp { get; set; }
 
         // =====================================================================
         // PARAMETERS — Display: Minor Internal Down
+        // Default: 65%-opaque dark red  (#A6AA0202)
         // =====================================================================
 
-        [Parameter("Show Minor Internal Down TrendLine", DefaultValue = true, Group = "Minor Internal Down TrendLine")]
+        [Parameter("Show Minor Internal Down TrendLine",            DefaultValue = true,  Group = "Minor Internal Down TrendLine")]
         public bool Show_MnInDown { get; set; }
-        [Parameter("Delete Previous Minor Internal Down TrendLine", DefaultValue = true, Group = "Minor Internal Down TrendLine")]
+        [Parameter("Delete Previous Minor Internal Down TrendLine",  DefaultValue = true,  Group = "Minor Internal Down TrendLine")]
         public bool Delete_Pre_MnInDown { get; set; }
-        [Parameter("Color (#RRGGBB or #AARRGGBB)", DefaultValue = "#aa0202a6", Group = "Minor Internal Down TrendLine")]
-        public string Color_MnInDown { get; set; }
-        [Parameter("Style", DefaultValue = TlStyle.Dotted, Group = "Minor Internal Down TrendLine")]
+        [Parameter("Color",  DefaultValue = "#A6AA0202", Group = "Minor Internal Down TrendLine")]
+        public Color Color_MnInDown { get; set; }
+        [Parameter("Style",  DefaultValue = TlStyle.Dotted, Group = "Minor Internal Down TrendLine")]
         public TlStyle Style_MnInDown { get; set; }
         [Parameter("Extend", DefaultValue = TlExtend.None, Group = "Minor Internal Down TrendLine")]
         public TlExtend Extend_MnInDown { get; set; }
-        [Parameter("Width", DefaultValue = 1, MinValue = 1, Group = "Minor Internal Down TrendLine")]
+        [Parameter("Width",  DefaultValue = 1, MinValue = 1, Group = "Minor Internal Down TrendLine")]
         public int Width_MnInDown { get; set; }
 
         // =====================================================================
         // INTERNAL STATE
         // =====================================================================
 
-        // ZZ arrays — oldest at index 0, newest at Count-1
         private readonly List<string> _zzType  = new List<string>();
         private readonly List<double> _zzValue = new List<double>();
         private readonly List<int>    _zzIndex = new List<int>();
 
-        // Advanced arrays — oldest at index 0, newest at Count-1
         private readonly List<string> _advType  = new List<string>();
         private readonly List<double> _advValue = new List<double>();
         private readonly List<int>    _advIndex = new List<int>();
 
-        // Major level tracking
-        private double _majorHighLevel          = double.NaN;
-        private double _majorLowLevel           = double.NaN;
-        private bool   _majorLevelsInitialized  = false;
+        private double _majorHighLevel         = double.NaN;
+        private double _majorLowLevel          = double.NaN;
+        private bool   _majorLevelsInitialized = false;
 
-        // ADV seeding locks
-        private bool _lock0          = true;
-        private bool _lock1          = true;
+        private bool _lock0 = true;
+        private bool _lock1 = true;
 
-        // Running last confirmed pivot values (ta.valuewhen equivalents)
         private double _lastHighPivotValue = double.NaN;
         private int    _lastHighPivotIndex = -1;
         private double _lastLowPivotValue  = double.NaN;
         private int    _lastLowPivotIndex  = -1;
 
-        // x_0 / y_0 / t_0 — last ADV entry, Pine lines 552-556
         private int    _x0     = 0;
         private double _y0     = 0.0;
         private string _t0     = string.Empty;
-        private string _t0Prev = string.Empty;   // t_0[1]
+        private string _t0Prev = string.Empty;
 
-        // Snapshot of ZZ last element for SyncAdvArray change detection
         private double _prevZzLastValue      = double.NaN;
         private char   _prevZzLastTypeSuffix = '\0';
 
-        // TL type names indexed 0-7
         private static readonly string[] TlTypeNames =
             { "MLL", "MHH", "MHL", "MLH", "mLL", "mHH", "mHL", "mLH" };
 
-        // Pointer state — 8 independent rolling windows
         private readonly int[]    _ptrX0 = new int[8];
         private readonly double[] _ptrY0 = new double[8];
         private readonly int[]    _ptrX1 = new int[8];
         private readonly double[] _ptrY1 = new double[8];
 
-        // Per-trendline state
         private sealed class TlState
         {
-            public ChartTrendLine ActiveLine     = null;
-            public ChartTrendLine PrevLine       = null;
-            public bool  PermitSet               = false;  // BUG3 FIX: init false
-            public bool  PermitSetPrev           = false;
-            public int   LastAnchorX0            = 0;      // X_0[1] equivalent
-            public int   LastAlertBreakBar        = -1;
-            public int   LastAlertReactBar        = -1;
-            // Coordinates of the last ACCEPTED line — mirrors Pine line.get_price(Line_Origin,...)
-            // Updated ONLY when Block 1 permit scan passes.
+            public ChartTrendLine ActiveLine    = null;
+            public ChartTrendLine PrevLine      = null;
+            public bool  PermitSet              = false;
+            public bool  PermitSetPrev          = false;
+            public int   LastAnchorX0           = 0;
+            public int   LastAlertBreakBar       = -1;
+            public int   LastAlertReactBar       = -1;
             public int    ActiveX0 = 0;
             public double ActiveY0 = 0.0;
             public int    ActiveX1 = 0;
@@ -371,10 +351,9 @@ namespace cAlgo
         }
         private readonly TlState[] _tlStates = new TlState[8];
 
-        // Alert frequency helpers
-        private DateTime _lastBarOpenTime             = DateTime.MinValue;
-        private readonly bool[] _prevBarBreakSignal   = new bool[8];
-        private readonly bool[] _prevBarReactSignal   = new bool[8];
+        private DateTime _lastBarOpenTime           = DateTime.MinValue;
+        private readonly bool[] _prevBarBreakSignal = new bool[8];
+        private readonly bool[] _prevBarReactSignal = new bool[8];
 
         // =====================================================================
         // INITIALIZE
@@ -392,16 +371,10 @@ namespace cAlgo
 
         public override void Calculate(int index)
         {
-            // 1. ZZ state machine + ADV seeding
             UpdateZigZag(index);
-
-            // 2. Sync ADV minor entries (Pine lines 354-364)
             SyncAdvArray();
-
-            // 3. Major/minor promotion (Pine lines 366-492)
             UpdateMajorMinor(index);
 
-            // 4. Update x_0/y_0/t_0 from last ADV entry (Pine lines 552-556)
             if (_advType.Count > 2)
             {
                 int last = _advType.Count - 1;
@@ -410,15 +383,8 @@ namespace cAlgo
                 _t0 = _advType[last];
             }
 
-            // 5. Update Pointer rolling windows (Pine lines 495-512)
             UpdatePointers();
 
-            // 6. Correction_Checker + alerts for all 8 TLs
-            // isHistorical = bar is already confirmed (Calculate called once per historical bar)
-            // isLive       = current live bar (Calculate called on every tick)
-            // isNewBar     = first tick of a new bar (previous bar just closed = confirmed)
-            // For alerts: fire on confirmed bars. Historical bars are always confirmed.
-            // On live bar: OncePerBar/All fire on ticks; PerBarClose fires only on isNewBar.
             bool isHistorical = (index < Bars.Count - 1);
             bool isLive       = !isHistorical;
             bool isNewBar     = (_lastBarOpenTime != DateTime.MinValue)
@@ -426,7 +392,6 @@ namespace cAlgo
 
             ProcessAllTrendLines(index, isHistorical, isLive, isNewBar);
 
-            // 7. Save end-of-bar state for next bar's [1] comparisons
             _t0Prev = _t0;
             if (_zzType.Count > 0)
             {
@@ -439,9 +404,6 @@ namespace cAlgo
 
         // =====================================================================
         // PIVOT DETECTION
-        // Mirrors ta_pivot.txt: strict rightmost-max/min rule.
-        // Window = [index - 2*PP .. index]. Pivot at index-PP.
-        // The LAST bar in the window with the max/min MUST be exactly index-PP.
         // =====================================================================
 
         private bool DetectPivotHigh(int index, out double pivotValue)
@@ -449,18 +411,16 @@ namespace cAlgo
             pivotValue = double.NaN;
             if (index < 2 * PP) return false;
 
-            int pivotBar    = index - PP;
-            int windowStart = index - 2 * PP;
-            double candidate = Bars.HighPrices[pivotBar];
+            int    pivotBar    = index - PP;
+            int    windowStart = index - 2 * PP;
+            double candidate   = Bars.HighPrices[pivotBar];
 
-            // Find global max in window
             double max = double.MinValue;
             for (int i = windowStart; i <= index; i++)
                 if (Bars.HighPrices[i] > max) max = Bars.HighPrices[i];
 
             if (candidate != max) return false;
 
-            // Last occurrence of max in window must be at pivotBar
             int lastMaxBar = windowStart;
             for (int i = windowStart; i <= index; i++)
                 if (Bars.HighPrices[i] == max) lastMaxBar = i;
@@ -476,9 +436,9 @@ namespace cAlgo
             pivotValue = double.NaN;
             if (index < 2 * PP) return false;
 
-            int pivotBar    = index - PP;
-            int windowStart = index - 2 * PP;
-            double candidate = Bars.LowPrices[pivotBar];
+            int    pivotBar    = index - PP;
+            int    windowStart = index - 2 * PP;
+            double candidate   = Bars.LowPrices[pivotBar];
 
             double min = double.MaxValue;
             for (int i = windowStart; i <= index; i++)
@@ -497,8 +457,7 @@ namespace cAlgo
         }
 
         // =====================================================================
-        // ZZ STATE MACHINE (Pine ZZ() function, lines 114-493)
-        // Labels: H/L/HH/LL/HL/LH (no Major prefix here)
+        // ZZ STATE MACHINE
         // =====================================================================
 
         private void UpdateZigZag(int index)
@@ -507,13 +466,12 @@ namespace cAlgo
             bool hasLow  = DetectPivotLow(index,  out double lowValue);
             if (!hasHigh && !hasLow) return;
 
-            int pivotBar   = index - PP;
-            double barClose = Bars.ClosePrices[index];
+            int    pivotBar  = index - PP;
+            double barClose  = Bars.ClosePrices[index];
 
             if (hasHigh) { _lastHighPivotValue = highValue; _lastHighPivotIndex = pivotBar; }
             if (hasLow)  { _lastLowPivotValue  = lowValue;  _lastLowPivotIndex  = pivotBar; }
 
-            // ---- Label helpers (evaluated AFTER any removes, count may have changed) ----
             string LabelHigh(double v)
             {
                 int n = _zzType.Count;
@@ -525,7 +483,6 @@ namespace cAlgo
                 return n > 2 ? (_zzValue[n - 2] < v ? "HL" : "LL") : "L";
             }
 
-            // ---- Mutators ----
             void RemoveLast()
             {
                 int n = _zzType.Count - 1;
@@ -536,14 +493,10 @@ namespace cAlgo
 
             int cnt = _zzType.Count;
 
-            // ==================================================================
-            // CASE A: Both high AND low confirm simultaneously (Pine 140-222)
-            // ==================================================================
             if (hasHigh && hasLow)
             {
                 if (cnt == 0)
                 {
-                    // Q2: insert High first on empty array
                     _zzType.Add("H"); _zzValue.Add(highValue); _zzIndex.Add(pivotBar);
                 }
                 else
@@ -587,9 +540,6 @@ namespace cAlgo
                     }
                 }
             }
-            // ==================================================================
-            // CASE B: Only High pivot (Pine 223-256)
-            // ==================================================================
             else if (hasHigh)
             {
                 cnt = _zzType.Count;
@@ -619,9 +569,6 @@ namespace cAlgo
                     }
                 }
             }
-            // ==================================================================
-            // CASE C: Only Low pivot (Pine 257-290)
-            // ==================================================================
             else
             {
                 cnt = _zzType.Count;
@@ -652,17 +599,15 @@ namespace cAlgo
                 }
             }
 
-            // ---- Major levels init: fires ONCE when ZZ count first == 2 (Pine 316-332) ----
             if (!_majorLevelsInitialized && _zzType.Count == 2)
             {
                 if (_zzType[0] == "H")
-                { _majorHighLevel = _zzValue[0]; _majorLowLevel  = _zzValue[1]; }
+                { _majorHighLevel = _zzValue[0]; _majorLowLevel = _zzValue[1]; }
                 else
-                { _majorHighLevel = _zzValue[1]; _majorLowLevel  = _zzValue[0]; }
+                { _majorHighLevel = _zzValue[1]; _majorLowLevel = _zzValue[0]; }
                 _majorLevelsInitialized = true;
             }
 
-            // ---- ADV seeding: Lock0 fires when ZZ count first >= 1 (Pine 338-344) ----
             if (_lock0 && _zzType.Count >= 1)
             {
                 _advType.Insert(0, "M" + _zzType[0]);
@@ -671,22 +616,17 @@ namespace cAlgo
                 _lock0 = false;
             }
 
-            // ---- ADV seeding: Lock1 fires when ZZ count first >= 2 (Pine 346-352) ----
             if (_lock1 && _zzType.Count >= 2)
             {
                 _advType.Insert(1, "M" + _zzType[1]);
                 _advValue.Insert(1, _zzValue[1]);
                 _advIndex.Insert(1, _zzIndex[1]);
                 _lock1 = false;
-                // NOTE: Pine does NOT suppress SyncAdvArray here — no skip flag.
             }
         }
 
         // =====================================================================
         // ADV SYNC (Pine lines 354-364)
-        // When ZZ last-value changed bar-over-bar:
-        //   suffix changed → push new 'm' entry
-        //   suffix same    → update value/index of last ADV entry (no type change)
         // =====================================================================
 
         private void SyncAdvArray()
@@ -702,14 +642,12 @@ namespace cAlgo
 
             if (currentSuffix != _prevZzLastTypeSuffix)
             {
-                // New type suffix → push fresh minor entry
                 _advType.Add("m" + currentZzType);
                 _advValue.Add(currentZzVal);
                 _advIndex.Add(_zzIndex[zzLast]);
             }
             else
             {
-                // Same type suffix, value updated (e.g. new lower low) → update last ADV value/index
                 int advLast = _advType.Count - 1;
                 _advValue[advLast] = currentZzVal;
                 _advIndex[advLast] = _zzIndex[zzLast];
@@ -718,12 +656,6 @@ namespace cAlgo
 
         // =====================================================================
         // MAJOR/MINOR PROMOTION (Pine lines 366-492)
-        //
-        // Four triggers, exactly as in Pine:
-        //   A) close > MajorHighLevel  → promote last minor Low  → Major Low
-        //   B) lastAdvVal > MajorHighLevel → promote last minor High → Major High
-        //   C) close < MajorLowLevel   → promote last minor High → Major High
-        //   D) lastAdvVal < MajorLowLevel  → promote last minor Low  → Major Low
         // =====================================================================
 
         private void UpdateMajorMinor(int index)
@@ -732,14 +664,13 @@ namespace cAlgo
 
             double cls = Bars.ClosePrices[index];
 
-            // Helper: get ZZ type at (Count-1-offset), empty string if out of range
             string ZzType(int offset = 0)
             {
                 int n = _zzType.Count - 1 - offset;
                 return n >= 0 ? _zzType[n] : string.Empty;
             }
 
-            // ---- A) close > MajorHighLevel (Pine 370-406) ----
+            // ---- A) close > MajorHighLevel ----
             if (cls > _majorHighLevel)
             {
                 int    last = _advType.Count - 1;
@@ -771,8 +702,7 @@ namespace cAlgo
                 }
             }
 
-            // ---- B) lastAdvVal > MajorHighLevel (Pine 408-429) ----
-            // Pine Block B has EXACTLY 3 branches: mH, mLH, (mHH|MHH). Nothing else.
+            // ---- B) lastAdvVal > MajorHighLevel ----
             {
                 int    last = _advType.Count - 1;
                 string t    = _advType[last];
@@ -790,19 +720,16 @@ namespace cAlgo
                         if (p.Length > 1) _advType[last] = p;
                         _majorHighLevel = _advValue[last];
                     }
-                    else if (t == "mHH" || t == "MHH")   // Pine: 'mHH' or 'MHH'
+                    else if (t == "mHH" || t == "MHH")
                     {
                         string p = "M" + ZzType();
                         if (p.Length > 1) _advType[last] = p;
                         _majorHighLevel = _advValue[last];
                     }
-                    // NOTE: Pine Block B has NO further branches.
-                    // The old C# code incorrectly had a 3rd condition for mHL/mLL/MHL/MLL here.
                 }
             }
 
-            // ---- C) close < MajorLowLevel (Pine 432-468) ----
-            // BUG7 FIX: second-to-last check uses only mLH and mHH (not mHL)
+            // ---- C) close < MajorLowLevel ----
             if (cls < _majorLowLevel)
             {
                 int    last = _advType.Count - 1;
@@ -824,7 +751,6 @@ namespace cAlgo
                     if (last >= 1)
                     {
                         string t2 = _advType[last - 1];
-                        // Pine checks only 'mLH' and 'mHH' for the second-to-last
                         if (t2 == "mLH" || t2 == "mHH")
                         {
                             string p = "M" + ZzType(1);
@@ -835,7 +761,7 @@ namespace cAlgo
                 }
             }
 
-            // ---- D) lastAdvVal < MajorLowLevel (Pine 470-492) ----
+            // ---- D) lastAdvVal < MajorLowLevel ----
             {
                 int    last = _advType.Count - 1;
                 string t    = _advType[last];
@@ -844,8 +770,8 @@ namespace cAlgo
                 {
                     if (t == "mL")
                     {
-                        _advType[last]  = "ML";
-                        _majorLowLevel  = _advValue[last];
+                        _advType[last] = "ML";
+                        _majorLowLevel = _advValue[last];
                     }
                     else if (t == "mHL" || t == "mLL" || t == "MLL")
                     {
@@ -859,8 +785,6 @@ namespace cAlgo
 
         // =====================================================================
         // POINTER UPDATE (Pine lines 495-512)
-        // Tracks last 2 occurrences of each ADV type in t_0 stream.
-        // Fires only when t_0 changes this bar (t_0 != t_0[1]).
         // =====================================================================
 
         private void UpdatePointers()
@@ -889,62 +813,63 @@ namespace cAlgo
 
         // =====================================================================
         // TRENDLINE DISPATCH — all 8 TLs
+        // Color_MjExUp etc. are now Color values from the picker — no ParseColor needed.
         // =====================================================================
 
         private void ProcessAllTrendLines(int index, bool isHistorical, bool isLive, bool isNewBar)
         {
             ProcessTrendLine(index, 0, true,
                 Show_MjExUp, Delete_Pre_MjExUp,
-                ParseColor(Color_MjExUp, "#016b05"), MapStyle(Style_MjExUp), Width_MjExUp,
+                Color_MjExUp, MapStyle(Style_MjExUp), Width_MjExUp,
                 isHistorical, isLive, isNewBar,
-                Alert_MjExUp_B,   Alert_MjExUp_R,
+                Alert_MjExUp_B, Alert_MjExUp_R,
                 "Break Major External Up TrendLine",   "React Major External Up TrendLine");
 
             ProcessTrendLine(index, 1, false,
                 Show_MjExDown, Delete_Pre_MjExDown,
-                ParseColor(Color_MjExDown, "#aa0202"), MapStyle(Style_MjExDown), Width_MjExDown,
+                Color_MjExDown, MapStyle(Style_MjExDown), Width_MjExDown,
                 isHistorical, isLive, isNewBar,
                 Alert_MjExDown_B, Alert_MjExDown_R,
                 "Break Major External Down TrendLine", "React Major External Down TrendLine");
 
             ProcessTrendLine(index, 2, true,
                 Show_MjInUp, Delete_Pre_MjInUp,
-                ParseColor(Color_MjInUp, "#016b05"), MapStyle(Style_MjInUp), Width_MjInUp,
+                Color_MjInUp, MapStyle(Style_MjInUp), Width_MjInUp,
                 isHistorical, isLive, isNewBar,
-                Alert_MjInUp_B,   Alert_MjInUp_R,
+                Alert_MjInUp_B, Alert_MjInUp_R,
                 "Break Major Internal Up TrendLine",   "React Major Internal Up TrendLine");
 
             ProcessTrendLine(index, 3, false,
                 Show_MjInDown, Delete_Pre_MjInDown,
-                ParseColor(Color_MjInDown, "#aa0202"), MapStyle(Style_MjInDown), Width_MjInDown,
+                Color_MjInDown, MapStyle(Style_MjInDown), Width_MjInDown,
                 isHistorical, isLive, isNewBar,
                 Alert_MjInDown_B, Alert_MjInDown_R,
                 "Break Major Internal Down TrendLine", "React Major Internal Down TrendLine");
 
             ProcessTrendLine(index, 4, true,
                 Show_MnExUp, Delete_Pre_MnExUp,
-                ParseColor(Color_MnExUp, "#016b05a6"), MapStyle(Style_MnExUp), Width_MnExUp,
+                Color_MnExUp, MapStyle(Style_MnExUp), Width_MnExUp,
                 isHistorical, isLive, isNewBar,
-                Alert_MnExUp_B,   Alert_MnExUp_R,
+                Alert_MnExUp_B, Alert_MnExUp_R,
                 "Break Minor External Up TrendLine",   "React Minor External Up TrendLine");
 
             ProcessTrendLine(index, 5, false,
                 Show_MnExDown, Delete_Pre_MnExDown,
-                ParseColor(Color_MnExDown, "#aa0202a6"), MapStyle(Style_MnExDown), Width_MnExDown,
+                Color_MnExDown, MapStyle(Style_MnExDown), Width_MnExDown,
                 isHistorical, isLive, isNewBar,
                 Alert_MnExDown_B, Alert_MnExDown_R,
                 "Break Minor External Down TrendLine", "React Minor External Down TrendLine");
 
             ProcessTrendLine(index, 6, true,
                 Show_MnInUp, Delete_Pre_MnInUp,
-                ParseColor(Color_MnInUp, "#016b05a6"), MapStyle(Style_MnInUp), Width_MnInUp,
+                Color_MnInUp, MapStyle(Style_MnInUp), Width_MnInUp,
                 isHistorical, isLive, isNewBar,
-                Alert_MnInUp_B,   Alert_MnInUp_R,
+                Alert_MnInUp_B, Alert_MnInUp_R,
                 "Break Minor Internal Up TrendLine",   "React Minor Internal Up TrendLine");
 
             ProcessTrendLine(index, 7, false,
                 Show_MnInDown, Delete_Pre_MnInDown,
-                ParseColor(Color_MnInDown, "#aa0202a6"), MapStyle(Style_MnInDown), Width_MnInDown,
+                Color_MnInDown, MapStyle(Style_MnInDown), Width_MnInDown,
                 isHistorical, isLive, isNewBar,
                 Alert_MnInDown_B, Alert_MnInDown_R,
                 "Break Minor Internal Down TrendLine", "React Minor Internal Down TrendLine");
@@ -952,21 +877,6 @@ namespace cAlgo
 
         // =====================================================================
         // CORRECTION_CHECKER (Pine lines 514-548)
-        //
-        // BLOCK 1 — fires on anchor change (X_0 != X_0[1]):
-        //   • Check slope direction
-        //   • Scan ALL closes from x0+1 to current bar (strict > or <)
-        //   • If valid:   draw/replace line, PermitSet = true
-        //   • If invalid: do NOT touch PermitSet (BUG4 FIX)
-        //
-        // BLOCK 2 — every bar:
-        //   • If PermitSet=true and ActiveLine!=null: check close on correct side
-        //     → wrong side: PermitSet=false, freeze line at this bar (BUG6 FIX)
-        //   • If PermitSet=true but ActiveLine==null: PermitSet=false (BUG5 FIX)
-        //
-        // Alerts (live bars only):
-        //   Break = PermitSetPrev && !PermitSet
-        //   React = close on valid side, but wick crossed line (isUp ? low<lp : high>lp)
         // =====================================================================
 
         private void ProcessTrendLine(int index, int tlIdx, bool isUp,
@@ -982,7 +892,6 @@ namespace cAlgo
             int    x1 = _ptrX1[tlIdx];
             double y1 = _ptrY1[tlIdx];
 
-            // Snapshot PermitSet before this bar's logic (= Permit_set[1] in Pine)
             state.PermitSetPrev = state.PermitSet;
 
             // ---- BLOCK 1: Anchor-change event ----
@@ -995,7 +904,6 @@ namespace cAlgo
 
                 if (correctSlope)
                 {
-                    // Scan all closes from x0+1 to current bar (Pine: for i=1 to bar_index-X_0)
                     permit = true;
                     for (int barI = x0 + 1; barI <= index; barI++)
                     {
@@ -1017,18 +925,15 @@ namespace cAlgo
 
                         string lineId  = $"ATL_{tlIdx}_{x0}_{x1}";
                         var    newLine = Chart.DrawTrendLine(lineId, x0, y0, x1, y1, color, width, lineStyle);
-                        // Option A: extend infinitely while valid
                         newLine.ExtendToInfinity = true;
 
                         state.PrevLine   = state.ActiveLine;
                         state.ActiveLine = newLine;
                     }
-                    // Store the coordinates of this ACCEPTED line — used by Block 2 & React
-                    state.ActiveX0 = x0; state.ActiveY0 = y0;
-                    state.ActiveX1 = x1; state.ActiveY1 = y1;
+                    state.ActiveX0  = x0; state.ActiveY0 = y0;
+                    state.ActiveX1  = x1; state.ActiveY1 = y1;
                     state.PermitSet = true;
                 }
-                // When scan fails, do NOT touch PermitSet. Block 2 handles the old line.
             }
 
             // ---- BLOCK 2: Per-bar validity ----
@@ -1047,7 +952,6 @@ namespace cAlgo
                     if (!onSide)
                     {
                         state.PermitSet = false;
-                        // Freeze line at the break bar
                         if (state.ActiveLine != null)
                         {
                             state.ActiveLine.ExtendToInfinity = false;
@@ -1059,9 +963,6 @@ namespace cAlgo
             }
 
             // ---- ALERTS ----
-            // Fire for all confirmed bars:
-            //   • Historical bars are always confirmed (Calculate called once per bar during loading)
-            //   • Live bar fires for OncePerBar/All on every tick; PerBarClose fires on isNewBar
             bool alertBreak = state.PermitSetPrev && !state.PermitSet;
             bool alertReact = false;
 
@@ -1071,7 +972,7 @@ namespace cAlgo
                 double cls  = Bars.ClosePrices[index];
                 double high = Bars.HighPrices[index];
                 double low  = Bars.LowPrices[index];
-                alertReact = isUp
+                alertReact  = isUp
                     ? (cls > lp && low  < lp)
                     : (cls < lp && high > lp);
             }
@@ -1083,17 +984,6 @@ namespace cAlgo
 
         // =====================================================================
         // ALERT EMISSION (Pine lines 578-625)
-        //
-        // Icon placement (BUG2 FIX) mirrors Pine plotshape calls:
-        //   Break Up   → DownTriangle ABOVE bar HIGH  (red)
-        //   React Up   → UpTriangle   BELOW bar LOW   (green)
-        //   Break Down → UpTriangle   BELOW bar LOW   (green)
-        //   React Down → DownTriangle ABOVE bar HIGH  (red)
-        //
-        // Frequency modes:
-        //   All         → every tick on live bar
-        //   OncePerBar  → first tick per bar index
-        //   PerBarClose → first tick of next bar, using previous bar's signal
         // =====================================================================
 
         private void EmitAlert(int index, int tlIdx, bool isUp,
@@ -1116,8 +1006,6 @@ namespace cAlgo
                         { fire = true; _tlStates[tlIdx].LastAlertBreakBar = index; }
                         break;
                     case AlertFreq.PerBarClose:
-                        // Historical bars are already confirmed → fire immediately.
-                        // Live bar → fire at open of next bar using saved previous-bar signal.
                         if (isHistorical && alertBreak)
                             fire = true;
                         else if (!isHistorical && isNewBar && _prevBarBreakSignal[tlIdx])
@@ -1126,7 +1014,6 @@ namespace cAlgo
                 }
                 if (fire)
                 {
-                    // Break Up = short (downward icon above high); Break Down = long (upward icon below low)
                     if (isUp)
                         DrawSignalIcon($"BRK_{tlIdx}_{index}", index, isLong: false,
                             Bars.HighPrices[index], Bars.LowPrices[index]);
@@ -1160,7 +1047,6 @@ namespace cAlgo
                 }
                 if (fire)
                 {
-                    // React Up = long (upward icon below low); React Down = short (downward icon above high)
                     if (isUp)
                         DrawSignalIcon($"RCT_{tlIdx}_{index}", index, isLong: true,
                             Bars.HighPrices[index], Bars.LowPrices[index]);
@@ -1172,16 +1058,12 @@ namespace cAlgo
                 }
             }
 
-            // Save for PerBarClose mode (live bar only)
             _prevBarBreakSignal[tlIdx] = alertBreak;
             _prevBarReactSignal[tlIdx] = alertReact;
         }
 
         // =====================================================================
         // SIGNAL ICON HELPER
-        // isLong=true  → upward  icon below bar low  (long  signal)
-        // isLong=false → downward icon above bar high (short signal)
-        // Shape and colour driven by IconShape / LongSignalColor / ShortSignalColor params.
         // =====================================================================
 
         private void DrawSignalIcon(string id, int barIndex, bool isLong,
@@ -1204,53 +1086,12 @@ namespace cAlgo
 
         // =====================================================================
         // LINE PRICE — linear extrapolation through (x0,y0),(x1,y1) at atBar
-        // Mirrors Pine line.get_price()
         // =====================================================================
 
         private static double LinePrice(int x0, double y0, int x1, double y1, int atBar)
         {
             if (x1 == x0) return y0;
             return y0 + (y1 - y0) * (double)(atBar - x0) / (x1 - x0);
-        }
-
-        // =====================================================================
-        // COLOR PARSING
-        // Accepts #RRGGBB (6 digits) or #AARRGGBB (8 digits, Pine format).
-        // =====================================================================
-
-        private static Color ParseColor(string hex, string fallback)
-        {
-            if (string.IsNullOrWhiteSpace(hex)) hex = fallback;
-            hex = hex.TrimStart('#').Trim();
-            try
-            {
-                if (hex.Length == 8)
-                {
-                    int a = Convert.ToInt32(hex.Substring(0, 2), 16);
-                    int r = Convert.ToInt32(hex.Substring(2, 2), 16);
-                    int g = Convert.ToInt32(hex.Substring(4, 2), 16);
-                    int b = Convert.ToInt32(hex.Substring(6, 2), 16);
-                    return Color.FromArgb(a, r, g, b);
-                }
-                if (hex.Length == 6)
-                {
-                    int r = Convert.ToInt32(hex.Substring(0, 2), 16);
-                    int g = Convert.ToInt32(hex.Substring(2, 2), 16);
-                    int b = Convert.ToInt32(hex.Substring(4, 2), 16);
-                    return Color.FromArgb(255, r, g, b);
-                }
-            }
-            catch { /* fall through */ }
-
-            string fb = fallback.TrimStart('#');
-            try
-            {
-                int r = Convert.ToInt32(fb.Substring(0, 2), 16);
-                int g = Convert.ToInt32(fb.Substring(2, 2), 16);
-                int b = Convert.ToInt32(fb.Substring(4, 2), 16);
-                return Color.FromArgb(255, r, g, b);
-            }
-            catch { return Color.Gray; }
         }
 
         // =====================================================================
