@@ -23,6 +23,12 @@ namespace cAlgo
             public ChartRectangle Rect;
             public ChartText      Label;
             public string         TimeframeLabel;
+            // ── NEW ──────────────────────────────────────────────────────────
+            // True once a zone has been fully mitigated and the ShowMitigatedFvgs
+            // toggle is on.  Frozen zones keep their last position and color;
+            // the update loop skips them every bar so they don't move or get
+            // removed again.
+            public bool           IsMitigated;
         }
 
         private sealed class OverlayZone
@@ -82,6 +88,26 @@ namespace cAlgo
 
         [Parameter("Show Labels", DefaultValue = true, Group = "MTF Fair Value Gaps")]
         public bool ShowLabels { get; set; }
+
+        // ── NEW: Historical / Mitigated zone visibility ───────────────────────
+        //
+        // When ON:  zones that reach their mitigation threshold (Normal / Dynamic
+        //           / Half modes) are NOT deleted.  Instead they are recoloured
+        //           to MitigatedFvgColor and frozen in place so you can see the
+        //           full history of FVGs on the chart.
+        //
+        //           None mode already keeps mitigated zones alive (Pine behaviour);
+        //           this toggle additionally freezes their position updates and
+        //           lets you choose a custom colour for them.
+        //
+        // When OFF: original behaviour — mitigated zones are removed immediately
+        //           (Normal / Dynamic / Half) or kept yellow (None mode).
+
+        [Parameter("Show Mitigated FVGs",    DefaultValue = false,    Group = "MTF Fair Value Gaps")]
+        public bool ShowMitigatedFvgs { get; set; }
+
+        [Parameter("Mitigated FVG Color",    DefaultValue = "#26FFFF00", Group = "MTF Fair Value Gaps")]
+        public Color MitigatedFvgColor { get; set; }
 
         // ─── FVG Box Border ──────────────────────────────────────────────────
 
@@ -405,7 +431,10 @@ namespace cAlgo
                 if (newBull && _lastBullTfIndex[tfKey] != i)
                 {
                     if (_bullByTf[tfKey].Count > _maxByTf[tfKey])
-                        RemoveFvgAt(_bullByTf[tfKey], 0);
+                    {
+                        if (ShowMitigatedFvgs) FreezeFvgAt(_bullByTf[tfKey], 0);
+                        else                   RemoveFvgAt(_bullByTf[tfKey], 0);
+                    }
                     if (bullDistinct)
                     {
                         AddFvg(tfKey, true, l, h2);
@@ -416,7 +445,10 @@ namespace cAlgo
                 if (newBear && _lastBearTfIndex[tfKey] != i)
                 {
                     if (_bearByTf[tfKey].Count > _maxByTf[tfKey])
-                        RemoveFvgAt(_bearByTf[tfKey], 0);
+                    {
+                        if (ShowMitigatedFvgs) FreezeFvgAt(_bearByTf[tfKey], 0);
+                        else                   RemoveFvgAt(_bearByTf[tfKey], 0);
+                    }
                     if (bearDistinct)
                     {
                         AddFvg(tfKey, false, l2, h);
@@ -476,7 +508,15 @@ namespace cAlgo
 
             for (var i = zones.Count - 1; i >= 0; i--)
             {
-                var z   = zones[i];
+                var z = zones[i];
+
+                // ── Skip frozen mitigated zones completely ────────────────────
+                // When ShowMitigatedFvgs is on, mitigated zones are frozen in
+                // place with their mitigated color.  They must not be updated,
+                // re-mitigated, or removed by any subsequent bar.
+                if (z.IsMitigated)
+                    continue;
+
                 var mid = (z.Top + z.Bottom) / 2.0;
 
                 var threshold = bull
@@ -528,7 +568,19 @@ namespace cAlgo
                         : (UseBodyMitigation ? Bars.ClosePrices[idx] > z.Top
                                              : Bars.HighPrices[idx]  > z.Top);
                     if (penetrated)
-                        z.Rect.Color = NomitiColor;   // yellow, ~85% transparent
+                    {
+                        if (ShowMitigatedFvgs)
+                        {
+                            // Freeze with user colour — zone stops updating from now on
+                            z.Rect.Color  = MitigatedFvgColor;
+                            z.IsMitigated = true;
+                        }
+                        else
+                        {
+                            // Original Pine behaviour: recolour yellow, keep updating forever
+                            z.Rect.Color = NomitiColor;
+                        }
+                    }
                 }
 
                 var removeFull = bull
@@ -544,10 +596,33 @@ namespace cAlgo
                     : (UseBodyMitigation ? Bars.ClosePrices[idx] > mid
                                          : Bars.HighPrices[idx]  > mid);
 
-                if (((mode == MitigationMode.Normal || mode == MitigationMode.Dynamic) && removeFull) ||
-                    (mode == MitigationMode.Half && removeHalf))
+                var shouldRemove =
+                    ((mode == MitigationMode.Normal || mode == MitigationMode.Dynamic) && removeFull) ||
+                    (mode == MitigationMode.Half && removeHalf);
+
+                if (shouldRemove)
                 {
-                    RemoveFvgAt(zones, i);
+                    if (ShowMitigatedFvgs)
+                    {
+                        // ── Keep zone on chart as a historical record ─────────
+                        // Recolour to the user's chosen mitigated colour, freeze
+                        // the right edge at the bar where it was mitigated, and
+                        // flag it so the update loop ignores it from now on.
+                        z.Rect.Color  = MitigatedFvgColor;
+                        z.Rect.Time2  = ShiftFromCurrentBar(LabelShiftRight);
+                        z.IsMitigated = true;
+                        // Label: hide the live label (position updates stop here)
+                        if (z.Label != null)
+                        {
+                            z.Label.Time = ShiftFromCurrentBar(LabelShift);
+                            z.Label.Y    = (z.Top + z.Bottom) / 2.0;
+                        }
+                    }
+                    else
+                    {
+                        // Original behaviour — delete the zone entirely
+                        RemoveFvgAt(zones, i);
+                    }
                     continue;
                 }
 
@@ -570,6 +645,24 @@ namespace cAlgo
             var z = zones[i];
             Chart.RemoveObject(z.Id);
             Chart.RemoveObject(z.Id + "_lbl");
+            zones.RemoveAt(i);
+        }
+
+        /// <summary>
+        /// Recolours the zone to MitigatedFvgColor, freezes its current chart
+        /// position, and removes it from the live list WITHOUT deleting the
+        /// chart object.  Used when ShowMitigatedFvgs is on and a zone is
+        /// pushed out by the max-count cap.
+        /// The frozen rectangle stays on the chart at its last-drawn position;
+        /// as new bars form it drifts leftward into the historical area.
+        /// </summary>
+        private void FreezeFvgAt(List<FvgZone> zones, int i)
+        {
+            if (i < 0 || i >= zones.Count) return;
+            var z = zones[i];
+            z.Rect.Color  = MitigatedFvgColor;
+            z.IsMitigated = true;
+            // Remove from the live list only — chart object stays
             zones.RemoveAt(i);
         }
 
