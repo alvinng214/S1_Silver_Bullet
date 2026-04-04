@@ -9,38 +9,22 @@ namespace cAlgo
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class OrderBlocksImbalanceMtf : Indicator
     {
-        public enum MitigationMethod
-        {
-            Close,
-            Wick
-        }
-
-        public enum ZoneState
-        {
-            Active,
-            Mitigated,
-            Invalidated
-        }
+        public enum MitigationMethod { Close, Wick }
+        public enum ZoneState { Active, Mitigated, Invalidated }
 
         private sealed class ObZone
         {
             public string Id;
             public string LabelId;
-
             public ChartRectangle Box;
             public ChartText Label;
-
             public string TfKey;
             public string TfLabel;
-
             public bool IsBullish;
             public ZoneState State;
-
             public double Top;
             public double Bottom;
-
             public DateTime CreatedTfTime;
-            public int CreatedChartIndex;
             public DateTime FrozenRightTime;
         }
 
@@ -88,7 +72,7 @@ namespace cAlgo
         [Parameter("Enable Smart Visibility", DefaultValue = true, Group = "Display")]
         public bool UseSmartView { get; set; }
 
-        [Parameter("Max Active Zones Per Side", DefaultValue = 10, MinValue = 1, MaxValue = 50, Group = "Display")]
+        [Parameter("Visible Zones Per Side", DefaultValue = 10, MinValue = 1, MaxValue = 50, Group = "Display")]
         public int VisibleLimit { get; set; }
 
         [Parameter("Auto Extend Active Zones", DefaultValue = true, Group = "Display")]
@@ -146,7 +130,6 @@ namespace cAlgo
         protected override void Initialize()
         {
             _tfStates.Clear();
-
             RegisterTf("tf1", Tf1, EnableTf1);
             RegisterTf("tf2", Tf2, EnableTf2);
             RegisterTf("tf3", Tf3, EnableTf3);
@@ -158,7 +141,7 @@ namespace cAlgo
             if (index < 2)
                 return;
 
-            var now = Bars.OpenTimes[index];
+            DateTime now = Bars.OpenTimes[index];
 
             for (int i = 0; i < _tfStates.Count; i++)
             {
@@ -175,13 +158,12 @@ namespace cAlgo
                 double low0 = tf.Bars.LowPrices[htfIndex];
                 double high0 = tf.Bars.HighPrices[htfIndex];
                 DateTime seedTime = tf.Bars.OpenTimes[htfIndex - 2];
-
                 double atrRef = tf.Atr.Result[Math.Max(0, htfIndex - 1)];
+
                 double bullFvgSize = low0 - high2;
                 double bearFvgSize = low2 - high0;
-
-                bool isBullSeed = bullFvgSize > atrRef * FvgThreshold;
-                bool isBearSeed = bearFvgSize > atrRef * FvgThreshold;
+                bool isBullSeed = bullFvgSize > (atrRef * FvgThreshold);
+                bool isBearSeed = bearFvgSize > (atrRef * FvgThreshold);
 
                 if (seedTime != tf.LastCreatedSeedTime)
                 {
@@ -210,9 +192,7 @@ namespace cAlgo
             if (index != Bars.Count - 1)
                 return;
 
-            var dt = index > 0 ? (Bars.OpenTimes[index] - Bars.OpenTimes[index - 1]) : TimeSpan.FromMinutes(1);
-            var futureTime = Bars.OpenTimes[index].AddTicks(dt.Ticks * 10);
-
+            DateTime futureTime = GetPineForwardTime(index);
             if (UseSmartView)
                 ApplySmartVisibility(index, futureTime);
             else
@@ -226,7 +206,6 @@ namespace cAlgo
 
             var bars = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
             var atr = Indicators.AverageTrueRange(bars, 14, MovingAverageType.Simple);
-
             _tfStates.Add(new TfState
             {
                 Key = key,
@@ -242,10 +221,10 @@ namespace cAlgo
         {
             double zoneTop = Math.Max(top, bottom);
             double zoneBottom = Math.Min(top, bottom);
-
             if (double.IsNaN(zoneTop) || double.IsNaN(zoneBottom))
                 return;
 
+            var frozenRight = Bars.OpenTimes[Math.Min(chartIndex + 1, Bars.Count - 1)];
             var zone = new ObZone
             {
                 Id = "ob_" + tf.Key + "_" + _idCounter++,
@@ -256,11 +235,9 @@ namespace cAlgo
                 Top = zoneTop,
                 Bottom = zoneBottom,
                 CreatedTfTime = seedTime,
-                CreatedChartIndex = chartIndex,
-                FrozenRightTime = Bars.OpenTimes[Math.Min(chartIndex + 1, Bars.Count - 1)]
+                FrozenRightTime = frozenRight,
+                LabelId = "ob_lbl_" + _idCounter
             };
-            zone.LabelId = zone.Id + "_txt";
-
             _zones.Add(zone);
         }
 
@@ -320,22 +297,17 @@ namespace cAlgo
             for (int i = 0; i < _zones.Count; i++)
             {
                 var z = _zones[i];
-
-                if (z.State == ZoneState.Active)
-                {
-                    if (z.IsBullish)
-                        visibleBull.Add(i);
-                    else
-                        visibleBear.Add(i);
-                }
-                else if (z.State == ZoneState.Mitigated)
-                {
-                    DrawZoneForState(z, index, ExtendActive ? futureTime : Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)]);
-                }
-                else
+                if (z.State == ZoneState.Invalidated)
                 {
                     DrawZoneForState(z, index, z.FrozenRightTime);
+                    continue;
                 }
+
+                // Pine smart view ranks surviving zones; invalidated zones are removed.
+                if (z.IsBullish)
+                    visibleBull.Add(i);
+                else
+                    visibleBear.Add(i);
             }
 
             visibleBull.Sort((a, b) => _zones[b].Top.CompareTo(_zones[a].Top));
@@ -343,20 +315,19 @@ namespace cAlgo
 
             int bullCount = Math.Min(VisibleLimit, visibleBull.Count);
             int bearCount = Math.Min(VisibleLimit, visibleBear.Count);
-
-            var showActive = new HashSet<int>();
-            for (int i = 0; i < bullCount; i++) showActive.Add(visibleBull[i]);
-            for (int i = 0; i < bearCount; i++) showActive.Add(visibleBear[i]);
+            var showSet = new HashSet<int>();
+            for (int i = 0; i < bullCount; i++) showSet.Add(visibleBull[i]);
+            for (int i = 0; i < bearCount; i++) showSet.Add(visibleBear[i]);
 
             for (int i = 0; i < _zones.Count; i++)
             {
                 var z = _zones[i];
-
-                if (z.State != ZoneState.Active)
+                if (z.State == ZoneState.Invalidated)
                     continue;
 
-                if (showActive.Contains(i))
-                    DrawZoneForState(z, index, ExtendActive ? futureTime : Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)]);
+                DateTime rightTime = z.State != ZoneState.Invalidated && ExtendActive ? futureTime : z.FrozenRightTime;
+                if (showSet.Contains(i))
+                    DrawZoneForState(z, index, rightTime);
                 else
                     HideZone(z);
             }
@@ -367,11 +338,8 @@ namespace cAlgo
             for (int i = 0; i < _zones.Count; i++)
             {
                 var z = _zones[i];
-
-                if (z.State == ZoneState.Active || z.State == ZoneState.Mitigated)
-                    DrawZoneForState(z, index, ExtendActive ? futureTime : Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)]);
-                else
-                    DrawZoneForState(z, index, z.FrozenRightTime);
+                DateTime rightTime = z.State != ZoneState.Invalidated && ExtendActive ? futureTime : z.FrozenRightTime;
+                DrawZoneForState(z, index, rightTime);
             }
         }
 
@@ -379,7 +347,7 @@ namespace cAlgo
         {
             bool visible = false;
             bool showLabel = false;
-            Color fillColor = Color.Transparent;
+            Color boxColor = Color.Transparent;
             LineStyle style = LineStyle.Solid;
             string text = z.TfLabel + " " + (z.IsBullish ? "OB Demand" : "OB Supply");
 
@@ -387,14 +355,14 @@ namespace cAlgo
             {
                 visible = true;
                 showLabel = ShowUnmitigatedText;
-                fillColor = z.IsBullish ? BullUnmitigatedColor : BearUnmitigatedColor;
+                boxColor = z.IsBullish ? BullUnmitigatedColor : BearUnmitigatedColor;
                 style = LineStyle.Solid;
             }
             else if (z.State == ZoneState.Mitigated && ShowMitigatedOBs)
             {
                 visible = true;
                 showLabel = ShowMitigatedText;
-                fillColor = z.IsBullish ? MitigatedBullColor : MitigatedBearColor;
+                boxColor = z.IsBullish ? MitigatedBullColor : MitigatedBearColor;
                 style = LineStyle.DotsRare;
                 text += " Mitigated";
             }
@@ -402,7 +370,7 @@ namespace cAlgo
             {
                 visible = true;
                 showLabel = ShowInvalidatedText;
-                fillColor = z.IsBullish ? InvalidatedBullColor : InvalidatedBearColor;
+                boxColor = z.IsBullish ? InvalidatedBullColor : InvalidatedBearColor;
                 style = LineStyle.DotsRare;
                 text += " Invalidated";
             }
@@ -413,15 +381,16 @@ namespace cAlgo
                 return;
             }
 
-            EnsureZoneGraphics(z, index);
-
-            z.Box.Time1 = Bars.OpenTimes[Math.Max(0, Math.Min(z.CreatedChartIndex, Bars.Count - 1))];
+            EnsureZoneGraphics(z, index, boxColor);
+            z.Box.Time1 = z.CreatedTfTime;
             z.Box.Time2 = rightTime;
             z.Box.Y1 = z.Top;
             z.Box.Y2 = z.Bottom;
-            z.Box.Color = fillColor;
+            z.Box.Color = boxColor;
             z.Box.LineStyle = style;
             z.Box.IsFilled = true;
+            z.Box.Thickness = 1;
+            z.Box.Comment = string.Empty;
 
             if (showLabel)
             {
@@ -436,18 +405,17 @@ namespace cAlgo
             }
         }
 
-        private void EnsureZoneGraphics(ObZone z, int index)
+        private void EnsureZoneGraphics(ObZone z, int index, Color boxColor)
         {
             if (z.Box == null)
             {
-                var border = z.IsBullish ? Color.Green : Color.Red;
                 z.Box = Chart.DrawRectangle(
                     z.Id,
-                    Bars.OpenTimes[Math.Max(0, Math.Min(z.CreatedChartIndex, Bars.Count - 1))],
+                    z.CreatedTfTime,
                     z.Top,
                     Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)],
                     z.Bottom,
-                    border,
+                    boxColor,
                     1,
                     LineStyle.Solid);
                 z.Box.IsFilled = true;
@@ -468,7 +436,6 @@ namespace cAlgo
         {
             if (z.Box != null)
                 z.Box.Color = Color.FromArgb(0, Color.White);
-
             if (z.Label != null)
                 z.Label.Color = Color.FromArgb(0, Color.White);
         }
@@ -477,6 +444,12 @@ namespace cAlgo
         {
             Chart.RemoveObject(z.Id);
             Chart.RemoveObject(z.LabelId);
+        }
+
+        private DateTime GetPineForwardTime(int index)
+        {
+            var dt = index > 0 ? (Bars.OpenTimes[index] - Bars.OpenTimes[index - 1]) : TimeSpan.FromMinutes(1);
+            return Bars.OpenTimes[index].AddTicks(dt.Ticks * 5);
         }
 
         private int FindBarIndexAtOrBefore(Bars bars, DateTime time)
@@ -490,7 +463,6 @@ namespace cAlgo
                 if (bars.OpenTimes[i] <= time)
                     return i;
             }
-
             return -1;
         }
 
