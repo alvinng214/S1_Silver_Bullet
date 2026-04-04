@@ -49,6 +49,10 @@ namespace cAlgo
         public enum ObWickMitigationMode  { Normal, Dynamic, None, Half }
         public enum ObWickMitigationType  { Wicks, Body }
 
+        // Stop-loss source selectors (matches Liquidity engulfing and displacement cbot.cs)
+        public enum LongStopLossSource  { Ssl,             CandleMinus1Low  }
+        public enum ShortStopLossSource { Bsl,             CandleMinus1High }
+
         // ═════════════════════════════════════════════════════════════════════
         //  INNER TYPES — ATL TL state
         // ═════════════════════════════════════════════════════════════════════
@@ -268,6 +272,12 @@ namespace cAlgo
 
         [Parameter("Pivot Right", DefaultValue = 5, MinValue = 1, Group = "BSL & SSL")]
         public int PivotRight { get; set; }
+
+        [Parameter("Long Stop Loss Source",  DefaultValue = LongStopLossSource.Ssl,              Group = "BSL & SSL")]
+        public LongStopLossSource LongSlSource { get; set; }
+
+        [Parameter("Short Stop Loss Source", DefaultValue = ShortStopLossSource.Bsl,             Group = "BSL & SSL")]
+        public ShortStopLossSource ShortSlSource { get; set; }
 
         // ═════════════════════════════════════════════════════════════════════
         //  PARAMETERS — Risk Management
@@ -1657,17 +1667,20 @@ namespace cAlgo
 
         private void TryEnterLong(int signalBar)
         {
-            double entry = Symbol.Ask; double sslLevel = _bslCurrentSsl;
-            if (double.IsNaN(sslLevel) || sslLevel <= 0) { Print("Bar {0}: LONG skipped – SSL unavailable.", signalBar); return; }
-            if (sslLevel >= entry) { Print("Bar {0}: LONG skipped – SSL {1:F5} not below entry {2:F5}.", signalBar, sslLevel, entry); return; }
-            double slPips = (entry - sslLevel) / Symbol.PipSize + SlBufferPips;
+            double entry = Symbol.Ask;
+            double slAnchor; string slAnchorName;
+            if (!TryGetLongStopAnchor(signalBar, out slAnchor, out slAnchorName))
+            { Print("Bar {0}: LONG skipped – stop loss anchor unavailable ({1}).", signalBar, LongSlSource); return; }
+            if (slAnchor >= entry)
+            { Print("Bar {0}: LONG skipped – {1} {2:F5} not below entry {3:F5}.", signalBar, slAnchorName, slAnchor, entry); return; }
+            double slPips = (entry - slAnchor) / Symbol.PipSize + SlBufferPips;
             if (!ValidateSlPips(signalBar, "LONG", slPips)) return;
             double volume = GetRiskVolume(Account.Equity * (RiskPercent / 100.0), slPips);
             if (volume <= 0) { Print("Bar {0}: LONG skipped – volume is 0.", signalBar); return; }
             double slPrice = Math.Round(entry - slPips * Symbol.PipSize, Symbol.Digits);
             double tpPrice = Math.Round(entry + slPips * RiskRewardRatio * Symbol.PipSize, Symbol.Digits);
-            Print("Bar {0}: LONG  | Entry={1:F5} | SSL={2:F5} | SL={3:F5}({4:F1}p buf={5:F1}) | TP={6:F5}({7:F1}p) | Vol={8}",
-                signalBar, entry, sslLevel, slPrice, slPips, SlBufferPips, tpPrice, slPips * RiskRewardRatio, volume);
+            Print("Bar {0}: LONG  | Entry={1:F5} | {2}={3:F5} | SL={4:F5}({5:F1}p buf={6:F1}) | TP={7:F5}({8:F1}p) | Vol={9}",
+                signalBar, entry, slAnchorName, slAnchor, slPrice, slPips, SlBufferPips, tpPrice, slPips * RiskRewardRatio, volume);
             var result = ExecuteMarketOrder(TradeType.Buy, SymbolName, volume, InstanceName, null, null);
             if (result.IsSuccessful)
                 ModifyPosition(result.Position, slPrice, tpPrice);
@@ -1677,22 +1690,57 @@ namespace cAlgo
 
         private void TryEnterShort(int signalBar)
         {
-            double entry = Symbol.Bid; double bslLevel = _bslCurrentBsl;
-            if (double.IsNaN(bslLevel) || bslLevel <= 0) { Print("Bar {0}: SHORT skipped – BSL unavailable.", signalBar); return; }
-            if (bslLevel <= entry) { Print("Bar {0}: SHORT skipped – BSL {1:F5} not above entry {2:F5}.", signalBar, bslLevel, entry); return; }
-            double slPips = (bslLevel - entry) / Symbol.PipSize + SlBufferPips;
+            double entry = Symbol.Bid;
+            double slAnchor; string slAnchorName;
+            if (!TryGetShortStopAnchor(signalBar, out slAnchor, out slAnchorName))
+            { Print("Bar {0}: SHORT skipped – stop loss anchor unavailable ({1}).", signalBar, ShortSlSource); return; }
+            if (slAnchor <= entry)
+            { Print("Bar {0}: SHORT skipped – {1} {2:F5} not above entry {3:F5}.", signalBar, slAnchorName, slAnchor, entry); return; }
+            double slPips = (slAnchor - entry) / Symbol.PipSize + SlBufferPips;
             if (!ValidateSlPips(signalBar, "SHORT", slPips)) return;
             double volume = GetRiskVolume(Account.Equity * (RiskPercent / 100.0), slPips);
             if (volume <= 0) { Print("Bar {0}: SHORT skipped – volume is 0.", signalBar); return; }
             double slPrice = Math.Round(entry + slPips * Symbol.PipSize, Symbol.Digits);
             double tpPrice = Math.Round(entry - slPips * RiskRewardRatio * Symbol.PipSize, Symbol.Digits);
-            Print("Bar {0}: SHORT | Entry={1:F5} | BSL={2:F5} | SL={3:F5}({4:F1}p buf={5:F1}) | TP={6:F5}({7:F1}p) | Vol={8}",
-                signalBar, entry, bslLevel, slPrice, slPips, SlBufferPips, tpPrice, slPips * RiskRewardRatio, volume);
+            Print("Bar {0}: SHORT | Entry={1:F5} | {2}={3:F5} | SL={4:F5}({5:F1}p buf={6:F1}) | TP={7:F5}({8:F1}p) | Vol={9}",
+                signalBar, entry, slAnchorName, slAnchor, slPrice, slPips, SlBufferPips, tpPrice, slPips * RiskRewardRatio, volume);
             var result = ExecuteMarketOrder(TradeType.Sell, SymbolName, volume, InstanceName, null, null);
             if (result.IsSuccessful)
                 ModifyPosition(result.Position, slPrice, tpPrice);
             else
                 Print("Bar {0}: SHORT order failed – {1}", signalBar, result.Error);
+        }
+
+        private bool TryGetLongStopAnchor(int signalBar, out double anchor, out string anchorName)
+        {
+            anchor = double.NaN; anchorName = string.Empty;
+            switch (LongSlSource)
+            {
+                case LongStopLossSource.Ssl:
+                    anchor = _bslCurrentSsl; anchorName = "SSL";
+                    return !double.IsNaN(anchor) && anchor > 0;
+                case LongStopLossSource.CandleMinus1Low:
+                    if (signalBar < 1 || signalBar >= Bars.Count) return false;
+                    anchor = Bars.LowPrices[signalBar]; anchorName = "Candle-1 Low";
+                    return !double.IsNaN(anchor) && anchor > 0;
+                default: return false;
+            }
+        }
+
+        private bool TryGetShortStopAnchor(int signalBar, out double anchor, out string anchorName)
+        {
+            anchor = double.NaN; anchorName = string.Empty;
+            switch (ShortSlSource)
+            {
+                case ShortStopLossSource.Bsl:
+                    anchor = _bslCurrentBsl; anchorName = "BSL";
+                    return !double.IsNaN(anchor) && anchor > 0;
+                case ShortStopLossSource.CandleMinus1High:
+                    if (signalBar < 1 || signalBar >= Bars.Count) return false;
+                    anchor = Bars.HighPrices[signalBar]; anchorName = "Candle-1 High";
+                    return !double.IsNaN(anchor) && anchor > 0;
+                default: return false;
+            }
         }
 
         private bool ValidateSlPips(int signalBar, string direction, double slPips)
