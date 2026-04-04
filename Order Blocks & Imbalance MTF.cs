@@ -67,8 +67,8 @@ namespace cAlgo
         [Parameter("Show Supply (Bearish)", DefaultValue = true, Group = "Logic")]
         public bool ShowBear { get; set; }
 
-        [Parameter("Show Historical OBs", DefaultValue = true, Group = "Display")]
-        public bool ShowHistoricalOBs { get; set; }
+        [Parameter("Show Unmitigated OBs", DefaultValue = true, Group = "Display")]
+        public bool ShowUnmitigatedOBs { get; set; }
 
         [Parameter("Show Mitigated OBs", DefaultValue = false, Group = "Display")]
         public bool ShowMitigatedOBs { get; set; }
@@ -76,10 +76,13 @@ namespace cAlgo
         [Parameter("Show Invalidated OBs", DefaultValue = false, Group = "Display")]
         public bool ShowInvalidatedOBs { get; set; }
 
-        [Parameter("Show Mitigated Text", DefaultValue = false, Group = "Display")]
+        [Parameter("Show Unmitigated Labels", DefaultValue = true, Group = "Display")]
+        public bool ShowUnmitigatedText { get; set; }
+
+        [Parameter("Show Mitigated Labels", DefaultValue = false, Group = "Display")]
         public bool ShowMitigatedText { get; set; }
 
-        [Parameter("Show Invalidated Text", DefaultValue = false, Group = "Display")]
+        [Parameter("Show Invalidated Labels", DefaultValue = false, Group = "Display")]
         public bool ShowInvalidatedText { get; set; }
 
         [Parameter("Enable Smart Visibility", DefaultValue = true, Group = "Display")]
@@ -91,11 +94,11 @@ namespace cAlgo
         [Parameter("Auto Extend Active Zones", DefaultValue = true, Group = "Display")]
         public bool ExtendActive { get; set; }
 
-        [Parameter("Bull Active Color", DefaultValue = "#4600FF00", Group = "Colors")]
-        public Color BullHistoricalColor { get; set; }
+        [Parameter("Bull Unmitigated Color", DefaultValue = "#4600FF00", Group = "Colors")]
+        public Color BullUnmitigatedColor { get; set; }
 
-        [Parameter("Bear Active Color", DefaultValue = "#46FF0000", Group = "Colors")]
-        public Color BearHistoricalColor { get; set; }
+        [Parameter("Bear Unmitigated Color", DefaultValue = "#46FF0000", Group = "Colors")]
+        public Color BearUnmitigatedColor { get; set; }
 
         [Parameter("Bull Mitigated Color", DefaultValue = "#D9FFFF00", Group = "Colors")]
         public Color MitigatedBullColor { get; set; }
@@ -325,6 +328,10 @@ namespace cAlgo
                     else
                         visibleBear.Add(i);
                 }
+                else if (z.State == ZoneState.Mitigated)
+                {
+                    DrawZoneForState(z, index, ExtendActive ? futureTime : Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)]);
+                }
                 else
                 {
                     DrawZoneForState(z, index, z.FrozenRightTime);
@@ -361,7 +368,7 @@ namespace cAlgo
             {
                 var z = _zones[i];
 
-                if (z.State == ZoneState.Active)
+                if (z.State == ZoneState.Active || z.State == ZoneState.Mitigated)
                     DrawZoneForState(z, index, ExtendActive ? futureTime : Bars.OpenTimes[Math.Min(index + 1, Bars.Count - 1)]);
                 else
                     DrawZoneForState(z, index, z.FrozenRightTime);
@@ -371,31 +378,33 @@ namespace cAlgo
         private void DrawZoneForState(ObZone z, int index, DateTime rightTime)
         {
             bool visible = false;
+            bool showLabel = false;
             Color fillColor = Color.Transparent;
             LineStyle style = LineStyle.Solid;
             string text = z.TfLabel + " " + (z.IsBullish ? "OB Demand" : "OB Supply");
 
-            if (z.State == ZoneState.Active && ShowHistoricalOBs)
+            if (z.State == ZoneState.Active && ShowUnmitigatedOBs)
             {
                 visible = true;
-                fillColor = z.IsBullish ? BullHistoricalColor : BearHistoricalColor;
+                showLabel = ShowUnmitigatedText;
+                fillColor = z.IsBullish ? BullUnmitigatedColor : BearUnmitigatedColor;
                 style = LineStyle.Solid;
             }
             else if (z.State == ZoneState.Mitigated && ShowMitigatedOBs)
             {
                 visible = true;
+                showLabel = ShowMitigatedText;
                 fillColor = z.IsBullish ? MitigatedBullColor : MitigatedBearColor;
                 style = LineStyle.DotsRare;
-                if (ShowMitigatedText)
-                    text += " Mitigated";
+                text += " Mitigated";
             }
             else if (z.State == ZoneState.Invalidated && ShowInvalidatedOBs)
             {
                 visible = true;
+                showLabel = ShowInvalidatedText;
                 fillColor = z.IsBullish ? InvalidatedBullColor : InvalidatedBearColor;
                 style = LineStyle.DotsRare;
-                if (ShowInvalidatedText)
-                    text += " Invalidated";
+                text += " Invalidated";
             }
 
             if (!visible)
@@ -414,10 +423,17 @@ namespace cAlgo
             z.Box.LineStyle = style;
             z.Box.IsFilled = true;
 
-            z.Label.Time = rightTime;
-            z.Label.Y = (z.Top + z.Bottom) / 2.0;
-            z.Label.Text = text;
-            z.Label.Color = LabelColor;
+            if (showLabel)
+            {
+                z.Label.Time = rightTime;
+                z.Label.Y = (z.Top + z.Bottom) / 2.0;
+                z.Label.Text = text;
+                z.Label.Color = LabelColor;
+            }
+            else
+            {
+                z.Label.Color = Color.FromArgb(0, Color.White);
+            }
         }
 
         private void EnsureZoneGraphics(ObZone z, int index)
