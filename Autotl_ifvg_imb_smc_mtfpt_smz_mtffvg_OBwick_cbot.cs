@@ -154,10 +154,10 @@ namespace cAlgo
         [Parameter("Enable ATL Short Signal", DefaultValue = false, Group = "Signal Engine Enables")]
         public bool EnableAtlShort { get; set; }
 
-        [Parameter("Enable IFVG Long Signal", DefaultValue = false, Group = "Signal Engine Enables")]
+        [Parameter("Enable IFVG Long Signal", DefaultValue = true, Group = "Signal Engine Enables")]
         public bool EnableIfvgLong { get; set; }
 
-        [Parameter("Enable IFVG Short Signal", DefaultValue = false, Group = "Signal Engine Enables")]
+        [Parameter("Enable IFVG Short Signal", DefaultValue = true, Group = "Signal Engine Enables")]
         public bool EnableIfvgShort { get; set; }
 
         // ═════════════════════════════════════════════════════════════════════
@@ -557,7 +557,7 @@ namespace cAlgo
         // PARAMETERS — OB IMBALANCE FILTER
         // ═════════════════════════════════════════════════════════════════════
 
-        [Parameter("Enable OB Imbalance Filter", DefaultValue = false, Group = "OB Imbalance Filter — General")]
+        [Parameter("Enable OB Imbalance Filter", DefaultValue = true, Group = "OB Imbalance Filter — General")]
         public bool EnableObImbFilter { get; set; }
 
         [Parameter("OB Imbalance Lookback Bars", DefaultValue = 10, MinValue = 1, Group = "OB Imbalance Filter — General")]
@@ -587,19 +587,19 @@ namespace cAlgo
         [Parameter("TF1", DefaultValue = "Minute15", Group = "OB Imbalance Filter — Timeframes")]
         public TimeFrame ObImbTf1 { get; set; }
 
-        [Parameter("Enable TF2", DefaultValue = true, Group = "OB Imbalance Filter — Timeframes")]
+        [Parameter("Enable TF2", DefaultValue = false, Group = "OB Imbalance Filter — Timeframes")]
         public bool ObImbEnableTf2 { get; set; }
 
         [Parameter("TF2", DefaultValue = "Minute30", Group = "OB Imbalance Filter — Timeframes")]
         public TimeFrame ObImbTf2 { get; set; }
 
-        [Parameter("Enable TF3", DefaultValue = true, Group = "OB Imbalance Filter — Timeframes")]
+        [Parameter("Enable TF3", DefaultValue = false, Group = "OB Imbalance Filter — Timeframes")]
         public bool ObImbEnableTf3 { get; set; }
 
         [Parameter("TF3", DefaultValue = "Hour", Group = "OB Imbalance Filter — Timeframes")]
         public TimeFrame ObImbTf3 { get; set; }
 
-        [Parameter("Enable TF4", DefaultValue = true, Group = "OB Imbalance Filter — Timeframes")]
+        [Parameter("Enable TF4", DefaultValue = false, Group = "OB Imbalance Filter — Timeframes")]
         public bool ObImbEnableTf4 { get; set; }
 
         [Parameter("TF4", DefaultValue = "Hour4", Group = "OB Imbalance Filter — Timeframes")]
