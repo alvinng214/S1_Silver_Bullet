@@ -195,7 +195,7 @@ namespace cAlgo
         public double RiskPercent { get; set; }
         [Parameter("Risk:Reward Ratio",      DefaultValue = 2.0,   MinValue = 0.1, Step = 0.1, Group = "Risk Management")]
         public double RiskRewardRatio { get; set; }
-        [Parameter("Max Open Positions",     DefaultValue = 3,     MinValue = 1, MaxValue = 100, Group = "Risk Management")]
+        [Parameter("Max Open Positions",     DefaultValue = 100,     MinValue = 1, MaxValue = 100, Group = "Risk Management")]
         public int MaxOpenPositions { get; set; }
         [Parameter("Min SL Distance (pips)", DefaultValue = 3.0,   MinValue = 0.1, Group = "Risk Management")]
         public double MinSlPips { get; set; }
