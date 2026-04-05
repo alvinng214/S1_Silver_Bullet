@@ -343,11 +343,11 @@ namespace cAlgo
         [Parameter("Min Imbalance Size (ATR Mult)", DefaultValue = 0.5, Step = 0.1, Group = "OB Imbalance Filter - Detection")] public double ImbFvgThreshold { get; set; }
         [Parameter("Enable TF1", DefaultValue = true,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf1 { get; set; }
         [Parameter("TF1",        DefaultValue = "Minute15", Group = "OB Imbalance Filter - Timeframes")] public TimeFrame ImbTf1 { get; set; }
-        [Parameter("Enable TF2", DefaultValue = true,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf2 { get; set; }
+        [Parameter("Enable TF2", DefaultValue = false,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf2 { get; set; }
         [Parameter("TF2",        DefaultValue = "Minute30", Group = "OB Imbalance Filter - Timeframes")] public TimeFrame ImbTf2 { get; set; }
-        [Parameter("Enable TF3", DefaultValue = true,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf3 { get; set; }
+        [Parameter("Enable TF3", DefaultValue = false,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf3 { get; set; }
         [Parameter("TF3",        DefaultValue = "Hour",     Group = "OB Imbalance Filter - Timeframes")] public TimeFrame ImbTf3 { get; set; }
-        [Parameter("Enable TF4", DefaultValue = true,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf4 { get; set; }
+        [Parameter("Enable TF4", DefaultValue = false,       Group = "OB Imbalance Filter - Timeframes")] public bool ImbEnableTf4 { get; set; }
         [Parameter("TF4",        DefaultValue = "Hour4",    Group = "OB Imbalance Filter - Timeframes")] public TimeFrame ImbTf4 { get; set; }
         [Parameter("Max Zones Per TF", DefaultValue = 50, MinValue = 1, MaxValue = 500, Group = "OB Imbalance Filter - Limits")] public int ImbMaxZonesPerTf { get; set; }
 
