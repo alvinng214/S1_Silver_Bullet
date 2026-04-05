@@ -28,7 +28,7 @@ using cAlgo.API.Internals;
 namespace cAlgo
 {
     [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
-    public class Autotl_ifvg_smc_mtfpt_smz_mtffvg_OBwick_Imb_filter_cbot : Robot
+    public class Autotl__smc_mtfpt_smz_mtffvg_OBwick_Imb_filter_cbot : Robot
     {
         // ENUMS
         public enum ObFilter          { Atr, CumulativeMeanRange }
@@ -117,9 +117,9 @@ namespace cAlgo
         public bool EnableAtlLong { get; set; }
         [Parameter("Enable ATL Short Signal",  DefaultValue = false, Group = "Signal Engine Enables")]
         public bool EnableAtlShort { get; set; }
-        [Parameter("Enable IFVG Long Signal",  DefaultValue = false, Group = "Signal Engine Enables")]
+        [Parameter("Enable IFVG Long Signal",  DefaultValue = true, Group = "Signal Engine Enables")]
         public bool EnableIfvgLong { get; set; }
-        [Parameter("Enable IFVG Short Signal", DefaultValue = false, Group = "Signal Engine Enables")]
+        [Parameter("Enable IFVG Short Signal", DefaultValue = true, Group = "Signal Engine Enables")]
         public bool EnableIfvgShort { get; set; }
 
         // ═══ PARAMETERS — IFVG Signal Engine ══════════════════════════════════
@@ -335,7 +335,7 @@ namespace cAlgo
         //   Mitigated   toggle: uses LAST  touch bar
         //   Invalidated OBs never pass regardless of toggle
 
-        [Parameter("Enable OB Imbalance Filter",    DefaultValue = false, Group = "OB Imbalance Filter - General")] public bool EnableImbFilter { get; set; }
+        [Parameter("Enable OB Imbalance Filter",    DefaultValue = true, Group = "OB Imbalance Filter - General")] public bool EnableImbFilter { get; set; }
         [Parameter("Touch-to-Signal Window (bars)", DefaultValue = 10, MinValue = 1, Group = "OB Imbalance Filter - General")] public int ImbLookbackBars { get; set; }
         [Parameter("Use Unmitigated OB Logic",      DefaultValue = true,  Group = "OB Imbalance Filter - General")] public bool ImbUseUnmitigated { get; set; }
         [Parameter("Use Mitigated OB Logic",        DefaultValue = false, Group = "OB Imbalance Filter - General")] public bool ImbUseMitigated   { get; set; }
