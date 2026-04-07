@@ -6,7 +6,7 @@ using cAlgo.API.Internals;
 namespace cAlgo
 {
     // ── Timeframe dropdown options ────────────────────────────────────────────
-    public enum TfOption { M1, M3, M15, M30, H1, H4, D1 }
+    public enum TfOption { M1, M3, M15, M30, H1, H4, H12, D1 }
 
     // ── Line style toggle options ─────────────────────────────────────────────
     public enum LineStyleOption { Solid, Dotted }
@@ -526,7 +526,42 @@ namespace cAlgo
         private int ResolveTfBarForChartBar(TfState s, DateTime chartTime)
         {
             if (!s.IsLowerTf)
-                return FindBarIndexAtOrBefore(s.TfBars, chartTime);
+            {
+                var tfBarIndex = FindBarIndexAtOrBefore(s.TfBars, chartTime);
+                if (tfBarIndex < 0) return -1;
+
+                // ── Mirror Pine's lookahead_off behaviour ─────────────────────────────
+                // Pine's request.security(lookahead_off) only makes a TF bar's data
+                // available on the LAST chart bar of that TF period — i.e., the bar
+                // that closes at the same time the TF bar closes.
+                //
+                // Detect "last chart bar of TF period" by checking whether the NEXT
+                // chart bar belongs to a later TF bar.  If yes → this chart bar is
+                // the last in the TF period → use tfBarIndex (confirmed).
+                // If no → still inside the forming TF bar → use tfBarIndex-1 (the
+                // previously closed TF bar, no look-ahead).
+                var chartIdx = FindBarIndexAtOrBefore(Bars, chartTime);
+                DateTime nextChartTime;
+                if (chartIdx >= 0 && chartIdx + 1 < Bars.Count)
+                    nextChartTime = Bars.OpenTimes[chartIdx + 1];
+                else
+                {
+                    var span = Bars.Count >= 2
+                        ? Bars.OpenTimes[Bars.Count - 1] - Bars.OpenTimes[Bars.Count - 2]
+                        : TimeSpan.FromMinutes(1);
+                    if (span <= TimeSpan.Zero) span = TimeSpan.FromMinutes(1);
+                    nextChartTime = chartTime + span;
+                }
+
+                var nextTfIdx = FindBarIndexAtOrBefore(s.TfBars, nextChartTime);
+                if (nextTfIdx > tfBarIndex)
+                    // Next chart bar is in a later TF bar → current chart bar is the
+                    // last of this TF period → TF bar is now confirmed, use it.
+                    return tfBarIndex;
+                else
+                    // Still inside the forming TF bar → defer to previous closed bar.
+                    return tfBarIndex > 0 ? tfBarIndex - 1 : -1;
+            }
 
             var chartBarIndex = FindBarIndexAtOrBefore(Bars, chartTime);
             if (chartBarIndex < 0)
@@ -556,8 +591,20 @@ namespace cAlgo
 
         private void DrawPanelStripe(TfState s, int chartBarIndex, double y)
         {
-            var startTime = Bars.OpenTimes[Math.Max(0, chartBarIndex - 1)];
-            var endTime = Bars.OpenTimes[chartBarIndex];
+            var startTime = Bars.OpenTimes[chartBarIndex];
+            DateTime endTime;
+            if (chartBarIndex + 1 < Bars.Count)
+            {
+                endTime = Bars.OpenTimes[chartBarIndex + 1];
+            }
+            else
+            {
+                var span = Bars.Count >= 2
+                    ? Bars.OpenTimes[Bars.Count - 1] - Bars.OpenTimes[Bars.Count - 2]
+                    : TimeSpan.FromMinutes(1);
+                if (span <= TimeSpan.Zero) span = TimeSpan.FromMinutes(1);
+                endTime = startTime + span;
+            }
             var line = IndicatorArea.DrawTrendLine($"ms_panel_{s.Key}_{chartBarIndex}", startTime, y, endTime, y, s.CurrentColor, 10, LineStyle.Solid);
             line.IsInteractive = false;
         }
@@ -695,6 +742,7 @@ namespace cAlgo
                 case TfOption.M30: return "30";
                 case TfOption.H1:  return "60";
                 case TfOption.H4:  return "240";
+                case TfOption.H12: return "720";
                 case TfOption.D1:  return "1D";
                 default:           return "15";
             }
