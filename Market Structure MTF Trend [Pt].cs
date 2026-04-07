@@ -436,20 +436,20 @@ namespace cAlgo
                 if (point.PivotHighTime == DateTime.MinValue || double.IsNaN(point.PrevPivotHigh))
                     return;
 
-                var lineId = $"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_B_line";
-                Chart.DrawTrendLine(lineId, point.PivotHighTime, point.PrevPivotHigh, endTime, point.PrevPivotHigh, color, 1, lineStyle);
-
-                Chart.DrawText($"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_B_txt", labelText + spacing, endTime, point.PrevPivotHigh, color);
+                // Stable ID: keyed on pivot time so all redraws update the same object
+                var baseId = $"ms_{point.State.Key}_{point.PivotHighTime.Ticks}_{labelText.GetHashCode()}_B";
+                Chart.DrawTrendLine(baseId + "_line", point.PivotHighTime, point.PrevPivotHigh, endTime, point.PrevPivotHigh, color, 1, lineStyle);
+                Chart.DrawText(baseId + "_txt", labelText + spacing, endTime, point.PrevPivotHigh, color);
             }
             else
             {
                 if (point.PivotLowTime == DateTime.MinValue || double.IsNaN(point.PrevPivotLow))
                     return;
 
-                var lineId = $"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_S_line";
-                Chart.DrawTrendLine(lineId, point.PivotLowTime, point.PrevPivotLow, endTime, point.PrevPivotLow, color, 1, lineStyle);
-
-                Chart.DrawText($"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_S_txt", spacing + labelText, endTime, point.PrevPivotLow, color);
+                // Stable ID: keyed on pivot time so all redraws update the same object
+                var baseId = $"ms_{point.State.Key}_{point.PivotLowTime.Ticks}_{labelText.GetHashCode()}_S";
+                Chart.DrawTrendLine(baseId + "_line", point.PivotLowTime, point.PrevPivotLow, endTime, point.PrevPivotLow, color, 1, lineStyle);
+                Chart.DrawText(baseId + "_txt", spacing + labelText, endTime, point.PrevPivotLow, color);
             }
         }
 
