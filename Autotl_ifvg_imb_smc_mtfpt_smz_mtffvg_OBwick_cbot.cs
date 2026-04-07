@@ -32,7 +32,7 @@ namespace cAlgo
     public class Autotl_ifvg_smc_mtfpt_smz_mtffvg_OBwick_Imb_filter_cbot : Robot
     {
         // ENUMS
-        public enum MtfTfOption       { M1, M3, M15, M30, H1, H4, D1 }
+        public enum MtfTfOption       { M1, M3, M15, M30, H1, H4, H12, D1 }
         public enum ObFilter          { Atr, CumulativeMeanRange }
         public enum MitigationMode    { Close, HighLow }
         public enum MtfLogicMode      { OR, AND }
@@ -1048,6 +1048,7 @@ namespace cAlgo
                 case MtfTfOption.M30: return "30";
                 case MtfTfOption.H1:  return "60";
                 case MtfTfOption.H4:  return "240";
+                case MtfTfOption.H12: return "720";
                 case MtfTfOption.D1:  return "1D";
                 default:              return "15";
             }
@@ -1087,10 +1088,31 @@ namespace cAlgo
 
         private int MtfResolve(MtfTfState s,DateTime ct)
         {
-            if(!s.IsLowerTf)return MtfFOB(s.TfBars,ct.AddMinutes(-(s.TfMinutes>0?s.TfMinutes:1)));
-            var cbi=MtfFOB(Bars,ct);if(cbi<0)return -1;
-            var co=Bars.OpenTimes[cbi];DateTime cno;
-            if(cbi+1<Bars.Count)cno=Bars.OpenTimes[cbi+1];else{var m=MtfMins(Bars.TimeFrame);cno=co.AddMinutes(m>0?m:1);}
+            if(!s.IsLowerTf)
+            {
+                var tfBarIndex = MtfFOB(s.TfBars, ct);
+                if(tfBarIndex < 0) return -1;
+
+                // Mirror the indicator's lookahead_off fix:
+                // A TF bar is "confirmed" only when the NEXT chart bar belongs to a
+                // later TF bar (i.e., the current chart bar is the last one in this
+                // TF period).  Until then, use the previous closed TF bar instead.
+                var cbi = MtfFOB(Bars, ct);
+                DateTime nextChartTime;
+                if(cbi >= 0 && cbi + 1 < Bars.Count)
+                    nextChartTime = Bars.OpenTimes[cbi + 1];
+                else
+                {
+                    var m = MtfMins(Bars.TimeFrame);
+                    nextChartTime = ct.AddMinutes(m > 0 ? m : 1);
+                }
+                var nextTfIdx = MtfFOB(s.TfBars, nextChartTime);
+                return nextTfIdx > tfBarIndex ? tfBarIndex
+                     : tfBarIndex > 0 ? tfBarIndex - 1 : -1;
+            }
+            var cbi2=MtfFOB(Bars,ct);if(cbi2<0)return -1;
+            var co=Bars.OpenTimes[cbi2];DateTime cno;
+            if(cbi2+1<Bars.Count)cno=Bars.OpenTimes[cbi2+1];else{var m=MtfMins(Bars.TimeFrame);cno=co.AddMinutes(m>0?m:1);}
             var first=MtfFOA(s.TfBars,co);if(first<0)return MtfFOB(s.TfBars,ct);
             if(s.TfBars.OpenTimes[first]>=cno)return MtfFOB(s.TfBars,ct);
             return first;
