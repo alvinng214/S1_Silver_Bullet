@@ -32,6 +32,7 @@ namespace cAlgo
     public class Autotl_ifvg_smc_mtfpt_smz_mtffvg_OBwick_Imb_filter_cbot : Robot
     {
         // ENUMS
+        public enum MtfTfOption       { M1, M3, M15, M30, H1, H4, D1 }
         public enum ObFilter          { Atr, CumulativeMeanRange }
         public enum MitigationMode    { Close, HighLow }
         public enum MtfLogicMode      { OR, AND }
@@ -248,7 +249,7 @@ namespace cAlgo
         public MtfLogicMode MtfFilterLogic { get; set; }
 
         [Parameter("Enable TF1 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF1")] public bool EnableMtfTf1 { get; set; }
-        [Parameter("TF1 Timeframe",         DefaultValue = "15",  Group = "MTF Trend Filter - TF1")] public string MtfTimeframe1 { get; set; }
+        [Parameter("TF1 Timeframe",         DefaultValue = MtfTfOption.M15, Group = "MTF Trend Filter - TF1")] public MtfTfOption MtfTimeframe1 { get; set; }
         [Parameter("TF1 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF1")] public int MtfPivotStrength1 { get; set; }
         [Parameter("TF1 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF1")] public bool MtfIsLowerTf1 { get; set; }
         [Parameter("TF1 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF1")] public bool MtfAllowBullChoch1 { get; set; }
@@ -257,7 +258,7 @@ namespace cAlgo
         [Parameter("TF1 Allow Bear BOS",    DefaultValue = false, Group = "MTF Trend Filter - TF1")] public bool MtfAllowBearBos1 { get; set; }
 
         [Parameter("Enable TF2 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool EnableMtfTf2 { get; set; }
-        [Parameter("TF2 Timeframe",         DefaultValue = "30",  Group = "MTF Trend Filter - TF2")] public string MtfTimeframe2 { get; set; }
+        [Parameter("TF2 Timeframe",         DefaultValue = MtfTfOption.M30, Group = "MTF Trend Filter - TF2")] public MtfTfOption MtfTimeframe2 { get; set; }
         [Parameter("TF2 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF2")] public int MtfPivotStrength2 { get; set; }
         [Parameter("TF2 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool MtfIsLowerTf2 { get; set; }
         [Parameter("TF2 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool MtfAllowBullChoch2 { get; set; }
@@ -266,7 +267,7 @@ namespace cAlgo
         [Parameter("TF2 Allow Bear BOS",    DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool MtfAllowBearBos2 { get; set; }
 
         [Parameter("Enable TF3 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool EnableMtfTf3 { get; set; }
-        [Parameter("TF3 Timeframe",         DefaultValue = "60",  Group = "MTF Trend Filter - TF3")] public string MtfTimeframe3 { get; set; }
+        [Parameter("TF3 Timeframe",         DefaultValue = MtfTfOption.H1,  Group = "MTF Trend Filter - TF3")] public MtfTfOption MtfTimeframe3 { get; set; }
         [Parameter("TF3 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF3")] public int MtfPivotStrength3 { get; set; }
         [Parameter("TF3 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool MtfIsLowerTf3 { get; set; }
         [Parameter("TF3 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool MtfAllowBullChoch3 { get; set; }
@@ -275,7 +276,7 @@ namespace cAlgo
         [Parameter("TF3 Allow Bear BOS",    DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool MtfAllowBearBos3 { get; set; }
 
         [Parameter("Enable TF4 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF4")] public bool EnableMtfTf4 { get; set; }
-        [Parameter("TF4 Timeframe",         DefaultValue = "240", Group = "MTF Trend Filter - TF4")] public string MtfTimeframe4 { get; set; }
+        [Parameter("TF4 Timeframe",         DefaultValue = MtfTfOption.H4,  Group = "MTF Trend Filter - TF4")] public MtfTfOption MtfTimeframe4 { get; set; }
         [Parameter("TF4 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF4")] public int MtfPivotStrength4 { get; set; }
         [Parameter("TF4 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF4")] public bool MtfIsLowerTf4 { get; set; }
         [Parameter("TF4 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF4")] public bool MtfAllowBullChoch4 { get; set; }
@@ -486,11 +487,11 @@ namespace cAlgo
 
             if (EnableMtfFilter)
             {
-                _mtfState1 = EnableMtfTf1 ? MtfCreateState(MtfTimeframe1,MtfPivotStrength1,MtfIsLowerTf1,MtfAllowBullChoch1,MtfAllowBullBos1,MtfAllowBearChoch1,MtfAllowBearBos1) : null;
-                _mtfState2 = EnableMtfTf2 ? MtfCreateState(MtfTimeframe2,MtfPivotStrength2,MtfIsLowerTf2,MtfAllowBullChoch2,MtfAllowBullBos2,MtfAllowBearChoch2,MtfAllowBearBos2) : null;
-                _mtfState3 = EnableMtfTf3 ? MtfCreateState(MtfTimeframe3,MtfPivotStrength3,MtfIsLowerTf3,MtfAllowBullChoch3,MtfAllowBullBos3,MtfAllowBearChoch3,MtfAllowBearBos3) : null;
-                _mtfState4 = EnableMtfTf4 ? MtfCreateState(MtfTimeframe4,MtfPivotStrength4,MtfIsLowerTf4,MtfAllowBullChoch4,MtfAllowBullBos4,MtfAllowBearChoch4,MtfAllowBearBos4) : null;
-                Print("MTF ON Logic={0} TF1={1}({2}) TF2={3}({4}) TF3={5}({6}) TF4={7}({8})", MtfFilterLogic, EnableMtfTf1,MtfTimeframe1, EnableMtfTf2,MtfTimeframe2, EnableMtfTf3,MtfTimeframe3, EnableMtfTf4,MtfTimeframe4);
+                _mtfState1 = EnableMtfTf1 ? MtfCreateState(MtfTfOptStr(MtfTimeframe1),MtfPivotStrength1,MtfIsLowerTf1,MtfAllowBullChoch1,MtfAllowBullBos1,MtfAllowBearChoch1,MtfAllowBearBos1) : null;
+                _mtfState2 = EnableMtfTf2 ? MtfCreateState(MtfTfOptStr(MtfTimeframe2),MtfPivotStrength2,MtfIsLowerTf2,MtfAllowBullChoch2,MtfAllowBullBos2,MtfAllowBearChoch2,MtfAllowBearBos2) : null;
+                _mtfState3 = EnableMtfTf3 ? MtfCreateState(MtfTfOptStr(MtfTimeframe3),MtfPivotStrength3,MtfIsLowerTf3,MtfAllowBullChoch3,MtfAllowBullBos3,MtfAllowBearChoch3,MtfAllowBearBos3) : null;
+                _mtfState4 = EnableMtfTf4 ? MtfCreateState(MtfTfOptStr(MtfTimeframe4),MtfPivotStrength4,MtfIsLowerTf4,MtfAllowBullChoch4,MtfAllowBullBos4,MtfAllowBearChoch4,MtfAllowBearBos4) : null;
+                Print("MTF ON Logic={0} TF1={1}({2}) TF2={3}({4}) TF3={5}({6}) TF4={7}({8})", MtfFilterLogic, EnableMtfTf1,MtfTfOptStr(MtfTimeframe1), EnableMtfTf2,MtfTfOptStr(MtfTimeframe2), EnableMtfTf3,MtfTfOptStr(MtfTimeframe3), EnableMtfTf4,MtfTfOptStr(MtfTimeframe4));
             }
             if (EnableSmzFilter)
             {
@@ -1036,6 +1037,21 @@ namespace cAlgo
         }
 
         // ═══ MTF PIVOT TREND ENGINE ═══════════════════════════════════════════
+
+        private static string MtfTfOptStr(MtfTfOption opt)
+        {
+            switch(opt)
+            {
+                case MtfTfOption.M1:  return "1";
+                case MtfTfOption.M3:  return "3";
+                case MtfTfOption.M15: return "15";
+                case MtfTfOption.M30: return "30";
+                case MtfTfOption.H1:  return "60";
+                case MtfTfOption.H4:  return "240";
+                case MtfTfOption.D1:  return "1D";
+                default:              return "15";
+            }
+        }
 
         private MtfTfState MtfCreateState(string tfIn,int ps,bool lower,bool bc,bool bb,bool bearC,bool bearB)
         {
