@@ -5,6 +5,12 @@ using cAlgo.API.Internals;
 
 namespace cAlgo
 {
+    // ── Timeframe dropdown options ────────────────────────────────────────────
+    public enum TfOption { M1, M3, M15, M30, H1, H4, D1 }
+
+    // ── Line style toggle options ─────────────────────────────────────────────
+    public enum LineStyleOption { Solid, Dotted }
+
     [Indicator(IsOverlay = false, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class MarketStructureMtfTrendPt : Indicator
     {
@@ -23,6 +29,10 @@ namespace cAlgo
             public Color ChochBear;
             public Color BosBull;
             public Color BosBear;
+
+            // ── Line style per signal type ────────────────────────────────────
+            public LineStyle BosLineStyle;
+            public LineStyle ChochLineStyle;
 
             public int LastProcessedTfBar = -1;
             public bool CurrentTrend;
@@ -72,77 +82,97 @@ namespace cAlgo
             public double PanelY;
         }
 
-        [Parameter("Timeframe 1", Group = "TF1", DefaultValue = "15")]
-        public string Timeframe1 { get; set; }
+        // ── TF1 ───────────────────────────────────────────────────────────────
+        [Parameter("Timeframe 1", Group = "TF1", DefaultValue = TfOption.M15)]
+        public TfOption Timeframe1 { get; set; }
         [Parameter("Pivot Strength", Group = "TF1", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength1 { get; set; }
         [Parameter("Lower than chart TF?", Group = "TF1", DefaultValue = false)]
         public bool IsTf1LowerTf { get; set; }
         [Parameter("Show CHoCH", Group = "TF1", DefaultValue = true)]
         public bool ShowChoch1 { get; set; }
-        [Parameter("Show BoS", Group = "TF1", DefaultValue = true)]
-        public bool ShowBos1 { get; set; }
+        [Parameter("CHoCH Line Style", Group = "TF1", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption ChochLineStyle1 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF1", DefaultValue = "#2E6830")]
         public Color ChochBull1 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF1", DefaultValue = "#802929")]
         public Color ChochBear1 { get; set; }
+        [Parameter("Show BoS", Group = "TF1", DefaultValue = true)]
+        public bool ShowBos1 { get; set; }
+        [Parameter("BoS Line Style", Group = "TF1", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption BosLineStyle1 { get; set; }
         [Parameter("BoS Bull", Group = "TF1", DefaultValue = "Green")]
         public Color BosBull1 { get; set; }
         [Parameter("BoS Bear", Group = "TF1", DefaultValue = "Red")]
         public Color BosBear1 { get; set; }
 
-        [Parameter("Timeframe 2", Group = "TF2", DefaultValue = "30")]
-        public string Timeframe2 { get; set; }
+        // ── TF2 ───────────────────────────────────────────────────────────────
+        [Parameter("Timeframe 2", Group = "TF2", DefaultValue = TfOption.M30)]
+        public TfOption Timeframe2 { get; set; }
         [Parameter("Pivot Strength", Group = "TF2", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength2 { get; set; }
         [Parameter("Lower than chart TF?", Group = "TF2", DefaultValue = false)]
         public bool IsTf2LowerTf { get; set; }
         [Parameter("Show CHoCH", Group = "TF2", DefaultValue = false)]
         public bool ShowChoch2 { get; set; }
-        [Parameter("Show BoS", Group = "TF2", DefaultValue = false)]
-        public bool ShowBos2 { get; set; }
+        [Parameter("CHoCH Line Style", Group = "TF2", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption ChochLineStyle2 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF2", DefaultValue = "#2E6830")]
         public Color ChochBull2 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF2", DefaultValue = "#802929")]
         public Color ChochBear2 { get; set; }
+        [Parameter("Show BoS", Group = "TF2", DefaultValue = false)]
+        public bool ShowBos2 { get; set; }
+        [Parameter("BoS Line Style", Group = "TF2", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption BosLineStyle2 { get; set; }
         [Parameter("BoS Bull", Group = "TF2", DefaultValue = "Green")]
         public Color BosBull2 { get; set; }
         [Parameter("BoS Bear", Group = "TF2", DefaultValue = "Red")]
         public Color BosBear2 { get; set; }
 
-        [Parameter("Timeframe 3", Group = "TF3", DefaultValue = "60")]
-        public string Timeframe3 { get; set; }
+        // ── TF3 ───────────────────────────────────────────────────────────────
+        [Parameter("Timeframe 3", Group = "TF3", DefaultValue = TfOption.H1)]
+        public TfOption Timeframe3 { get; set; }
         [Parameter("Pivot Strength", Group = "TF3", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength3 { get; set; }
         [Parameter("Lower than chart TF?", Group = "TF3", DefaultValue = false)]
         public bool IsTf3LowerTf { get; set; }
         [Parameter("Show CHoCH", Group = "TF3", DefaultValue = false)]
         public bool ShowChoch3 { get; set; }
-        [Parameter("Show BoS", Group = "TF3", DefaultValue = false)]
-        public bool ShowBos3 { get; set; }
+        [Parameter("CHoCH Line Style", Group = "TF3", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption ChochLineStyle3 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF3", DefaultValue = "#2E6830")]
         public Color ChochBull3 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF3", DefaultValue = "#802929")]
         public Color ChochBear3 { get; set; }
+        [Parameter("Show BoS", Group = "TF3", DefaultValue = false)]
+        public bool ShowBos3 { get; set; }
+        [Parameter("BoS Line Style", Group = "TF3", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption BosLineStyle3 { get; set; }
         [Parameter("BoS Bull", Group = "TF3", DefaultValue = "Green")]
         public Color BosBull3 { get; set; }
         [Parameter("BoS Bear", Group = "TF3", DefaultValue = "Red")]
         public Color BosBear3 { get; set; }
 
-        [Parameter("Timeframe 4", Group = "TF4", DefaultValue = "240")]
-        public string Timeframe4 { get; set; }
+        // ── TF4 ───────────────────────────────────────────────────────────────
+        [Parameter("Timeframe 4", Group = "TF4", DefaultValue = TfOption.H4)]
+        public TfOption Timeframe4 { get; set; }
         [Parameter("Pivot Strength", Group = "TF4", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength4 { get; set; }
         [Parameter("Lower than chart TF?", Group = "TF4", DefaultValue = false)]
         public bool IsTf4LowerTf { get; set; }
         [Parameter("Show CHoCH", Group = "TF4", DefaultValue = false)]
         public bool ShowChoch4 { get; set; }
-        [Parameter("Show BoS", Group = "TF4", DefaultValue = false)]
-        public bool ShowBos4 { get; set; }
+        [Parameter("CHoCH Line Style", Group = "TF4", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption ChochLineStyle4 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF4", DefaultValue = "#2E6830")]
         public Color ChochBull4 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF4", DefaultValue = "#802929")]
         public Color ChochBear4 { get; set; }
+        [Parameter("Show BoS", Group = "TF4", DefaultValue = false)]
+        public bool ShowBos4 { get; set; }
+        [Parameter("BoS Line Style", Group = "TF4", DefaultValue = LineStyleOption.Dotted)]
+        public LineStyleOption BosLineStyle4 { get; set; }
         [Parameter("BoS Bull", Group = "TF4", DefaultValue = "Green")]
         public Color BosBull4 { get; set; }
         [Parameter("BoS Bear", Group = "TF4", DefaultValue = "Red")]
@@ -152,8 +182,6 @@ namespace cAlgo
         public bool EnableChochAlerts { get; set; }
 
         // ── Signal outputs — readable by a cBot, invisible in the panel ──────
-        // Each series emits 1.0 on the exact bar the event fires, 0.0 otherwise.
-
         [Output("TF1 BoS Bull",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
         public IndicatorDataSeries Tf1BosBull { get; set; }
         [Output("TF1 BoS Bear",   LineColor = "Transparent", PlotType = PlotType.DiscontinuousLine)]
@@ -195,10 +223,10 @@ namespace cAlgo
         protected override void Initialize()
         {
             _states.Clear();
-            AddTfState("TF1", Timeframe1, PivotStrength1, IsTf1LowerTf, ShowChoch1, ShowBos1, ChochBull1, ChochBear1, BosBull1, BosBear1);
-            AddTfState("TF2", Timeframe2, PivotStrength2, IsTf2LowerTf, ShowChoch2, ShowBos2, ChochBull2, ChochBear2, BosBull2, BosBear2);
-            AddTfState("TF3", Timeframe3, PivotStrength3, IsTf3LowerTf, ShowChoch3, ShowBos3, ChochBull3, ChochBear3, BosBull3, BosBear3);
-            AddTfState("TF4", Timeframe4, PivotStrength4, IsTf4LowerTf, ShowChoch4, ShowBos4, ChochBull4, ChochBear4, BosBull4, BosBear4);
+            AddTfState("TF1", Timeframe1, PivotStrength1, IsTf1LowerTf, ShowChoch1, ShowBos1, ChochBull1, ChochBear1, BosBull1, BosBear1, BosLineStyle1, ChochLineStyle1);
+            AddTfState("TF2", Timeframe2, PivotStrength2, IsTf2LowerTf, ShowChoch2, ShowBos2, ChochBull2, ChochBear2, BosBull2, BosBear2, BosLineStyle2, ChochLineStyle2);
+            AddTfState("TF3", Timeframe3, PivotStrength3, IsTf3LowerTf, ShowChoch3, ShowBos3, ChochBull3, ChochBear3, BosBull3, BosBear3, BosLineStyle3, ChochLineStyle3);
+            AddTfState("TF4", Timeframe4, PivotStrength4, IsTf4LowerTf, ShowChoch4, ShowBos4, ChochBull4, ChochBear4, BosBull4, BosBear4, BosLineStyle4, ChochLineStyle4);
 
             ValidateTimeframeFlags();
         }
@@ -223,8 +251,6 @@ namespace cAlgo
 
             DrawTrendChanges(index, chartPoints);
 
-            // ── Populate cBot-readable signal outputs ─────────────────────────
-            // chartPoints[0] = TF1, [1] = TF2, [2] = TF3, [3] = TF4
             SetSignalOutputs(index, chartPoints, 0, Tf1BosBull, Tf1BosBear, Tf1ChochBull, Tf1ChochBear);
             SetSignalOutputs(index, chartPoints, 1, Tf2BosBull, Tf2BosBear, Tf2ChochBull, Tf2ChochBear);
             SetSignalOutputs(index, chartPoints, 2, Tf3BosBull, Tf3BosBear, Tf3ChochBull, Tf3ChochBear);
@@ -248,8 +274,13 @@ namespace cAlgo
             chochBear[index] = p.TrendChanged && !p.Trend ? 1.0 : 0.0;
         }
 
-        private void AddTfState(string key, string tfInput, int pivotLen, bool isLowerTf, bool showChoch, bool showBos, Color chochBull, Color chochBear, Color bosBull, Color bosBear)
+        private void AddTfState(
+            string key, TfOption tfOption, int pivotLen, bool isLowerTf,
+            bool showChoch, bool showBos,
+            Color chochBull, Color chochBear, Color bosBull, Color bosBear,
+            LineStyleOption bosLineStyleOpt, LineStyleOption chochLineStyleOpt)
         {
+            var tfInput = TfOptionToString(tfOption);
             var tf = ParseTimeFrame(tfInput);
             var tfBars = tf == Bars.TimeFrame ? Bars : MarketData.GetBars(tf);
             _states.Add(new TfState
@@ -265,7 +296,9 @@ namespace cAlgo
                 ChochBull = chochBull,
                 ChochBear = chochBear,
                 BosBull = bosBull,
-                BosBear = bosBear
+                BosBear = bosBear,
+                BosLineStyle = ToLineStyle(bosLineStyleOpt),
+                ChochLineStyle = ToLineStyle(chochLineStyleOpt)
             });
         }
 
@@ -352,7 +385,7 @@ namespace cAlgo
                 if (i < spacing.Length)
                 {
                     for (var y = 0; y < count; y++)
-                        spacing[i] += " \n \n ";
+                        spacing[i] += " \n \n ";
                 }
             }
 
@@ -362,10 +395,10 @@ namespace cAlgo
                 var space = i == 0 ? string.Empty : spacing[i - 1];
 
                 if (point.State.ShowChoch && point.TrendChanged)
-                    DrawTrendChangeLabelAndLine(chartBarIndex, point, "CHoCH\n" + point.TfLabel, space, point.State.CurrentColor);
+                    DrawTrendChangeLabelAndLine(chartBarIndex, point, "CHoCH\n" + point.TfLabel, space, point.State.CurrentColor, point.State.ChochLineStyle);
 
                 if (point.State.ShowBos && point.BosEdge)
-                    DrawTrendChangeLabelAndLine(chartBarIndex, point, "BoS\n" + point.TfLabel, space, point.State.CurrentColor);
+                    DrawTrendChangeLabelAndLine(chartBarIndex, point, "BoS\n" + point.TfLabel, space, point.State.CurrentColor, point.State.BosLineStyle);
 
                 EmitChochAlerts(point, chartBarIndex);
             }
@@ -394,7 +427,7 @@ namespace cAlgo
             }
         }
 
-        private void DrawTrendChangeLabelAndLine(int chartBarIndex, ChartPoint point, string labelText, string spacing, Color color)
+        private void DrawTrendChangeLabelAndLine(int chartBarIndex, ChartPoint point, string labelText, string spacing, Color color, LineStyle lineStyle)
         {
             var endTime = Bars.OpenTimes[chartBarIndex];
 
@@ -404,10 +437,9 @@ namespace cAlgo
                     return;
 
                 var lineId = $"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_B_line";
-                Chart.DrawTrendLine(lineId, point.PivotHighTime, point.PrevPivotHigh, endTime, point.PrevPivotHigh, color, 1, LineStyle.DotsRare);
+                Chart.DrawTrendLine(lineId, point.PivotHighTime, point.PrevPivotHigh, endTime, point.PrevPivotHigh, color, 1, lineStyle);
 
-                var labelTime = MidTime(point.PivotHighTime, endTime);
-                Chart.DrawText($"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_B_txt", labelText + spacing, labelTime, point.PrevPivotHigh, color);
+                Chart.DrawText($"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_B_txt", labelText + spacing, endTime, point.PrevPivotHigh, color);
             }
             else
             {
@@ -415,10 +447,9 @@ namespace cAlgo
                     return;
 
                 var lineId = $"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_S_line";
-                Chart.DrawTrendLine(lineId, point.PivotLowTime, point.PrevPivotLow, endTime, point.PrevPivotLow, color, 1, LineStyle.DotsRare);
+                Chart.DrawTrendLine(lineId, point.PivotLowTime, point.PrevPivotLow, endTime, point.PrevPivotLow, color, 1, lineStyle);
 
-                var labelTime = MidTime(point.PivotLowTime, endTime);
-                Chart.DrawText($"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_S_txt", spacing + labelText, labelTime, point.PrevPivotLow, color);
+                Chart.DrawText($"ms_{point.State.Key}_{chartBarIndex}_{labelText.GetHashCode()}_S_txt", spacing + labelText, endTime, point.PrevPivotLow, color);
             }
         }
 
@@ -494,10 +525,6 @@ namespace cAlgo
 
         private int ResolveTfBarForChartBar(TfState s, DateTime chartTime)
         {
-            // Pine request.security lookahead approximation:
-            // - For non-lower TF mode (lookahead_off): map at/before chart bar open.
-            // - For lower TF mode (lookahead_on): emulate intrabar aggregation window and
-            //   project first intrabar value within the host chart bar.
             if (!s.IsLowerTf)
                 return FindBarIndexAtOrBefore(s.TfBars, chartTime);
 
@@ -521,11 +548,9 @@ namespace cAlgo
             if (firstInWindow < 0)
                 return FindBarIndexAtOrBefore(s.TfBars, chartTime);
 
-            // if no lower-TF bar starts inside this host bar, fallback to nearest known
             if (s.TfBars.OpenTimes[firstInWindow] >= chartNextOpen)
                 return FindBarIndexAtOrBefore(s.TfBars, chartTime);
 
-            // emulate lookahead_on by projecting earliest intrabar value in window
             return firstInWindow;
         }
 
@@ -659,58 +684,80 @@ namespace cAlgo
             return a.AddTicks(halfTicks);
         }
 
+        // ── Converts TfOption enum → string used by ParseTimeFrame/Label ─────
+        private static string TfOptionToString(TfOption opt)
+        {
+            switch (opt)
+            {
+                case TfOption.M1:  return "1";
+                case TfOption.M3:  return "3";
+                case TfOption.M15: return "15";
+                case TfOption.M30: return "30";
+                case TfOption.H1:  return "60";
+                case TfOption.H4:  return "240";
+                case TfOption.D1:  return "1D";
+                default:           return "15";
+            }
+        }
+
+        // ── Converts LineStyleOption enum → cAlgo LineStyle ──────────────────
+        private static LineStyle ToLineStyle(LineStyleOption opt)
+        {
+            return opt == LineStyleOption.Solid ? LineStyle.Solid : LineStyle.DotsRare;
+        }
+
         private static TimeFrame ParseTimeFrame(string text)
         {
             switch ((text ?? string.Empty).Trim().ToUpperInvariant())
             {
-                case "1": return TimeFrame.Minute;
-                case "2": return TimeFrame.Minute2;
-                case "3": return TimeFrame.Minute3;
-                case "4": return TimeFrame.Minute4;
-                case "5": return TimeFrame.Minute5;
-                case "10": return TimeFrame.Minute10;
-                case "15": return TimeFrame.Minute15;
-                case "30": return TimeFrame.Minute30;
-                case "45": return TimeFrame.Minute45;
+                case "1":           return TimeFrame.Minute;
+                case "2":           return TimeFrame.Minute2;
+                case "3":           return TimeFrame.Minute3;
+                case "4":           return TimeFrame.Minute4;
+                case "5":           return TimeFrame.Minute5;
+                case "10":          return TimeFrame.Minute10;
+                case "15":          return TimeFrame.Minute15;
+                case "30":          return TimeFrame.Minute30;
+                case "45":          return TimeFrame.Minute45;
                 case "60":
-                case "1H": return TimeFrame.Hour;
+                case "1H":          return TimeFrame.Hour;
                 case "120":
-                case "2H": return TimeFrame.Hour2;
+                case "2H":          return TimeFrame.Hour2;
                 case "240":
-                case "4H": return TimeFrame.Hour4;
+                case "4H":          return TimeFrame.Hour4;
                 case "480":
-                case "8H": return TimeFrame.Hour8;
+                case "8H":          return TimeFrame.Hour8;
                 case "720":
-                case "12H": return TimeFrame.Hour12;
+                case "12H":         return TimeFrame.Hour12;
                 case "D":
-                case "1D": return TimeFrame.Daily;
+                case "1D":          return TimeFrame.Daily;
                 case "W":
-                case "1W": return TimeFrame.Weekly;
+                case "1W":          return TimeFrame.Weekly;
                 case "M":
-                case "1M": return TimeFrame.Monthly;
-                default: return TimeFrame.Minute15;
+                case "1M":          return TimeFrame.Monthly;
+                default:            return TimeFrame.Minute15;
             }
         }
 
         private static int TimeFrameToMinutes(TimeFrame tf)
         {
-            if (tf == TimeFrame.Minute) return 1;
-            if (tf == TimeFrame.Minute2) return 2;
-            if (tf == TimeFrame.Minute3) return 3;
-            if (tf == TimeFrame.Minute4) return 4;
-            if (tf == TimeFrame.Minute5) return 5;
+            if (tf == TimeFrame.Minute)   return 1;
+            if (tf == TimeFrame.Minute2)  return 2;
+            if (tf == TimeFrame.Minute3)  return 3;
+            if (tf == TimeFrame.Minute4)  return 4;
+            if (tf == TimeFrame.Minute5)  return 5;
             if (tf == TimeFrame.Minute10) return 10;
             if (tf == TimeFrame.Minute15) return 15;
             if (tf == TimeFrame.Minute30) return 30;
             if (tf == TimeFrame.Minute45) return 45;
-            if (tf == TimeFrame.Hour) return 60;
-            if (tf == TimeFrame.Hour2) return 120;
-            if (tf == TimeFrame.Hour4) return 240;
-            if (tf == TimeFrame.Hour8) return 480;
-            if (tf == TimeFrame.Hour12) return 720;
-            if (tf == TimeFrame.Daily) return 1440;
-            if (tf == TimeFrame.Weekly) return 10080;
-            if (tf == TimeFrame.Monthly) return 43200;
+            if (tf == TimeFrame.Hour)     return 60;
+            if (tf == TimeFrame.Hour2)    return 120;
+            if (tf == TimeFrame.Hour4)    return 240;
+            if (tf == TimeFrame.Hour8)    return 480;
+            if (tf == TimeFrame.Hour12)   return 720;
+            if (tf == TimeFrame.Daily)    return 1440;
+            if (tf == TimeFrame.Weekly)   return 10080;
+            if (tf == TimeFrame.Monthly)  return 43200;
             return 0;
         }
 
@@ -719,17 +766,17 @@ namespace cAlgo
             var value = (input ?? string.Empty).Trim().ToUpperInvariant();
             switch (value)
             {
-                case "60": return "1H";
+                case "60":  return "1H";
                 case "120": return "2H";
                 case "240": return "4H";
                 case "480": return "8H";
                 case "720": return "12H";
                 case "D":
-                case "1D": return "1D";
+                case "1D":  return "1D";
                 case "W":
-                case "1W": return "1W";
+                case "1W":  return "1W";
                 case "M":
-                case "1M": return "1M";
+                case "1M":  return "1M";
             }
 
             var numeric = true;
