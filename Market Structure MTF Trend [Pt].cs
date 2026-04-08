@@ -6,7 +6,7 @@ using cAlgo.API.Internals;
 namespace cAlgo
 {
     // ── Timeframe dropdown options ────────────────────────────────────────────
-    public enum TfOption { M1, M3, M15, M30, H1, H4, H12, D1 }
+    public enum TfOption { M1, M3, M5, M15, M30, H1, H4, H12, D1 }
 
     // ── Line style toggle options ─────────────────────────────────────────────
     public enum LineStyleOption { Solid, Dotted }
@@ -83,7 +83,7 @@ namespace cAlgo
         }
 
         // ── TF1 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 1", Group = "TF1", DefaultValue = TfOption.M15)]
+        [Parameter("Timeframe 1", Group = "TF1", DefaultValue = TfOption.M5)]
         public TfOption Timeframe1 { get; set; }
         [Parameter("Pivot Strength", Group = "TF1", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength1 { get; set; }
@@ -107,7 +107,7 @@ namespace cAlgo
         public Color BosBear1 { get; set; }
 
         // ── TF2 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 2", Group = "TF2", DefaultValue = TfOption.H1)]
+        [Parameter("Timeframe 2", Group = "TF2", DefaultValue = TfOption.M15)]
         public TfOption Timeframe2 { get; set; }
         [Parameter("Pivot Strength", Group = "TF2", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength2 { get; set; }
@@ -131,7 +131,7 @@ namespace cAlgo
         public Color BosBear2 { get; set; }
 
         // ── TF3 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 3", Group = "TF3", DefaultValue = TfOption.H4)]
+        [Parameter("Timeframe 3", Group = "TF3", DefaultValue = TfOption.H1)]
         public TfOption Timeframe3 { get; set; }
         [Parameter("Pivot Strength", Group = "TF3", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength3 { get; set; }
@@ -155,7 +155,7 @@ namespace cAlgo
         public Color BosBear3 { get; set; }
 
         // ── TF4 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 4", Group = "TF4", DefaultValue = TfOption.D1)]
+        [Parameter("Timeframe 4", Group = "TF4", DefaultValue = TfOption.H4)]
         public TfOption Timeframe4 { get; set; }
         [Parameter("Pivot Strength", Group = "TF4", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength4 { get; set; }
@@ -738,6 +738,7 @@ namespace cAlgo
             {
                 case TfOption.M1:  return "1";
                 case TfOption.M3:  return "3";
+                case TfOption.M5:  return "5";
                 case TfOption.M15: return "15";
                 case TfOption.M30: return "30";
                 case TfOption.H1:  return "60";
