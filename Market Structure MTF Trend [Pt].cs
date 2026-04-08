@@ -91,7 +91,7 @@ namespace cAlgo
         public bool IsTf1LowerTf { get; set; }
         [Parameter("Show CHoCH", Group = "TF1", DefaultValue = true)]
         public bool ShowChoch1 { get; set; }
-        [Parameter("CHoCH Line Style", Group = "TF1", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("CHoCH Line Style", Group = "TF1", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption ChochLineStyle1 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF1", DefaultValue = "#2E6830")]
         public Color ChochBull1 { get; set; }
@@ -99,7 +99,7 @@ namespace cAlgo
         public Color ChochBear1 { get; set; }
         [Parameter("Show BoS", Group = "TF1", DefaultValue = true)]
         public bool ShowBos1 { get; set; }
-        [Parameter("BoS Line Style", Group = "TF1", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("BoS Line Style", Group = "TF1", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption BosLineStyle1 { get; set; }
         [Parameter("BoS Bull", Group = "TF1", DefaultValue = "Green")]
         public Color BosBull1 { get; set; }
@@ -107,7 +107,7 @@ namespace cAlgo
         public Color BosBear1 { get; set; }
 
         // ── TF2 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 2", Group = "TF2", DefaultValue = TfOption.M30)]
+        [Parameter("Timeframe 2", Group = "TF2", DefaultValue = TfOption.H1)]
         public TfOption Timeframe2 { get; set; }
         [Parameter("Pivot Strength", Group = "TF2", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength2 { get; set; }
@@ -115,15 +115,15 @@ namespace cAlgo
         public bool IsTf2LowerTf { get; set; }
         [Parameter("Show CHoCH", Group = "TF2", DefaultValue = false)]
         public bool ShowChoch2 { get; set; }
-        [Parameter("CHoCH Line Style", Group = "TF2", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("CHoCH Line Style", Group = "TF2", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption ChochLineStyle2 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF2", DefaultValue = "#2E6830")]
         public Color ChochBull2 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF2", DefaultValue = "#802929")]
         public Color ChochBear2 { get; set; }
-        [Parameter("Show BoS", Group = "TF2", DefaultValue = false)]
+        [Parameter("Show BoS", Group = "TF2", DefaultValue = true)]
         public bool ShowBos2 { get; set; }
-        [Parameter("BoS Line Style", Group = "TF2", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("BoS Line Style", Group = "TF2", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption BosLineStyle2 { get; set; }
         [Parameter("BoS Bull", Group = "TF2", DefaultValue = "Green")]
         public Color BosBull2 { get; set; }
@@ -131,23 +131,23 @@ namespace cAlgo
         public Color BosBear2 { get; set; }
 
         // ── TF3 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 3", Group = "TF3", DefaultValue = TfOption.H1)]
+        [Parameter("Timeframe 3", Group = "TF3", DefaultValue = TfOption.H4)]
         public TfOption Timeframe3 { get; set; }
         [Parameter("Pivot Strength", Group = "TF3", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength3 { get; set; }
         [Parameter("Lower than chart TF?", Group = "TF3", DefaultValue = false)]
         public bool IsTf3LowerTf { get; set; }
-        [Parameter("Show CHoCH", Group = "TF3", DefaultValue = false)]
+        [Parameter("Show CHoCH", Group = "TF3", DefaultValue = true)]
         public bool ShowChoch3 { get; set; }
-        [Parameter("CHoCH Line Style", Group = "TF3", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("CHoCH Line Style", Group = "TF3", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption ChochLineStyle3 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF3", DefaultValue = "#2E6830")]
         public Color ChochBull3 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF3", DefaultValue = "#802929")]
         public Color ChochBear3 { get; set; }
-        [Parameter("Show BoS", Group = "TF3", DefaultValue = false)]
+        [Parameter("Show BoS", Group = "TF3", DefaultValue = true)]
         public bool ShowBos3 { get; set; }
-        [Parameter("BoS Line Style", Group = "TF3", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("BoS Line Style", Group = "TF3", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption BosLineStyle3 { get; set; }
         [Parameter("BoS Bull", Group = "TF3", DefaultValue = "Green")]
         public Color BosBull3 { get; set; }
@@ -155,23 +155,23 @@ namespace cAlgo
         public Color BosBear3 { get; set; }
 
         // ── TF4 ───────────────────────────────────────────────────────────────
-        [Parameter("Timeframe 4", Group = "TF4", DefaultValue = TfOption.H4)]
+        [Parameter("Timeframe 4", Group = "TF4", DefaultValue = TfOption.D1)]
         public TfOption Timeframe4 { get; set; }
         [Parameter("Pivot Strength", Group = "TF4", DefaultValue = 15, MinValue = 1)]
         public int PivotStrength4 { get; set; }
         [Parameter("Lower than chart TF?", Group = "TF4", DefaultValue = false)]
         public bool IsTf4LowerTf { get; set; }
-        [Parameter("Show CHoCH", Group = "TF4", DefaultValue = false)]
+        [Parameter("Show CHoCH", Group = "TF4", DefaultValue = true)]
         public bool ShowChoch4 { get; set; }
-        [Parameter("CHoCH Line Style", Group = "TF4", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("CHoCH Line Style", Group = "TF4", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption ChochLineStyle4 { get; set; }
         [Parameter("CHoCH Bull", Group = "TF4", DefaultValue = "#2E6830")]
         public Color ChochBull4 { get; set; }
         [Parameter("CHoCH Bear", Group = "TF4", DefaultValue = "#802929")]
         public Color ChochBear4 { get; set; }
-        [Parameter("Show BoS", Group = "TF4", DefaultValue = false)]
+        [Parameter("Show BoS", Group = "TF4", DefaultValue = true)]
         public bool ShowBos4 { get; set; }
-        [Parameter("BoS Line Style", Group = "TF4", DefaultValue = LineStyleOption.Dotted)]
+        [Parameter("BoS Line Style", Group = "TF4", DefaultValue = LineStyleOption.Solid)]
         public LineStyleOption BosLineStyle4 { get; set; }
         [Parameter("BoS Bull", Group = "TF4", DefaultValue = "Green")]
         public Color BosBull4 { get; set; }
