@@ -258,7 +258,7 @@ namespace cAlgo
         [Parameter("TF1 Allow Bear BOS",    DefaultValue = false, Group = "MTF Trend Filter - TF1")] public bool MtfAllowBearBos1 { get; set; }
 
         [Parameter("Enable TF2 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool EnableMtfTf2 { get; set; }
-        [Parameter("TF2 Timeframe",         DefaultValue = MtfTfOption.M30, Group = "MTF Trend Filter - TF2")] public MtfTfOption MtfTimeframe2 { get; set; }
+        [Parameter("TF2 Timeframe",         DefaultValue = MtfTfOption.H1, Group = "MTF Trend Filter - TF2")] public MtfTfOption MtfTimeframe2 { get; set; }
         [Parameter("TF2 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF2")] public int MtfPivotStrength2 { get; set; }
         [Parameter("TF2 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool MtfIsLowerTf2 { get; set; }
         [Parameter("TF2 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool MtfAllowBullChoch2 { get; set; }
@@ -267,7 +267,7 @@ namespace cAlgo
         [Parameter("TF2 Allow Bear BOS",    DefaultValue = false, Group = "MTF Trend Filter - TF2")] public bool MtfAllowBearBos2 { get; set; }
 
         [Parameter("Enable TF3 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool EnableMtfTf3 { get; set; }
-        [Parameter("TF3 Timeframe",         DefaultValue = MtfTfOption.H1,  Group = "MTF Trend Filter - TF3")] public MtfTfOption MtfTimeframe3 { get; set; }
+        [Parameter("TF3 Timeframe",         DefaultValue = MtfTfOption.H4,  Group = "MTF Trend Filter - TF3")] public MtfTfOption MtfTimeframe3 { get; set; }
         [Parameter("TF3 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF3")] public int MtfPivotStrength3 { get; set; }
         [Parameter("TF3 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool MtfIsLowerTf3 { get; set; }
         [Parameter("TF3 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool MtfAllowBullChoch3 { get; set; }
@@ -276,7 +276,7 @@ namespace cAlgo
         [Parameter("TF3 Allow Bear BOS",    DefaultValue = false, Group = "MTF Trend Filter - TF3")] public bool MtfAllowBearBos3 { get; set; }
 
         [Parameter("Enable TF4 Filter",     DefaultValue = false, Group = "MTF Trend Filter - TF4")] public bool EnableMtfTf4 { get; set; }
-        [Parameter("TF4 Timeframe",         DefaultValue = MtfTfOption.H4,  Group = "MTF Trend Filter - TF4")] public MtfTfOption MtfTimeframe4 { get; set; }
+        [Parameter("TF4 Timeframe",         DefaultValue = MtfTfOption.D1,  Group = "MTF Trend Filter - TF4")] public MtfTfOption MtfTimeframe4 { get; set; }
         [Parameter("TF4 Pivot Strength",    DefaultValue = 15, MinValue = 1, Group = "MTF Trend Filter - TF4")] public int MtfPivotStrength4 { get; set; }
         [Parameter("TF4 Lower than chart?", DefaultValue = false, Group = "MTF Trend Filter - TF4")] public bool MtfIsLowerTf4 { get; set; }
         [Parameter("TF4 Allow Bull CHoCH",  DefaultValue = false, Group = "MTF Trend Filter - TF4")] public bool MtfAllowBullChoch4 { get; set; }
