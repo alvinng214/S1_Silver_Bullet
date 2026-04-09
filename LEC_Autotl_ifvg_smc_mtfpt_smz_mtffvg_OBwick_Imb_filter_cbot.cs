@@ -96,13 +96,6 @@ namespace cAlgo
             public List<ObWickZone> Bears = new List<ObWickZone>();
         }
 
-        // ImbObZone:
-        //   FirstTouchBar = chart bar of FIRST touch (-1 = untouched)
-        //   LastTouchBar  = chart bar of LAST  touch (-1 = untouched)
-        //   TradeFired    = true after this zone has been used to open one trade;
-        //                   prevents the same zone triggering a second trade within
-        //                   the same 10-bar window (double-trade bug fix)
-        //   Active → Mitigated on first touch; Invalidated if close crosses far side
         private sealed class ImbObZone
         {
             public bool IsBullish;
@@ -112,7 +105,6 @@ namespace cAlgo
             public bool TradeFired = false;
         }
 
-        // LastCreatedSeedTime: DateTime guard matching indicator's seedTime check
         private sealed class ImbTfState
         {
             public string Label; public Bars Bars; public AverageTrueRange Atr; public int MaxCount;
@@ -378,10 +370,6 @@ namespace cAlgo
         [Parameter("OB Max Daily", DefaultValue = 8, MinValue = 1, Group = "OB Wick Filter - Max Count")] public int ObWickMaxDaily { get; set; }
 
         // ═══ PARAMETERS — OB Imbalance Filter ════════════════════════════════
-        //   Touch-to-Signal Window: max chart bars between OB touch and signal
-        //   Unmitigated toggle: uses FIRST touch bar
-        //   Mitigated   toggle: uses LAST  touch bar
-        //   Invalidated OBs never pass regardless of toggle
 
         [Parameter("Enable OB Imbalance Filter",    DefaultValue = false, Group = "OB Imbalance Filter - General")] public bool EnableImbFilter { get; set; }
         [Parameter("Touch-to-Signal Window (bars)", DefaultValue = 10, MinValue = 1, Group = "OB Imbalance Filter - General")] public int ImbLookbackBars { get; set; }
@@ -522,7 +510,6 @@ namespace cAlgo
 
         // ── LEC / Displacement fields ─────────────────────────────────────────
         private Bars _lecH1Bars, _lecH4Bars;
-        // Per-TF last processed HTF bar index — prevents re-firing on the same H1/H4 bar
         private int _lecLastH1Idx = -1, _lecLastH4Idx = -1, _lecLastCurIdx = -1;
 
         // ═══ LIFECYCLE ════════════════════════════════════════════════════════
@@ -610,35 +597,41 @@ namespace cAlgo
             if (src == null || src.Count < 2) return;
             int idxNow = LecFindBar(src, Bars.OpenTimes[bar]);
             if (idxNow < 1) return;
-            if (idxNow == lastIdx) return;
-            lastIdx = idxNow;
 
-            // ── Confirmed-bar check ───────────────────────────────────────────
-            // idxNow may be the FORMING TF bar (e.g. H1 bar that just started).
-            // Evaluating it gives a false signal that disappears as the bar develops.
-            // If the next chart bar is in the SAME TF period, idxNow is still forming
-            // → evaluate the PREVIOUS closed TF bar (idxNow-1) vs the one before it (idxNow-2).
-            // If next chart bar is in a LATER TF period (same-TF case), idxNow IS closed
-            // → evaluate idxNow vs idxNow-1 as usual.
+            // ── Fire at the LAST chart sub-bar of each HTF period (:55 bar) ──
+            // ROOT CAUSE of "one bar late" bug:
+            //   The old code set lastIdx = idxNow on the FIRST 5m sub-bar of each
+            //   H1 period (:00 bar).  Every subsequent sub-bar (including :55) hit
+            //   `idxNow == lastIdx` and returned early.  The signal only fired at
+            //   the :00 bar of the NEXT H1 — one bar after the indicator's :55 signal.
+            //
+            // FIX:
+            //   Gate on `isLastSubBar`: only process when the next chart bar belongs
+            //   to a new HTF period.  At that moment:
+            //     • idxNow is the fully confirmed HTF bar (final close available).
+            //     • This is exactly the bar where the indicator draws its :55 signal.
+            //     • For current-TF (src == Bars), every bar satisfies isLastSubBar,
+            //       giving the correct per-bar edge check.
             DateTime nextChartTime = bar + 1 < Bars.Count
                 ? Bars.OpenTimes[bar + 1]
                 : Bars.OpenTimes[bar].AddMinutes(5);
             int nextTfIdx = LecFindBar(src, nextChartTime);
-            bool tfConfirmed = nextTfIdx > idxNow;   // next chart bar in later TF period
+            bool isLastSubBar = nextTfIdx > idxNow;
+            if (!isLastSubBar) return;
 
-            int evalNow  = tfConfirmed ? idxNow     : idxNow - 1;
-            int evalPrev = tfConfirmed ? idxNow - 1 : idxNow - 2;
-            if (evalNow < 1 || evalPrev < 0) return;
+            // Guard: don't re-evaluate the same HTF bar twice
+            if (idxNow == lastIdx) return;
+            lastIdx = idxNow;
 
+            // idxNow = current confirmed HTF bar; evaluate vs the one before it
+            if (idxNow - 1 < 0) return;
             bool bullNow, bearNow, bullPrev, bearPrev;
-            EvalLec(src, evalNow,  out bullNow,  out bearNow);
-            EvalLec(src, evalPrev, out bullPrev, out bearPrev);
+            EvalLec(src, idxNow,     out bullNow,  out bearNow);
+            EvalLec(src, idxNow - 1, out bullPrev, out bearPrev);
             if (bullNow && !bullPrev) bull = true;
             if (bearNow && !bearPrev) bear = true;
         }
 
-        // Mirrors the indicator's FindBarIndexAtOrBefore:
-        // uses GetIndexByTime (proper cAlgo cross-TF API) then linear fallback.
         private static int LecFindBar(Bars bars, DateTime time)
         {
             if (bars == null || bars.Count == 0) return -1;
@@ -1279,11 +1272,6 @@ namespace cAlgo
             {
                 var tfBarIndex = MtfFOB(s.TfBars, ct);
                 if(tfBarIndex < 0) return -1;
-
-                // Mirror the indicator's lookahead_off fix:
-                // A TF bar is "confirmed" only when the NEXT chart bar belongs to a
-                // later TF bar (i.e., the current chart bar is the last one in this
-                // TF period).  Until then, use the previous closed TF bar instead.
                 var cbi = MtfFOB(Bars, ct);
                 DateTime nextChartTime;
                 if(cbi >= 0 && cbi + 1 < Bars.Count)
@@ -1321,11 +1309,6 @@ namespace cAlgo
         private static bool MtfPass(MtfTfState s,bool isLong)
         {
             if(!s.HasTrend)return true;
-
-            // ── Strictly Required MS check (direction-agnostic) ───────────────────
-            // If any Req* flag is set, the TF must currently be in one of the
-            // enabled states regardless of trade direction.  If none are set,
-            // this block is skipped entirely and the original Allow* logic runs.
             bool anyReq=s.ReqBullChoch||s.ReqBullBos||s.ReqBearChoch||s.ReqBearBos;
             if(anyReq)
             {
@@ -1336,8 +1319,6 @@ namespace cAlgo
                 if(!bull &&  bos && s.ReqBearBos)  return true;
                 return false;
             }
-
-            // ── Original direction-based Allow* logic (unchanged) ────────────────
             if(s.CurrentTrend!=isLong)return false;
             bool ac=isLong?s.AllowBullChoch:s.AllowBearChoch,ab=isLong?s.AllowBullBos:s.AllowBearBos;
             if(!ac&&!ab)return true;return s.LastEventWasBos?ab:ac;
@@ -1449,39 +1430,6 @@ namespace cAlgo
         }
 
         // ═══ OB IMBALANCE FILTER ENGINE ══════════════════════════════════════
-        //
-        //  FIX (v2): Zone detection uses last CLOSED HTF bar (htfIdx-1), NOT the
-        //  forming bar (htfIdx).  Using the forming bar caused spurious zones because
-        //  its interim Low changes as each chart bar closes within the HTF period:
-        //    • Early in a new HTF bar, Low is temporarily high → FVG condition met
-        //    • Zone created with seedTime locked (seed guard fires)
-        //    • Later 5m bars push the HTF forming Low down, FILLING the gap
-        //    • Dropping Low triggers a false "first touch" on the zone
-        //    • IFVG signal within 10 bars of that false touch → false trade (e.g. cT ID6, ID24)
-        //
-        //  Correct detection (closed bars only):
-        //    closedIdx = htfIdx - 1                       — last FULLY CLOSED HTF bar
-        //    seedBar   = closedIdx - 2 = htfIdx - 3       — seed, also closed
-        //    FVG up    = Low[closedIdx] - High[closedIdx-2] > ATR * threshold  → Bull OB
-        //    FVG down  = Low[closedIdx-2] - High[closedIdx] > ATR * threshold  → Bear OB
-        //    Zone      = [Low[seed], High[seed]]
-        //    Seed guard: LastCreatedSeedTime (DateTime)
-        //    Guard:    requires htfIdx >= 3  (so closedIdx >= 2)
-        //
-        //  State machine per zone per chart bar:
-        //    1. Skip Invalidated zones immediately
-        //    2. Invalidation check FIRST:
-        //         Bull: close < Bottom  → Invalidated
-        //         Bear: close > Top     → Invalidated
-        //    3. Touch check (Wick mode):
-        //         Bull: Low  <= Top    Bear: High >= Bottom
-        //    4. On touch: LastTouchBar updated; FirstTouchBar set on first touch only;
-        //                 Active → Mitigated on first touch
-        //
-        //  CheckImbFilter gate:
-        //    Unmitigated: zone.State==Mitigated AND 0<=(bar-FirstTouchBar)<=ImbLookbackBars
-        //    Mitigated  : zone.LastTouchBar>=0  AND 0<=(bar-LastTouchBar) <=ImbLookbackBars
-        //    Either path passing is sufficient. Both OFF → no-op (returns true).
 
         private void ImbReg(bool en,TimeFrame tf,string label)
         {
@@ -1497,34 +1445,23 @@ namespace cAlgo
             foreach(var tf in _imbStates)
             {
                 if(tf.Bars==null||tf.Bars.Count<4){ImbUpdate(tf,ci);continue;}
-
-                // htfIdx: last HTF bar whose open <= current chart bar open (may be forming)
                 int htfIdx=MtfFOB(tf.Bars,now);
-
-                // FIX: use closedIdx = htfIdx-1 (last CLOSED HTF bar) for FVG detection.
-                // htfIdx is the FORMING bar whose Low changes as each chart bar closes —
-                // using it directly creates spurious zones from transient gap conditions.
                 int closedIdx=htfIdx-1;
                 if(closedIdx<2){ImbUpdate(tf,ci);continue;}
-
-                // All bars used for detection are now CLOSED and stable
                 double h2=tf.Bars.HighPrices[closedIdx-2],l2=tf.Bars.LowPrices[closedIdx-2];
                 double l0=tf.Bars.LowPrices[closedIdx],   h0=tf.Bars.HighPrices[closedIdx];
                 DateTime seedTime=tf.Bars.OpenTimes[closedIdx-2];
-
                 double atrRef=tf.Atr.Result[Math.Max(0,closedIdx-1)];
                 if(!double.IsNaN(atrRef)&&atrRef>0)
                 {
-                    bool isBull=(l0-h2)>atrRef*ImbFvgThreshold;  // gap up  → Bull OB
-                    bool isBear=(l2-h0)>atrRef*ImbFvgThreshold;  // gap dn  → Bear OB
-
+                    bool isBull=(l0-h2)>atrRef*ImbFvgThreshold;
+                    bool isBear=(l2-h0)>atrRef*ImbFvgThreshold;
                     if(seedTime!=tf.LastCreatedSeedTime)
                     {
                         if(isBull)      {ImbAdd(tf,true, h2,l2);tf.LastCreatedSeedTime=seedTime;}
                         else if(isBear) {ImbAdd(tf,false,h2,l2);tf.LastCreatedSeedTime=seedTime;}
                     }
                 }
-
                 ImbUpdate(tf,ci);
             }
         }
@@ -1543,12 +1480,8 @@ namespace cAlgo
             {
                 var z=tf.Zones[i];
                 if(z.State==ImbZoneState.Invalidated)continue;
-
-                // Invalidation check FIRST (mirrors indicator's UpdateZoneStates)
                 if( z.IsBullish&&cl<z.Bottom){z.State=ImbZoneState.Invalidated;continue;}
                 if(!z.IsBullish&&cl>z.Top)   {z.State=ImbZoneState.Invalidated;continue;}
-
-                // Touch check
                 bool touched=z.IsBullish?(useWick?lo<=z.Top:cl<=z.Top):(useWick?hi>=z.Bottom:cl>=z.Bottom);
                 if(touched)
                 {
@@ -1559,22 +1492,11 @@ namespace cAlgo
             }
         }
 
-        // CheckImbFilter:
-        //   Unmitigated path: zone state is Mitigated (had its first touch),
-        //                     signal within ImbLookbackBars of FirstTouchBar,
-        //                     AND zone has not already fired a trade (TradeFired=false).
-        //   Mitigated path  : zone has been touched at least once (LastTouchBar>=0),
-        //                     signal within ImbLookbackBars of LastTouchBar,
-        //                     AND zone has not already fired a trade (TradeFired=false).
-        //   Invalidated zones never pass either path.
-        //   On pass: TradeFired is set to true immediately, preventing a second trade
-        //   from the same zone within the same window (double-trade fix).
         private bool ChkImb(bool isLong,int bar)
         {
             if(!EnableImbFilter)return true;
             if(_imbStates.Count==0)return true;
             if(!ImbUseUnmitigated&&!ImbUseMitigated)return true;
-
             foreach(var tf in _imbStates)
             {
                 for(int i=tf.Zones.Count-1;i>=0;i--)
@@ -1582,30 +1504,24 @@ namespace cAlgo
                     var z=tf.Zones[i];
                     if(z.IsBullish!=isLong)continue;
                     if(z.State==ImbZoneState.Invalidated)continue;
-                    if(z.TradeFired)continue;  // zone already used to open one trade
-
-                    // Unmitigated path: Active->Mitigated on first touch,
-                    // signal must be within ImbLookbackBars of that first touch
+                    if(z.TradeFired)continue;
                     if(ImbUseUnmitigated&&z.State==ImbZoneState.Mitigated&&z.FirstTouchBar>=0)
                     {
                         int d=bar-z.FirstTouchBar;
                         if(d>=0&&d<=ImbLookbackBars)
                         {
-                            z.TradeFired=true;  // mark zone so no second trade fires from it
+                            z.TradeFired=true;
                             Print("[IMB PASS Unmitigated] {0} bar={1} TF={2} [B={3:F5} T={4:F5}] ft={5} d={6}",
                                 isLong?"Long":"Short",bar,tf.Label,z.Bottom,z.Top,z.FirstTouchBar,d);
                             return true;
                         }
                     }
-
-                    // Mitigated path: zone touched at least once,
-                    // signal within ImbLookbackBars of last touch
                     if(ImbUseMitigated&&z.LastTouchBar>=0)
                     {
                         int d=bar-z.LastTouchBar;
                         if(d>=0&&d<=ImbLookbackBars)
                         {
-                            z.TradeFired=true;  // mark zone so no second trade fires from it
+                            z.TradeFired=true;
                             Print("[IMB PASS Mitigated] {0} bar={1} TF={2} [B={3:F5} T={4:F5}] lt={5} d={6}",
                                 isLong?"Long":"Short",bar,tf.Label,z.Bottom,z.Top,z.LastTouchBar,d);
                             return true;
@@ -1613,7 +1529,6 @@ namespace cAlgo
                     }
                 }
             }
-
             Print("[IMB BLOCKED] {0} bar={1} window={2} unmit={3} mit={4}",
                 isLong?"Long":"Short",bar,ImbLookbackBars,ImbUseUnmitigated,ImbUseMitigated);
             return false;
