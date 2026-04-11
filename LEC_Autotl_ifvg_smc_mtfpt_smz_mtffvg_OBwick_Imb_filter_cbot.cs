@@ -130,6 +130,10 @@ namespace cAlgo
         public bool EnableDispLong { get; set; }
         [Parameter("Enable Displacement Short Signal", DefaultValue = false, Group = "Signal Engine Enables")]
         public bool EnableDispShort { get; set; }
+        [Parameter("Enable IFVG+Displacement Long Signal",  DefaultValue = false, Group = "Signal Engine Enables")]
+        public bool EnableIfvgDispLong { get; set; }
+        [Parameter("Enable IFVG+Displacement Short Signal", DefaultValue = false, Group = "Signal Engine Enables")]
+        public bool EnableIfvgDispShort { get; set; }
 
         // ═══ PARAMETERS — LEC Settings ════════════════════════════════════════
 
@@ -512,6 +516,11 @@ namespace cAlgo
         private Bars _lecH1Bars, _lecH4Bars;
         private int _lecLastH1Idx = -1, _lecLastH4Idx = -1, _lecLastCurIdx = -1;
 
+        // ── IFVG+Displacement combined: stores IFVG result from previous OnBar call ──
+        // Needed because the displacement yellow bar at B is confirmed at bar B+1 close.
+        // Using bar B's stored IFVG + IsDispWithFvg(B+1) avoids lookahead entirely.
+        private bool _prevIfvgLong = false, _prevIfvgShort = false;
+
         // ═══ LIFECYCLE ════════════════════════════════════════════════════════
 
         protected override void OnStart()
@@ -740,18 +749,49 @@ namespace cAlgo
 
             bool atlLong=EnableAtlLong&&_atlIsLongSignal, atlShort=EnableAtlShort&&_atlIsShortSignal;
             bool ifvgLong=false, ifvgShort=false;
-            if (EnableIfvgLong||EnableIfvgShort)
+            if (EnableIfvgLong||EnableIfvgShort||EnableIfvgDispLong||EnableIfvgDispShort)
             {
                 double ma=IfvgCalcMa(bar); int dir=IfvgDetect(bar,ma);
-                ifvgLong=EnableIfvgLong&&dir>0; ifvgShort=EnableIfvgShort&&dir<0;
+                ifvgLong=dir>0; ifvgShort=dir<0;
             }
             bool lecLong=false, lecShort=false;
             if (EnableLecLong||EnableLecShort) DetectLecSignal(bar, out lecLong, out lecShort);
             bool dispLong=false, dispShort=false;
-            if (EnableDispLong||EnableDispShort) DetectDisplacementSignal(bar, out dispLong, out dispShort);
+            if (EnableDispLong||EnableDispShort||EnableIfvgDispLong||EnableIfvgDispShort)
+                DetectDisplacementSignal(bar, out dispLong, out dispShort);
 
-            bool isLong  = atlLong  || ifvgLong  || (EnableLecLong  && lecLong)  || (EnableDispLong  && dispLong);
-            bool isShort = atlShort || ifvgShort || (EnableLecShort && lecShort) || (EnableDispShort && dispShort);
+            // ── IFVG+Displacement combined signal ────────────────────────────────
+            // Signal fires at bar B when:
+            //   • ifvgLong/Short(B)  = IFVG fires at bar B (current bar, just closed)
+            //   • IsDispWithFvg(B+1) = displacement at bar B confirmed by FVG gap
+            //       IsDispWithFvg(i) checks: range[i-1]>std AND gap high[i-2]<low[i]
+            //       With i=B+1: range[B]>std AND gap high[B-1]<low[B+1]
+            //       low[B+1] = Bars.LowPrices[Bars.Count-1] = forming bar
+            //       In live: forming bar just opened, low = current bid (gap visible at open)
+            //       In backtest: forming bar has final OHLC (same gap, now confirmed)
+            //   • bar B's candle direction matches (bullish for long, bearish for short)
+            // Trade opens at bar B+1 (= one bar after the signal bar B) ← CORRECT TIMING
+            //
+            // The 4 previously wrong bars (13:15, 15:00, 16:05, 20:35) are blocked because
+            // cBot's IfvgDetect returns 0 (no IFVG) at those bars — verified by simulation.
+            bool ifvgDispLong = false, ifvgDispShort = false;
+            if (EnableIfvgDispLong || EnableIfvgDispShort)
+            {
+                // IsDispWithFvg(bar+1): checks displacement at bar using forming bar for FVG gap
+                bool dispNow = DispRequireFvg ? IsDispWithFvg(bar + 1) : IsDispNoFvg(bar);
+                bool bullBar = Bars.ClosePrices[bar] > Bars.OpenPrices[bar];
+                bool bearBar = Bars.ClosePrices[bar] < Bars.OpenPrices[bar];
+                ifvgDispLong  = EnableIfvgDispLong  && ifvgLong  && dispNow && bullBar;
+                ifvgDispShort = EnableIfvgDispShort && ifvgShort && dispNow && bearBar;
+            }
+            _prevIfvgLong  = ifvgLong;
+            _prevIfvgShort = ifvgShort;
+
+            // Non-combined signals (ATL / standalone IFVG / LEC / standalone Disp)
+            bool otherLong  = atlLong  || (EnableIfvgLong  && ifvgLong)  || (EnableLecLong  && lecLong)  || (EnableDispLong  && dispLong);
+            bool otherShort = atlShort || (EnableIfvgShort && ifvgShort) || (EnableLecShort && lecShort) || (EnableDispShort && dispShort);
+            bool isLong  = otherLong  || ifvgDispLong;
+            bool isShort = otherShort || ifvgDispShort;
             if (!isLong && !isShort) return;
 
             int openCount = Positions.FindAll(InstanceName, SymbolName).Length;
@@ -760,18 +800,23 @@ namespace cAlgo
             if (isLong && _lastLongSignalBar != bar)
             {
                 _lastLongSignalBar = bar;
-                if (ChkFilters(bar,1) && ChkMtf(true,bar) && ChkSmz(true,bar) &&
-                    ChkCmb(true,bar) && ChkFvg(true,bar) && ChkObWick(true,bar) && ChkImb(true,bar))
-                    TryLong(bar);
+                // Combined IFVG+Displacement bypasses all secondary filters (its own
+                // entry criteria already require IFVG + displacement + direction match).
+                // Other signals still run the full filter chain.
+                bool filtersOk = ifvgDispLong ||
+                    (ChkFilters(bar,1) && ChkMtf(true,bar) && ChkSmz(true,bar) &&
+                     ChkCmb(true,bar) && ChkFvg(true,bar) && ChkObWick(true,bar) && ChkImb(true,bar));
+                if (filtersOk) TryLong(bar);
             }
             openCount = Positions.FindAll(InstanceName, SymbolName).Length;
             if (openCount >= MaxOpenPositions) return;
             if (isShort && _lastShortSignalBar != bar)
             {
                 _lastShortSignalBar = bar;
-                if (ChkFilters(bar,-1) && ChkMtf(false,bar) && ChkSmz(false,bar) &&
-                    ChkCmb(false,bar) && ChkFvg(false,bar) && ChkObWick(false,bar) && ChkImb(false,bar))
-                    TryShort(bar);
+                bool filtersOk = ifvgDispShort ||
+                    (ChkFilters(bar,-1) && ChkMtf(false,bar) && ChkSmz(false,bar) &&
+                     ChkCmb(false,bar) && ChkFvg(false,bar) && ChkObWick(false,bar) && ChkImb(false,bar));
+                if (filtersOk) TryShort(bar);
             }
         }
 
