@@ -102,7 +102,11 @@ namespace cAlgo
             public ImbZoneState State = ImbZoneState.Active;
             public double Top, Bottom;
             public int FirstTouchBar = -1, LastTouchBar = -1;
-            public bool TradeFired = false;
+            // Re-arm on every new touch: eligible again whenever price returns
+            // to the zone AFTER the previous trade fired (LastTouchBar > LastFiredBar).
+            // Replaces the old permanent TradeFired flag which blocked zones
+            // from re-firing after a legitimate re-touch.
+            public int LastFiredBar = -1;
         }
 
         private sealed class ImbTfState
@@ -517,8 +521,6 @@ namespace cAlgo
         private int _lecLastH1Idx = -1, _lecLastH4Idx = -1, _lecLastCurIdx = -1;
 
         // ── IFVG+Displacement combined: stores IFVG result from previous OnBar call ──
-        // Needed because the displacement yellow bar at B is confirmed at bar B+1 close.
-        // Using bar B's stored IFVG + IsDispWithFvg(B+1) avoids lookahead entirely.
         private bool _prevIfvgLong = false, _prevIfvgShort = false;
 
         // ═══ LIFECYCLE ════════════════════════════════════════════════════════
@@ -606,33 +608,14 @@ namespace cAlgo
             if (src == null || src.Count < 2) return;
             int idxNow = LecFindBar(src, Bars.OpenTimes[bar]);
             if (idxNow < 1) return;
-
-            // ── Fire at the LAST chart sub-bar of each HTF period (:55 bar) ──
-            // ROOT CAUSE of "one bar late" bug:
-            //   The old code set lastIdx = idxNow on the FIRST 5m sub-bar of each
-            //   H1 period (:00 bar).  Every subsequent sub-bar (including :55) hit
-            //   `idxNow == lastIdx` and returned early.  The signal only fired at
-            //   the :00 bar of the NEXT H1 — one bar after the indicator's :55 signal.
-            //
-            // FIX:
-            //   Gate on `isLastSubBar`: only process when the next chart bar belongs
-            //   to a new HTF period.  At that moment:
-            //     • idxNow is the fully confirmed HTF bar (final close available).
-            //     • This is exactly the bar where the indicator draws its :55 signal.
-            //     • For current-TF (src == Bars), every bar satisfies isLastSubBar,
-            //       giving the correct per-bar edge check.
             DateTime nextChartTime = bar + 1 < Bars.Count
                 ? Bars.OpenTimes[bar + 1]
                 : Bars.OpenTimes[bar].AddMinutes(5);
             int nextTfIdx = LecFindBar(src, nextChartTime);
             bool isLastSubBar = nextTfIdx > idxNow;
             if (!isLastSubBar) return;
-
-            // Guard: don't re-evaluate the same HTF bar twice
             if (idxNow == lastIdx) return;
             lastIdx = idxNow;
-
-            // idxNow = current confirmed HTF bar; evaluate vs the one before it
             if (idxNow - 1 < 0) return;
             bool bullNow, bearNow, bullPrev, bearPrev;
             EvalLec(src, idxNow,     out bullNow,  out bearNow);
@@ -760,24 +743,9 @@ namespace cAlgo
             if (EnableDispLong||EnableDispShort||EnableIfvgDispLong||EnableIfvgDispShort)
                 DetectDisplacementSignal(bar, out dispLong, out dispShort);
 
-            // ── IFVG+Displacement combined signal ────────────────────────────────
-            // Signal fires at bar B when:
-            //   • ifvgLong/Short(B)  = IFVG fires at bar B (current bar, just closed)
-            //   • IsDispWithFvg(B+1) = displacement at bar B confirmed by FVG gap
-            //       IsDispWithFvg(i) checks: range[i-1]>std AND gap high[i-2]<low[i]
-            //       With i=B+1: range[B]>std AND gap high[B-1]<low[B+1]
-            //       low[B+1] = Bars.LowPrices[Bars.Count-1] = forming bar
-            //       In live: forming bar just opened, low = current bid (gap visible at open)
-            //       In backtest: forming bar has final OHLC (same gap, now confirmed)
-            //   • bar B's candle direction matches (bullish for long, bearish for short)
-            // Trade opens at bar B+1 (= one bar after the signal bar B) ← CORRECT TIMING
-            //
-            // The 4 previously wrong bars (13:15, 15:00, 16:05, 20:35) are blocked because
-            // cBot's IfvgDetect returns 0 (no IFVG) at those bars — verified by simulation.
             bool ifvgDispLong = false, ifvgDispShort = false;
             if (EnableIfvgDispLong || EnableIfvgDispShort)
             {
-                // IsDispWithFvg(bar+1): checks displacement at bar using forming bar for FVG gap
                 bool dispNow = DispRequireFvg ? IsDispWithFvg(bar + 1) : IsDispNoFvg(bar);
                 bool bullBar = Bars.ClosePrices[bar] > Bars.OpenPrices[bar];
                 bool bearBar = Bars.ClosePrices[bar] < Bars.OpenPrices[bar];
@@ -787,7 +755,6 @@ namespace cAlgo
             _prevIfvgLong  = ifvgLong;
             _prevIfvgShort = ifvgShort;
 
-            // Non-combined signals (ATL / standalone IFVG / LEC / standalone Disp)
             bool otherLong  = atlLong  || (EnableIfvgLong  && ifvgLong)  || (EnableLecLong  && lecLong)  || (EnableDispLong  && dispLong);
             bool otherShort = atlShort || (EnableIfvgShort && ifvgShort) || (EnableLecShort && lecShort) || (EnableDispShort && dispShort);
             bool isLong  = otherLong  || ifvgDispLong;
@@ -800,9 +767,6 @@ namespace cAlgo
             if (isLong && _lastLongSignalBar != bar)
             {
                 _lastLongSignalBar = bar;
-                // Combined IFVG+Displacement bypasses all secondary filters (its own
-                // entry criteria already require IFVG + displacement + direction match).
-                // Other signals still run the full filter chain.
                 bool filtersOk = ifvgDispLong ||
                     (ChkFilters(bar,1) && ChkMtf(true,bar) && ChkSmz(true,bar) &&
                      ChkCmb(true,bar) && ChkFvg(true,bar) && ChkObWick(true,bar) && ChkImb(true,bar));
@@ -1165,7 +1129,6 @@ namespace cAlgo
             var r=ExecuteMarketOrder(TradeType.Buy,SymbolName,vol,InstanceName,null,null);
             if(r.IsSuccessful)
             {
-                // Recalculate SL/TP from actual fill price so risk stays exactly 1%
                 double fill=r.Position.EntryPrice;
                 double fillSlp=(fill-anc)/Symbol.PipSize+SlBufferPips;
                 double fillSl=Math.Round(fill-fillSlp*Symbol.PipSize,Symbol.Digits);
@@ -1189,7 +1152,6 @@ namespace cAlgo
             var r=ExecuteMarketOrder(TradeType.Sell,SymbolName,vol,InstanceName,null,null);
             if(r.IsSuccessful)
             {
-                // Recalculate SL/TP from actual fill price so risk stays exactly 1%
                 double fill=r.Position.EntryPrice;
                 double fillSlp=(anc-fill)/Symbol.PipSize+SlBufferPips;
                 double fillSl=Math.Round(fill+fillSlp*Symbol.PipSize,Symbol.Digits);
@@ -1567,24 +1529,24 @@ namespace cAlgo
                     var z=tf.Zones[i];
                     if(z.IsBullish!=isLong)continue;
                     if(z.State==ImbZoneState.Invalidated)continue;
-                    if(z.TradeFired)continue;
-                    if(ImbUseUnmitigated&&z.State==ImbZoneState.Mitigated&&z.FirstTouchBar>=0)
+                    // Re-arm on every new touch after last fire
+                    if(ImbUseUnmitigated&&z.State==ImbZoneState.Mitigated&&z.FirstTouchBar>=0&&z.FirstTouchBar>z.LastFiredBar)
                     {
                         int d=bar-z.FirstTouchBar;
                         if(d>=0&&d<=ImbLookbackBars)
                         {
-                            z.TradeFired=true;
+                            z.LastFiredBar=bar;
                             Print("[IMB PASS Unmitigated] {0} bar={1} TF={2} [B={3:F5} T={4:F5}] ft={5} d={6}",
                                 isLong?"Long":"Short",bar,tf.Label,z.Bottom,z.Top,z.FirstTouchBar,d);
                             return true;
                         }
                     }
-                    if(ImbUseMitigated&&z.LastTouchBar>=0)
+                    if(ImbUseMitigated&&z.LastTouchBar>=0&&z.LastTouchBar>z.LastFiredBar)
                     {
                         int d=bar-z.LastTouchBar;
                         if(d>=0&&d<=ImbLookbackBars)
                         {
-                            z.TradeFired=true;
+                            z.LastFiredBar=bar;
                             Print("[IMB PASS Mitigated] {0} bar={1} TF={2} [B={3:F5} T={4:F5}] lt={5} d={6}",
                                 isLong?"Long":"Short",bar,tf.Label,z.Bottom,z.Top,z.LastTouchBar,d);
                             return true;
