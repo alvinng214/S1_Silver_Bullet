@@ -1163,7 +1163,16 @@ namespace cAlgo
             double sl=Math.Round(entry-slp*Symbol.PipSize,Symbol.Digits),tp=Math.Round(entry+slp*RiskRewardRatio*Symbol.PipSize,Symbol.Digits);
             Print("Bar {0}: LONG Entry={1:F5} {2}={3:F5} SL={4:F5}({5:F1}p buf={6:F1}) TP={7:F5} Vol={8}",bar,entry,an,anc,sl,slp,SlBufferPips,tp,vol);
             var r=ExecuteMarketOrder(TradeType.Buy,SymbolName,vol,InstanceName,null,null);
-            if(r.IsSuccessful)ModifyPosition(r.Position,sl,tp);else Print("Bar {0}: LONG fail {1}",bar,r.Error);
+            if(r.IsSuccessful)
+            {
+                // Recalculate SL/TP from actual fill price so risk stays exactly 1%
+                double fill=r.Position.EntryPrice;
+                double fillSlp=(fill-anc)/Symbol.PipSize+SlBufferPips;
+                double fillSl=Math.Round(fill-fillSlp*Symbol.PipSize,Symbol.Digits);
+                double fillTp=Math.Round(fill+fillSlp*RiskRewardRatio*Symbol.PipSize,Symbol.Digits);
+                ModifyPosition(r.Position,fillSl,fillTp);
+            }
+            else Print("Bar {0}: LONG fail {1}",bar,r.Error);
         }
 
         private void TryShort(int bar)
@@ -1178,7 +1187,16 @@ namespace cAlgo
             double sl=Math.Round(entry+slp*Symbol.PipSize,Symbol.Digits),tp=Math.Round(entry-slp*RiskRewardRatio*Symbol.PipSize,Symbol.Digits);
             Print("Bar {0}: SHORT Entry={1:F5} {2}={3:F5} SL={4:F5}({5:F1}p buf={6:F1}) TP={7:F5} Vol={8}",bar,entry,an,anc,sl,slp,SlBufferPips,tp,vol);
             var r=ExecuteMarketOrder(TradeType.Sell,SymbolName,vol,InstanceName,null,null);
-            if(r.IsSuccessful)ModifyPosition(r.Position,sl,tp);else Print("Bar {0}: SHORT fail {1}",bar,r.Error);
+            if(r.IsSuccessful)
+            {
+                // Recalculate SL/TP from actual fill price so risk stays exactly 1%
+                double fill=r.Position.EntryPrice;
+                double fillSlp=(anc-fill)/Symbol.PipSize+SlBufferPips;
+                double fillSl=Math.Round(fill+fillSlp*Symbol.PipSize,Symbol.Digits);
+                double fillTp=Math.Round(fill-fillSlp*RiskRewardRatio*Symbol.PipSize,Symbol.Digits);
+                ModifyPosition(r.Position,fillSl,fillTp);
+            }
+            else Print("Bar {0}: SHORT fail {1}",bar,r.Error);
         }
 
         private bool LongAnc(int bar,out double a,out string n)
