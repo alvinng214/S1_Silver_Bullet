@@ -1,0 +1,313 @@
+//@version=5
+indicator("SMC Target Liquidity V.35 (Manual Distance Control)", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ==========================================
+// 1. SETTINGS
+// ==========================================
+
+group_main = "Main Logic"
+prd = input.int(10, title="Pivot Period", minval=2, group=group_main)
+max_active_lines = input.int(5, title="Max Active Lines", minval=1, group=group_main)
+tz_manual = input.string("UTC-4", title="Timezone", options=["UTC-5", "UTC-4", "America/New_York", "Asia/Bangkok"], group=group_main)
+
+group_sess = "Active Session Lines"
+active_width = input.int(2, title="Active Line Width", minval=1, group=group_sess)
+asia_sess = input.session("2000-0000", title="Asian Session", group=group_sess)
+col_asia = input.color(color.new(color.yellow, 0), title="Asian Color", group=group_sess)
+london_sess = input.session("0200-0500", title="London Session", group=group_sess)
+col_london = input.color(color.new(color.teal, 0), title="London Color", group=group_sess)
+ny_am_sess = input.session("0830-1100", title="NY AM Session", group=group_sess)
+col_ny_am = input.color(color.new(color.orange, 0), title="NY AM Color", group=group_sess)
+ny_pm_sess = input.session("1330-1600", title="NY PM Session", group=group_sess)
+col_ny_pm = input.color(color.new(color.fuchsia, 0), title="NY PM Color", group=group_sess)
+col_other = input.color(color.new(color.gray, 0), title="Outside Session Color", group=group_sess)
+
+group_vis = "Display & Size Settings"
+label_size_input = input.string("Large", title="Text Size", options=["Tiny", "Small", "Normal", "Large", "Huge"], group=group_vis)
+
+// --- จุดปรับระยะห่าง ---
+lbl_offset = input.float(30, title="Text Distance (Ticks)", minval=0, tooltip="ปรับเลขนี้: น้อย = ใกล้, มาก = ไกล", group=group_vis)
+flip_text = input.bool(false, title="Flip Text Position (สลับบน/ล่าง)", tooltip="เผื่ออยากสลับตำแหน่งข้อความ", group=group_vis)
+show_price = input.bool(true, title="Show Price Labels (Active)", group=group_vis)
+
+group_x = "Style: X (Sweep)"
+show_x = input.bool(true, title="Show X", group=group_x)
+col_line_x = input.color(color.gray, title="Line Color", group=group_x)
+col_txt_x = input.color(color.black, title="Text Color", group=group_x)
+style_x_input = input.string("Dotted", title="Line Style", options=["Solid", "Dashed", "Dotted"], group=group_x)
+
+group_sfp = "Style: SFP (Fakeout)"
+show_sfp = input.bool(true, title="Show SFP", group=group_sfp)
+col_line_sfp = input.color(color.red, title="Line Color", group=group_sfp)
+col_txt_sfp = input.color(color.black, title="Text Color", group=group_sfp)
+style_sfp_input = input.string("Dashed", title="Line Style", options=["Solid", "Dashed", "Dotted"], group=group_sfp)
+
+group_mss = "Style: MSS (Breakout)"
+show_mss = input.bool(true, title="Show MSS", group=group_mss)
+col_line_mss = input.color(color.black, title="Line Color", group=group_mss)
+col_txt_mss = input.color(color.black, title="Text Color", group=group_mss)
+style_mss_input = input.string("Solid", title="Line Style", options=["Solid", "Dashed", "Dotted"], group=group_mss)
+
+// ==========================================
+// 2. HELPER FUNCTIONS
+// ==========================================
+
+is_in_session(sess) =>
+    not na(time(timeframe.period, sess + ":1234567", tz_manual))
+
+get_style(style_str) =>
+    out = line.style_solid
+    if style_str == "Dotted"
+        out := line.style_dotted
+    else if style_str == "Dashed"
+        out := line.style_dashed
+    out
+
+style_x = get_style(style_x_input)
+style_sfp = get_style(style_sfp_input)
+style_mss = get_style(style_mss_input)
+
+get_size(s) =>
+    switch s
+        "Tiny" => size.tiny
+        "Small" => size.small
+        "Normal" => size.normal
+        "Large" => size.large
+        "Huge" => size.huge
+        => size.normal
+
+final_size = get_size(label_size_input)
+line_extension = 15 
+
+var line[] active_buy_lines = array.new_line(0)
+var label[] active_buy_labels = array.new_label(0) 
+var float[] active_buy_prices = array.new_float(0)
+
+var line[] active_sell_lines = array.new_line(0)
+var label[] active_sell_labels = array.new_label(0) 
+var float[] active_sell_prices = array.new_float(0)
+
+// ==========================================
+// 3. CORE LOGIC
+// ==========================================
+
+ph = ta.pivothigh(high, prd, prd)
+pl = ta.pivotlow(low, prd, prd)
+
+// === Create Buy Lines ===
+if not na(pl)
+    is_broken = false
+    pivot_bar_idx = bar_index[prd]
+    for i = 0 to prd - 1
+        if low[i] < pl
+            is_broken := true
+            break
+            
+    if not is_broken
+        in_ny_pm = is_in_session(ny_pm_sess)[prd]
+        in_ny_am = is_in_session(ny_am_sess)[prd]
+        in_london = is_in_session(london_sess)[prd]
+        in_asia = is_in_session(asia_sess)[prd]
+        
+        line_col = col_other
+        if in_ny_pm
+            line_col := col_ny_pm
+        else if in_ny_am
+            line_col := col_ny_am
+        else if in_london
+            line_col := col_london
+        else if in_asia
+            line_col := col_asia 
+
+        newline = line.new(x1=pivot_bar_idx, y1=pl, x2=bar_index + line_extension, y2=pl, color=line_col, width=active_width)
+        var label newlabel = na
+        if show_price
+            newlabel := label.new(x=bar_index + line_extension, y=pl, text=str.tostring(pl, format.mintick), style=label.style_label_left, color=line_col, textcolor=color.white, size=size.small)
+        
+        array.push(active_buy_lines, newline)
+        array.push(active_buy_labels, newlabel) 
+        array.push(active_buy_prices, pl)
+        
+        if array.size(active_buy_lines) > max_active_lines
+            old_line = array.shift(active_buy_lines)
+            old_label = array.shift(active_buy_labels)
+            array.shift(active_buy_prices)
+            line.delete(old_line)
+            label.delete(old_label)
+
+// === Create Sell Lines ===
+if not na(ph)
+    is_broken = false
+    pivot_bar_idx = bar_index[prd]
+    for i = 0 to prd - 1
+        if high[i] > ph
+            is_broken := true
+            break
+            
+    if not is_broken
+        in_ny_pm = is_in_session(ny_pm_sess)[prd]
+        in_ny_am = is_in_session(ny_am_sess)[prd]
+        in_london = is_in_session(london_sess)[prd]
+        in_asia = is_in_session(asia_sess)[prd]
+        
+        line_col = col_other
+        if in_ny_pm
+            line_col := col_ny_pm
+        else if in_ny_am
+            line_col := col_ny_am
+        else if in_london
+            line_col := col_london
+        else if in_asia
+            line_col := col_asia
+
+        newline = line.new(x1=pivot_bar_idx, y1=ph, x2=bar_index + line_extension, y2=ph, color=line_col, width=active_width)
+        var label newlabel = na
+        if show_price
+            newlabel := label.new(x=bar_index + line_extension, y=ph, text=str.tostring(ph, format.mintick), style=label.style_label_left, color=line_col, textcolor=color.white, size=size.small)
+
+        array.push(active_sell_lines, newline)
+        array.push(active_sell_labels, newlabel)
+        array.push(active_sell_prices, ph)
+        
+        if array.size(active_sell_lines) > max_active_lines
+            old_line = array.shift(active_sell_lines)
+            old_label = array.shift(active_sell_labels)
+            array.shift(active_sell_prices)
+            line.delete(old_line)
+            label.delete(old_label)
+
+// --- Update Logic (MANUAL OFFSET CONTROL) ---
+
+// คำนวณระยะห่าง
+offset_val = lbl_offset * syminfo.mintick
+
+// ถ้า Flip: High=Below (-), Low=Above (+)
+// ถ้าปกติ: High=Above (+), Low=Below (-)
+mult_high = flip_text ? -1 : 1
+mult_low  = flip_text ? 1 : -1
+
+// Check Buy Lines (Lows)
+if array.size(active_buy_lines) > 0
+    for i = array.size(active_buy_lines) - 1 to 0
+        l = array.get(active_buy_lines, i)
+        lb = array.get(active_buy_labels, i)
+        lvl = array.get(active_buy_prices, i)
+        
+        // 1. SFP
+        if close > lvl and close[1] < lvl
+            line.set_x2(l, bar_index)
+            line.set_color(l, col_line_sfp)
+            line.set_style(l, style_sfp)
+            if not na(lb)
+                label.delete(lb)
+            
+            if show_sfp
+                mid_x = math.round((line.get_x1(l) + bar_index) / 2)
+                // Low Position
+                label.new(mid_x, lvl + (offset_val * mult_low), "SFP", style=label.style_none, textcolor=col_txt_sfp, size=final_size, color=color.new(color.white, 100))
+            
+            array.remove(active_buy_lines, i)
+            array.remove(active_buy_labels, i)
+            array.remove(active_buy_prices, i)
+
+        // 2. MSS
+        else if close < lvl and close[1] < lvl and close < close[1]
+            line.set_x2(l, bar_index)
+            line.set_color(l, col_line_mss)
+            line.set_style(l, style_mss)
+            if not na(lb)
+                label.delete(lb)
+            
+            if show_mss
+                mid_x = math.round((line.get_x1(l) + bar_index) / 2)
+                label.new(mid_x, lvl + (offset_val * mult_low), "MSS", style=label.style_none, textcolor=col_txt_mss, size=final_size, color=color.new(color.white, 100))
+            
+            array.remove(active_buy_lines, i)
+            array.remove(active_buy_labels, i)
+            array.remove(active_buy_prices, i)
+
+        // 3. X
+        else if low <= lvl and close > lvl
+            line.set_x2(l, bar_index)
+            line.set_color(l, col_line_x)
+            line.set_style(l, style_x)
+            if not na(lb)
+                label.delete(lb)
+            
+            if show_x
+                mid_x = math.round((line.get_x1(l) + bar_index) / 2)
+                label.new(mid_x, lvl + (offset_val * mult_low), "X", style=label.style_none, textcolor=col_txt_x, size=final_size, color=color.new(color.white, 100))
+            
+            array.remove(active_buy_lines, i)
+            array.remove(active_buy_labels, i)
+            array.remove(active_buy_prices, i)
+
+        // 4. Waiting
+        else
+            new_x = bar_index + line_extension
+            line.set_x2(l, new_x)
+            if not na(lb)
+                label.set_x(lb, new_x) 
+
+// Check Sell Lines (Highs)
+if array.size(active_sell_lines) > 0
+    for i = array.size(active_sell_lines) - 1 to 0
+        l = array.get(active_sell_lines, i)
+        lb = array.get(active_sell_labels, i)
+        lvl = array.get(active_sell_prices, i)
+        
+        // 1. SFP
+        if close < lvl and close[1] > lvl
+            line.set_x2(l, bar_index)
+            line.set_color(l, col_line_sfp)
+            line.set_style(l, style_sfp)
+            if not na(lb)
+                label.delete(lb)
+            
+            if show_sfp
+                mid_x = math.round((line.get_x1(l) + bar_index) / 2)
+                // High Position
+                label.new(mid_x, lvl + (offset_val * mult_high), "SFP", style=label.style_none, textcolor=col_txt_sfp, size=final_size, color=color.new(color.white, 100))
+
+            array.remove(active_sell_lines, i)
+            array.remove(active_sell_labels, i)
+            array.remove(active_sell_prices, i)
+
+        // 2. MSS
+        else if close > lvl and close[1] > lvl and close > close[1]
+            line.set_x2(l, bar_index)
+            line.set_color(l, col_line_mss)
+            line.set_style(l, style_mss)
+            if not na(lb)
+                label.delete(lb)
+
+            if show_mss
+                mid_x = math.round((line.get_x1(l) + bar_index) / 2)
+                label.new(mid_x, lvl + (offset_val * mult_high), "MSS", style=label.style_none, textcolor=col_txt_mss, size=final_size, color=color.new(color.white, 100))
+
+            array.remove(active_sell_lines, i)
+            array.remove(active_sell_labels, i)
+            array.remove(active_sell_prices, i)
+
+        // 3. X
+        else if high >= lvl and close < lvl
+            line.set_x2(l, bar_index)
+            line.set_color(l, col_line_x)
+            line.set_style(l, style_x)
+            if not na(lb)
+                label.delete(lb)
+            
+            if show_x
+                mid_x = math.round((line.get_x1(l) + bar_index) / 2)
+                label.new(mid_x, lvl + (offset_val * mult_high), "X", style=label.style_none, textcolor=col_txt_x, size=final_size, color=color.new(color.white, 100))
+
+            array.remove(active_sell_lines, i)
+            array.remove(active_sell_labels, i)
+            array.remove(active_sell_prices, i)
+
+        // 4. Waiting
+        else
+            new_x = bar_index + line_extension
+            line.set_x2(l, new_x)
+            if not na(lb)
+                label.set_x(lb, new_x)

@@ -1,0 +1,107 @@
+//@version=6
+indicator("Quantura - Liquidity Sweep & Run Levels", overlay=true, max_lines_count=500)
+
+// === INPUTS ===
+// Calculation
+mode      = input.string("Sweep", "Mode", options = ["Run", "Sweep"], group = "Calculations")
+swingLen  = input.int(10, "Swing Length", minval = 1, group = "Calculations")
+
+colorBull = input.color(#75fbfe, "Bullish Color", group = "Overlays")
+colorBear = input.color(#f23645, "Bearish Color", group = "Overlays")
+
+// Signals
+showSign  = input.bool(true, "Signals", group = "Signals")
+
+
+// === ARRAYS ===
+var float[] swingHighs        = array.new_float()
+var line[]  swingHighLines    = array.new_line()
+var bool[]  swingHighBroken   = array.new_bool()
+var bool[]  swingHighRetested = array.new_bool()
+
+var float[] swingLows         = array.new_float()
+var line[]  swingLowLines     = array.new_line()
+var bool[]  swingLowBroken    = array.new_bool()
+var bool[]  swingLowRetested  = array.new_bool()
+
+// === FUNCTIONS ===
+isSwingHigh() => ta.highest(high, swingLen*3) == high[swingLen]
+isSwingLow()  => ta.lowest(low, swingLen*3) == low[swingLen]
+
+// === SWING DETECTION ===
+if isSwingHigh()
+    array.push(swingHighs, high[swingLen])
+    ln = line.new(bar_index-swingLen, high[swingLen], last_bar_index, high[swingLen], color=colorBear, width=1)
+    array.push(swingHighLines, ln)
+    array.push(swingHighBroken, false)
+    array.push(swingHighRetested, false)
+
+if isSwingLow()
+    array.push(swingLows, low[swingLen])
+    ln = line.new(bar_index-swingLen, low[swingLen], last_bar_index, low[swingLen], color=colorBull, width=1)
+    array.push(swingLowLines, ln)
+    array.push(swingLowBroken, false)
+    array.push(swingLowRetested, false)
+
+// === LINE FIXING AT BREAK ===
+// Swing Highs
+for idx = 0 to array.size(swingHighs) - 1
+    if array.size(swingHighs) > 0 and idx < array.size(swingHighs)
+        level = array.get(swingHighs, idx)
+        ln = array.get(swingHighLines, idx)
+        broken = array.get(swingHighBroken, idx)
+        if not broken and high > level
+            array.set(swingHighBroken, idx, true)
+            line.set_x2(ln, bar_index)
+            line.set_y2(ln, level)
+            line.set_extend(ln, extend.none)
+
+// Swing Lows
+for idx = 0 to array.size(swingLows) - 1
+    if array.size(swingLows) > 0 and idx < array.size(swingLows)
+        level = array.get(swingLows, idx)
+        ln = array.get(swingLowLines, idx)
+        broken = array.get(swingLowBroken, idx)
+        if not broken and low < level
+            array.set(swingLowBroken, idx, true)
+            line.set_x2(ln, bar_index)
+            line.set_y2(ln, level)
+            line.set_extend(ln, extend.none)
+
+// === SIGNAL GENERATION ===
+longSignal = false
+shortSignal = false
+
+for idx = 0 to array.size(swingLows) - 1
+    if array.size(swingLows) > 0 and idx < array.size(swingLows)
+        level = array.get(swingLows, idx)
+        broken = array.get(swingLowBroken, idx)
+        retested = array.get(swingLowRetested, idx)
+        if broken and not retested
+            if (mode == "Sweep") and (close > level and low < level)
+                longSignal := true
+                array.set(swingLowRetested, idx, true)
+                break
+            if (mode == "Run") and (close < level and close[1] > level)
+                shortSignal := true
+                array.set(swingLowRetested, idx, true)
+                break
+
+for idx = 0 to array.size(swingHighs) - 1
+    if array.size(swingHighs) > 0 and idx < array.size(swingHighs)
+        level = array.get(swingHighs, idx)
+        broken = array.get(swingHighBroken, idx)
+        retested = array.get(swingHighRetested, idx)
+        if broken and not retested
+            if (mode == "Sweep") and (close < level and high > level)
+                shortSignal := true
+                array.set(swingHighRetested, idx, true)
+                break
+            if (mode == "Run") and (close > level and close[1] < level)
+                longSignal := true
+                array.set(swingHighRetested, idx, true)
+                break
+
+// === ENTRY SHAPES ===
+plotshape(series = showSign ? longSignal : false, title="Bullish Signal", text = '▲', style = shape.labelup, location = location.belowbar, color = colorBull, textcolor = color.white, size = size.tiny, editable = false)
+plotshape(series = showSign ? shortSignal : false, title="Bearish Signal", text = '▼', style = shape.labeldown, location = location.abovebar, color = colorBear, textcolor = color.white, size = size.tiny, editable = false)

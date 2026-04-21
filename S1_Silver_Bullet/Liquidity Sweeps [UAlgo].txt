@@ -1,0 +1,70 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © UAlgo
+
+//@version=5
+indicator("Liquidity Sweeps [UAlgo]", overlay = true, max_lines_count = 500)
+
+pivotPeriod    = input.int(20, "Pivot Length", 3, 100, 1, "", "", "Pivot Left Right Length",tooltip = "Left - Right Length")
+maxLine   = input.int(3, "Maximum Lines", 1, 100, 1, "Maximum S/R lines to draw", "", "S/R Settings")
+resistanceColor    = input.color(color.rgb(255, 82, 82, 53), "S & R", "", "colors", "Color")
+supportColor    = input.color(color.rgb(76, 175, 79, 32), "", "", "colors", "Color")
+lineWidth = input.int(2, "", 0, 5, 1, "Resistance Line Colors\n\nSupport Line Colors\n\nLine Width", "colors", "Color")
+
+pivotHigh = ta.pivothigh(high,pivotPeriod, pivotPeriod)
+pivotLow  = ta.pivotlow(low,pivotPeriod, pivotPeriod)
+
+atrOffset=ta.atr(14)
+
+var resistanceArray = array.new_line()
+var supportArray = array.new_line()
+
+ph = not na(pivotHigh)
+pl = not na(pivotLow)
+
+if ph
+    drawNewHigh = line.new(bar_index[pivotPeriod], high[pivotPeriod], bar_index, high[pivotPeriod], color = resistanceColor, width = lineWidth)
+    array.push(resistanceArray, drawNewHigh)
+
+    if array.size(resistanceArray) > maxLine
+        line.delete(array.get(resistanceArray, 0))
+        array.remove(resistanceArray, 0)
+
+for i = array.size(resistanceArray) - 1 to 0 
+    if array.size(resistanceArray)  > 0
+        line.set_x2(array.get(resistanceArray, i), bar_index)
+        highPrice = line.get_y1(array.get(resistanceArray, i))
+        priceHighLoc = line.get_x1(array.get(resistanceArray, i))
+
+        if ((high > highPrice) and (close < highPrice)) 
+            line.delete(array.get(resistanceArray, i))
+            line.new(priceHighLoc, highPrice, bar_index, high, color = color.purple, width = 1)
+            array.remove(resistanceArray, i)
+            label.new(bar_index, highPrice+atrOffset, "Buy Liquidity Sweep", style=label.style_label_down,textcolor = color.white,size = size.small, color =color.purple)
+        else if (close > highPrice)
+            line.delete(array.get(resistanceArray, i))
+            array.remove(resistanceArray, i)
+
+if pl
+    drawNewLow = line.new(bar_index[pivotPeriod], low[pivotPeriod], bar_index, low[pivotPeriod], color = supportColor, width = lineWidth)
+    array.push(supportArray, drawNewLow)
+
+    if array.size(supportArray) > maxLine
+        line.delete(array.get(supportArray, 0))
+        array.remove(supportArray, 0)
+
+for i = array.size(supportArray) - 1 to 0
+
+    if array.size(supportArray)  > 0
+        line.set_x2(array.get(supportArray, i), bar_index)
+        lowPrice = line.get_y1(array.get(supportArray, i))
+        priceLoc = line.get_x1(array.get(supportArray, i))
+
+        if (low < lowPrice and close > lowPrice) 
+            line.delete(array.get(supportArray, i))
+            array.remove(supportArray, i)
+            line.new(priceLoc, lowPrice, bar_index, low, color = color.blue, width = 1)
+            label.new(bar_index, lowPrice-atrOffset, "Sell Liquidity Sweep", style=label.style_label_up,textcolor = color.white,size = size.small)
+
+        else if (close < lowPrice)
+            line.delete(array.get(supportArray, i))
+            array.remove(supportArray, i)

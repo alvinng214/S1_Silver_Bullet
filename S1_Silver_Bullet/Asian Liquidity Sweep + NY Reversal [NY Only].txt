@@ -1,0 +1,122 @@
+//@version=5
+indicator("Asian Liquidity Sweep + NY Reversal [NY Only]", overlay=true, max_labels_count=500)
+
+// ──────────────
+// INPUTS
+// ──────────────
+spreadBuffer = input.float(2, "Stop Loss Buffer (pips)")
+showSweepDetections = input.bool(true, "Show Sweep Detections", group="Debug")
+
+// ──────────────
+// SESSION TIMES (UTC+3)
+// ──────────────
+asiaStartHour = 4
+asiaEndHour   = 10
+nyStartHour   = 15
+nyEndHour     = 18
+
+// Daily timestamps
+asiaStart = timestamp("GMT+3", year, month, dayofmonth, asiaStartHour, 0)
+asiaEnd   = timestamp("GMT+3", year, month, dayofmonth, asiaEndHour, 0)
+nyStart   = timestamp("GMT+3", year, month, dayofmonth, nyStartHour, 0)
+nyEnd     = timestamp("GMT+3", year, month, dayofmonth, nyEndHour, 0)
+
+// Session flags
+inAsia = time >= asiaStart and time <= asiaEnd
+inNY   = time >= nyStart and time <= nyEnd
+
+isNewDay = ta.change(time("D"))
+
+// ──────────────
+// ASIA RANGE
+// ──────────────
+var float asiaHigh = na
+var float asiaLow  = na
+
+if nz(isNewDay, false)
+    asiaHigh := na
+    asiaLow  := na
+
+if nz(inAsia, false)
+    asiaHigh := na(asiaHigh) ? high : math.max(asiaHigh, high)
+    asiaLow  := na(asiaLow) ? low : math.min(asiaLow, low)
+
+// ──────────────
+// SWEEP DETECTION (After Asia session)
+// ──────────────
+var bool sweepUpDetected = false
+var bool sweepDownDetected = false
+var int sweepBarIndex = na
+
+if nz(isNewDay, false)
+    sweepUpDetected := false
+    sweepDownDetected := false
+    sweepBarIndex := na
+
+if (not nz(inAsia, false)) and (not na(asiaHigh)) and (not na(asiaLow))
+    if not nz(sweepUpDetected, false) and high > asiaHigh and close <= asiaHigh
+        sweepUpDetected := true
+        sweepDownDetected := false
+        sweepBarIndex := bar_index
+    if not nz(sweepDownDetected, false) and low < asiaLow and close >= asiaLow
+        sweepDownDetected := true
+        sweepUpDetected := false
+        sweepBarIndex := bar_index
+
+// ──────────────
+// NY REVERSAL SIGNALS
+// ──────────────
+nyCandleBearish = close < open and high > asiaHigh
+nyCandleBullish = close > open and low < asiaLow
+
+sellSignal = nz(inNY, false) and nz(sweepUpDetected, false) and nyCandleBearish
+buySignal  = nz(inNY, false) and nz(sweepDownDetected, false) and nyCandleBullish
+
+// ──────────────
+// PLOT SHAPES (Global Scope)
+// ──────────────
+sweepUpPlot   = nz(showSweepDetections, false) and nz(sweepUpDetected, false) and not nz(sweepUpDetected[1], false)
+sweepDownPlot = nz(showSweepDetections, false) and nz(sweepDownDetected, false) and not nz(sweepDownDetected[1], false)
+sellPlot      = nz(sellSignal, false) and not nz(sellSignal[1], false)
+buyPlot       = nz(buySignal, false) and not nz(buySignal[1], false)
+
+plotshape(sweepUpPlot,
+          style=shape.labeldown,
+          location=location.abovebar,
+          color=color.red,
+          size=size.small,
+          text="SWEEP↑",
+          title="Sweep Up Detection")
+
+plotshape(sweepDownPlot,
+          style=shape.labelup,
+          location=location.belowbar,
+          color=color.green,
+          size=size.small,
+          text="SWEEP↓",
+          title="Sweep Down Detection")
+
+plotshape(sellPlot,
+          style=shape.triangledown,
+          location=location.abovebar,
+          color=color.red,
+          size=size.large,
+          title="SELL Signal",
+          text="SELL")
+
+plotshape(buyPlot,
+          style=shape.triangleup,
+          location=location.belowbar,
+          color=color.green,
+          size=size.large,
+          title="BUY Signal",
+          text="BUY")
+
+// ──────────────
+// VISUALS
+// ──────────────
+plot(asiaHigh, color=color.new(color.blue, 70), title="Asia High", linewidth=1, style=plot.style_linebr)
+plot(asiaLow, color=color.new(color.orange, 70), title="Asia Low", linewidth=1, style=plot.style_linebr)
+
+bgcolor(nz(inAsia, false) ? color.new(color.blue, 90) : na, title="Asia Session")
+bgcolor(nz(inNY, false) ? color.new(color.purple, 90) : na, title="NY Session")
