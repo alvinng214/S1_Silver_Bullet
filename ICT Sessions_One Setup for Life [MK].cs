@@ -121,7 +121,7 @@ namespace cAlgo
         // HKT 08:00-12:00 = 19:00-23:00 NY EST
         [Parameter("Asia Session", Group = "Asia", DefaultValue = true)]
         public bool AsiaEnabled { get; set; }
-        [Parameter("Time", Group = "Asia", DefaultValue = "2000-2400")]
+        [Parameter("Time", Group = "Asia", DefaultValue = "1900-2300")]
         public string AsiaSession { get; set; }
         [Parameter("Border", Group = "Asia", DefaultValue = "#00FFA500")]
         public Color AsiaBorderColor { get; set; }
@@ -702,10 +702,25 @@ namespace cAlgo
         {
             if (Bars.Count < 2) return 1.0;
             int sample = Math.Min(200, Bars.Count - 1);
-            double sum = 0;
+
+            // Pass 1: find smallest gap = true bar interval (ignores weekend/holiday gaps)
+            double minGap = double.MaxValue;
             for (int i = Bars.Count - sample; i < Bars.Count; i++)
-                sum += (Bars.OpenTimes[i] - Bars.OpenTimes[i - 1]).TotalMinutes;
-            return sum / sample;
+            {
+                double g = (Bars.OpenTimes[i] - Bars.OpenTimes[i - 1]).TotalMinutes;
+                if (g > 0 && g < minGap) minGap = g;
+            }
+            if (minGap == double.MaxValue) return 1.0;
+
+            // Pass 2: average only gaps <= 4x the minimum (filters out weekend/holiday gaps)
+            double sum = 0; int count = 0;
+            double threshold = minGap * 4.0;
+            for (int i = Bars.Count - sample; i < Bars.Count; i++)
+            {
+                double g = (Bars.OpenTimes[i] - Bars.OpenTimes[i - 1]).TotalMinutes;
+                if (g <= threshold) { sum += g; count++; }
+            }
+            return count > 0 ? sum / count : minGap;
         }
 
         private static LineStyle ToLineStyle(LineStyleChoice c)
