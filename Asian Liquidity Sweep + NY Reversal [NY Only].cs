@@ -40,6 +40,15 @@ namespace cAlgo
         GMT_Plus11,  GMT_Plus12,
     }
 
+    // Signal shape choices — maps to cTrader ChartIconType
+    public enum SignalShape
+    {
+        UpTriangle,    // ▲  Pine default BUY   (shape.triangleup)
+        DownTriangle,  // ▼  Pine default SELL  (shape.triangledown)
+        UpArrow,       // ↑  Pine default SWEEP↓ (shape.labelup)
+        DownArrow,     // ↓  Pine default SWEEP↑ (shape.labeldown)
+    }
+
     [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
     public class AsianLiquiditySweepNYReversal : Indicator
     {
@@ -50,11 +59,13 @@ namespace cAlgo
         // One signal event to draw (collected during scan, drawn at end)
         private struct SignalEvent
         {
-            public DateTime Utc;
-            public double   Price;   // bar high (above) or bar low (below)
-            public bool     Above;   // true = draw above the bar, false = below
-            public string   Text;
-            public Color    Col;
+            public DateTime   Utc;
+            public double     Price;      // bar high (above) or bar low (below)
+            public bool       Above;      // true = draw above the bar, false = below
+            public string     Text;
+            public Color      Col;
+            public SignalShape Shape;     // icon shape to draw
+            public bool       ShowText;   // whether to show the text label
         }
 
         // Accumulated state for one calendar day (UTC day boundary)
@@ -80,7 +91,7 @@ namespace cAlgo
         public TimezoneOption Timezone { get; set; }
 
         // Pine: asiaStartHour = 4, asiaEndHour = 10 (in the configured timezone)
-        [Parameter("Asia Start Hour", Group = "Sessions", DefaultValue = 7, MinValue = 0, MaxValue = 23)]
+        [Parameter("Asia Start Hour", Group = "Sessions", DefaultValue = 4, MinValue = 0, MaxValue = 23)]
         public int AsiaStartHour { get; set; }
 
         [Parameter("Asia End Hour", Group = "Sessions", DefaultValue = 10, MinValue = 0, MaxValue = 23)]
@@ -137,6 +148,50 @@ namespace cAlgo
         // Pine: buyPlot color=color.green
         [Parameter("Buy Signal Color", Group = "Display", DefaultValue = "#FF008000")]
         public Color BuyColor { get; set; }
+
+        // ── Parameters — Signal Shapes ────────────────────────────────────────
+        // Matches Pine plotshape() style options for each signal type.
+
+        // Pine: shape.triangleup (▲) for BUY
+        [Parameter("Buy Signal Shape", Group = "Signal Shapes", DefaultValue = SignalShape.UpTriangle)]
+        public SignalShape BuyShape { get; set; }
+
+        // Pine: shape.triangledown (▼) for SELL
+        [Parameter("Sell Signal Shape", Group = "Signal Shapes", DefaultValue = SignalShape.DownTriangle)]
+        public SignalShape SellShape { get; set; }
+
+        // Pine: shape.labeldown (↓) for SWEEP↑ — label points down above bar
+        [Parameter("Sweep Up Shape", Group = "Signal Shapes", DefaultValue = SignalShape.DownArrow)]
+        public SignalShape SweepUpShape { get; set; }
+
+        // Pine: shape.labelup (↑) for SWEEP↓ — label points up below bar
+        [Parameter("Sweep Down Shape", Group = "Signal Shapes", DefaultValue = SignalShape.UpArrow)]
+        public SignalShape SweepDownShape { get; set; }
+
+        // ── Parameters — Signal Visibility ───────────────────────────────────
+
+        [Parameter("Show BUY Signal", Group = "Signal Visibility", DefaultValue = true)]
+        public bool ShowBuySignal { get; set; }
+
+        [Parameter("Show SELL Signal", Group = "Signal Visibility", DefaultValue = true)]
+        public bool ShowSellSignal { get; set; }
+
+        [Parameter("Show SWEEP Signal", Group = "Signal Visibility", DefaultValue = true)]
+        public bool ShowSweepSignal { get; set; }
+
+        // ── Parameters — Signal Text ──────────────────────────────────────────
+
+        [Parameter("Show BUY Text", Group = "Signal Text", DefaultValue = true)]
+        public bool ShowBuyText { get; set; }
+
+        [Parameter("Show SELL Text", Group = "Signal Text", DefaultValue = true)]
+        public bool ShowSellText { get; set; }
+
+        [Parameter("Show SWEEP Text", Group = "Signal Text", DefaultValue = true)]
+        public bool ShowSweepText { get; set; }
+
+        [Parameter("Text Size", Group = "Signal Text", DefaultValue = 12, MinValue = 6, MaxValue = 48)]
+        public int SignalTextSize { get; set; }
 
         // ── Private fields ────────────────────────────────────────────────────
 
@@ -267,10 +322,10 @@ namespace cAlgo
                     }
 
                     // Add rising-edge events (sweep down wins if both fired)
-                    if (sweepDownThisBar && ShowSweepDetections)
-                        day.Events.Add(new SignalEvent { Utc = utcOpen, Price = lo, Above = false, Text = "SWEEP↓", Col = SweepDownColor });
-                    else if (sweepUpThisBar && ShowSweepDetections)
-                        day.Events.Add(new SignalEvent { Utc = utcOpen, Price = hi, Above = true,  Text = "SWEEP↑", Col = SweepUpColor });
+                    if (sweepDownThisBar && ShowSweepDetections && ShowSweepSignal)
+                        day.Events.Add(new SignalEvent { Utc = utcOpen, Price = lo, Above = false, Text = "SWEEP↓", Col = SweepDownColor, Shape = SweepDownShape, ShowText = ShowSweepText });
+                    else if (sweepUpThisBar && ShowSweepDetections && ShowSweepSignal)
+                        day.Events.Add(new SignalEvent { Utc = utcOpen, Price = hi, Above = true,  Text = "SWEEP↑", Col = SweepUpColor,   Shape = SweepUpShape,   ShowText = ShowSweepText });
                 }
 
                 // ── NY reversal signals ───────────────────────────────────────
@@ -291,9 +346,11 @@ namespace cAlgo
 
                     // Pine: sellPlot = sellSignal AND NOT sellSignal[1] — rising edge only
                     if (sellSignal && !prevSellSignal)
-                        day.Events.Add(new SignalEvent { Utc = utcOpen, Price = hi, Above = true,  Text = "SELL", Col = SellColor });
+                        if (ShowSellSignal)
+                            day.Events.Add(new SignalEvent { Utc = utcOpen, Price = hi, Above = true,  Text = "SELL", Col = SellColor, Shape = SellShape, ShowText = ShowSellText });
                     if (buySignal && !prevBuySignal)
-                        day.Events.Add(new SignalEvent { Utc = utcOpen, Price = lo, Above = false, Text = "BUY",  Col = BuyColor });
+                        if (ShowBuySignal)
+                            day.Events.Add(new SignalEvent { Utc = utcOpen, Price = lo, Above = false, Text = "BUY",  Col = BuyColor,  Shape = BuyShape,  ShowText = ShowBuyText  });
 
                     prevSellSignal = sellSignal;
                     prevBuySignal  = buySignal;
@@ -352,11 +409,19 @@ namespace cAlgo
                     r.Color    = NyBgColor;
                 }
 
-                // Signal labels (SWEEP↑/↓, SELL, BUY)
+                // Signal icons + labels (SWEEP↑/↓, SELL, BUY)
                 foreach (SignalEvent ev in d.Events)
                 {
-                    double y = ev.Above ? ev.Price + labelOff : ev.Price - labelOff;
-                    Chart.DrawText(Prefix + "ev_" + NextId(), ev.Text, ev.Utc, y, ev.Col);
+                    double iconY = ev.Above ? ev.Price + labelOff       : ev.Price - labelOff;
+                    double txtY  = ev.Above ? ev.Price + labelOff * 2.0 : ev.Price - labelOff * 2.0;
+                    // Icon (shape chosen by parameter)
+                    Chart.DrawIcon(Prefix + "evi_" + NextId(), ToChartIcon(ev.Shape), ev.Utc, iconY, ev.Col);
+                    // Text label — only if enabled for this signal type
+                    if (ev.ShowText)
+                    {
+                        var ct = Chart.DrawText(Prefix + "evt_" + NextId(), ev.Text, ev.Utc, txtY, ev.Col);
+                        ct.FontSize = SignalTextSize;
+                    }
                 }
             }
         }
@@ -414,6 +479,17 @@ namespace cAlgo
                 TimeSpan.FromHours(hours),
                 "GMT" + (hours >= 0 ? "+" : "") + hours,
                 "GMT" + (hours >= 0 ? "+" : "") + hours);
+
+        private static ChartIconType ToChartIcon(SignalShape s)
+        {
+            switch (s)
+            {
+                case SignalShape.DownTriangle: return ChartIconType.DownTriangle;
+                case SignalShape.UpArrow:      return ChartIconType.UpArrow;
+                case SignalShape.DownArrow:    return ChartIconType.DownArrow;
+                default:                      return ChartIconType.UpTriangle;
+            }
+        }
 
         private string NextId()
             => (_objId++).ToString(CultureInfo.InvariantCulture);
