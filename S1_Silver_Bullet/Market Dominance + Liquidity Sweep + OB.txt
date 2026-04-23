@@ -1,0 +1,1054 @@
+//@version=6
+indicator("Market Dominance + Liquidity Sweep + OB", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+// ─── INPUTS ───────────────────────────────────────────────────────────────────
+swingLen           = input.int(5,    "Swing Length — Dominance & HTF OBs",          minval=1, maxval=50, group="Swing Detection 📐", tooltip="Number of candles left & right used to identify swing highs/lows for dominance shifts and HTF OBs.\nNumero di candele sinistra/destra per identificare swing high/low usati per la dominance e gli HTF OB.")
+swingLenOB         = input.int(5,    "Swing Length — OB Touch",                       minval=1, maxval=50, group="Swing Detection 📐", tooltip="Number of candles left & right used to identify swing highs/lows for Order Block detection and touch signals.\nNumero di candele sinistra/destra per identificare swing high/low usati per il rilevamento e il tocco degli Order Block.")
+swingLenSweep      = input.int(5,    "Swing Length — Liquidity Sweep",                minval=1, maxval=50, group="Swing Detection 📐", tooltip="Number of candles left & right used to identify swing highs/lows for Liquidity Sweep detection.\nNumero di candele sinistra/destra per identificare swing high/low usati per il rilevamento dei Liquidity Sweep.")
+emaLen             = input.int(750,  "EMA Filter Length",                            minval=1,            group="EMA Filter 📉",          tooltip="Period of the EMA used to filter dominance signals by trend direction.\nPeriodo dell'EMA usata per filtrare i segnali di dominance in base alla direzione del trend.")
+useEma             = input.bool(true,"Enable EMA Filter",                                                 group="EMA Filter 📉",          tooltip="When enabled, bullish dominance signals only appear when price is above the EMA, bearish only when below.\nQuando attivo, i segnali di dominance rialzista appaiono solo sopra l'EMA, quelli ribassisti solo sotto.")
+showEma            = input.bool(true,"Show EMA Line",                                                     group="EMA Filter 📉",          tooltip="Show or hide the EMA line on the chart. The filter remains active even when the line is hidden.\nMostra o nasconde la linea EMA sul grafico. Il filtro rimane attivo anche quando la linea è nascosta.")
+emaFilterSweep     = input.bool(true,"Apply EMA Filter to Liquidity Sweeps",                              group="EMA Filter 📉",          tooltip="When enabled, bullish sweep signals only appear when price is above the EMA, bearish sweeps only when below.\nQuando attivo, i segnali di sweep rialzista appaiono solo sopra l'EMA, quelli ribassisti solo sotto.")
+emaFilterOBTouch   = input.bool(true,"Apply EMA Filter to OB Touches",                                   group="EMA Filter 📉",          tooltip="When enabled, bullish OB touch signals only appear when price is above the EMA, bearish OB touches only when below.\nQuando attivo, i segnali di tocco OB rialzista appaiono solo sopra l'EMA, quelli ribassisti solo sotto.")
+
+// ─── ATR BAND FILTER ─────────────────────────────────────────────────────────
+enableATRFilter    = input.bool(false,"Enable ATR Band Filter",                                           group="ATR Band Filter 📡",     tooltip="When enabled, bullish signals only appear when price is below the upper ATR band, bearish signals only when price is above the lower ATR band.\nQuando attivo, i segnali rialzisti appaiono solo sotto la banda ATR superiore, quelli ribassisti solo sopra quella inferiore.")
+atrMult            = input.float(10.0,"ATR Multiplier",           minval=1, maxval=100, step=0.5,         group="ATR Band Filter 📡",     tooltip="Multiplier applied to the smoothed ATR to build the upper and lower bands around the EMA.\nMoltiplicatore applicato all'ATR smussato per costruire le bande superiore e inferiore attorno all'EMA.")
+showATRBandLines   = input.bool(false,"Show ATR Band Lines",                                              group="ATR Band Filter 📡",     tooltip="Show or hide the ATR band lines on the chart.\nMostra o nasconde le linee delle bande ATR sul grafico.")
+enableATRFill      = input.bool(false,"Show ATR Band Fill",                                               group="ATR Band Filter 📡",     tooltip="Fill the area between the EMA and each ATR band with a color.\nColora l'area tra l'EMA e ciascuna banda ATR.")
+upperBandCol       = input.color(color.rgb(139,139,139,50),       "Upper Band Color",                     group="ATR Band Filter 📡")
+lowerBandCol       = input.color(color.rgb(139,139,139,50),       "Lower Band Color",                     group="ATR Band Filter 📡")
+upperFillCol       = input.color(color.new(#00bcd4, 90),          "Upper Fill Color",                     group="ATR Band Filter 📡")
+lowerFillCol       = input.color(color.new(#dd326b, 90),          "Lower Fill Color",                     group="ATR Band Filter 📡")
+
+showDominance      = input.bool(true,"Show Dominance Labels",                                             group="Dominance 👑",           tooltip="Show or hide the B/S labels that appear when a dominance shift is detected.\nMostra o nasconde le etichette B/S che appaiono al rilevamento di un cambio di dominance.")
+showDominanceLines = input.bool(true,"Show Dominance Lines",                                              group="Dominance 👑",           tooltip="Show or hide the dashed horizontal lines drawn on the broken swing level at each dominance shift.\nMostra o nasconde le linee orizzontali tratteggiate tracciate sul livello swing rotto ad ogni cambio di dominance.")
+showOB             = input.bool(true,"Show Order Blocks",                                                 group="Order Block 🟦",         tooltip="Show or hide the order block zones. On each dominance shift, the last opposing candle before the impulse move is highlighted as an order block.\nMostra o nasconde le zone di order block. Ad ogni cambio di dominance, l'ultima candela opposta prima del movimento impulsivo viene evidenziata come order block.")
+showOBTouch        = input.bool(true,"Show Order Block Touches",                                          group="Order Block 🟦",         tooltip="Show or hide the triangle signals when price wicks into an order block zone.\nMostra o nasconde i segnali triangolari quando il prezzo tocca con la wick una zona di order block.")
+obUseFullCandle    = input.bool(false,"OB: Include Wicks (full candle)",                                  group="Order Block 🟦",         tooltip="When enabled, the order block box uses the full candle range (high to low including wicks). When disabled, only the candle body (open to close) is used.\nQuando attivo, il box dell'order block usa l'intera candela (high-low, wick incluse). Quando disattivo, usa solo il corpo (open-close).")
+sweepLookback      = input.int(1,    "Sweep: Max Candles for Re-entry Confirmation (Sweep LB)", minval=1, maxval=10, group="Liquidity Sweep 💧",     tooltip="Maximum number of candles after a spike beyond a swing level to confirm price has re-entered the range.\nNumero massimo di candele dopo uno spike oltre un livello swing per confermare il rientro del prezzo.")
+showSweep          = input.bool(true,"Show Liquidity Sweeps",                                             group="Liquidity Sweep 💧",     tooltip="Show or hide the ✕ markers that identify liquidity grabs — price spikes beyond a swing level that fail to hold.\nMostra o nasconde i marcatori ✕ che identificano le prese di liquidità — spike oltre un livello swing che non reggono.")
+showSweepLines     = input.bool(true,"Show Sweep Lines",                                                 group="Liquidity Sweep 💧",     tooltip="Show or hide the dotted horizontal lines drawn on the swept swing level.\nMostra o nasconde le linee orizzontali punteggiate tracciate sul livello swing violato.")
+
+// ─── TRADE VISUALIZATION ─────────────────────────────────────────────────────
+showRR             = input.bool(false,"Show Trade on Chart (OB Touch)",                                   group="Trade Visualization 📊", tooltip="Show or hide the RR trade visualization on OB Touch signals.\nMostra o nasconde la visualizzazione del trade RR sui segnali OB Touch.")
+rrSlPips           = input.float(10.0,"OB Touch SL Buffer (pips beyond spike wick)", minval=0.1,         group="Trade Visualization 📊", tooltip="Extra pips added beyond the spike wick to place the stop loss for OB Touch trades.\nPips aggiuntivi oltre la wick della spike per posizionare lo stop loss sui trade OB Touch.")
+rrRatio            = input.float(3.0, "OB Touch Risk:Reward Ratio",       minval=0.1, step=0.1,          group="Trade Visualization 📊", tooltip="Multiplier applied to the SL distance to calculate the take profit level for OB Touch trades.\nMoltiplicatore applicato alla distanza dello SL per calcolare il take profit sui trade OB Touch.")
+enableBE_OB        = input.bool(false,"Enable Breakeven — OB Touch 🔒",                                  group="Trade Visualization 📊", tooltip="When enabled, the stop loss of an OB Touch trade moves to breakeven once price reaches the specified RR multiple.\nQuando attivo, lo stop loss del trade OB Touch si sposta al breakeven quando il prezzo raggiunge il multiplo RR specificato.")
+beRatio_OB         = input.float(2.0, "Breakeven at RR — OB Touch",      minval=0.1, step=0.1,          group="Trade Visualization 📊", tooltip="The RR multiple at which the OB Touch trade stop loss is moved to breakeven.\nIl multiplo RR al quale lo stop loss del trade OB Touch viene spostato al breakeven.")
+overlapOBTrades    = input.bool(false,"Overlap OB Trades 🔀",                                            group="Trade Visualization 📊", tooltip="When enabled, multiple OB Touch trades can be open at the same time.\nQuando attivo, più trade OB Touch possono essere aperti contemporaneamente.")
+showSweepRR        = input.bool(false,"Show Trade on Chart (Sweep)",                                      group="Trade Visualization 📊", tooltip="Show or hide the RR trade visualization on Liquidity Sweep signals.\nMostra o nasconde la visualizzazione del trade RR sui segnali di Liquidity Sweep.")
+sweepRRSlPips      = input.float(10.0,"Sweep SL Buffer (pips beyond spike wick)",    minval=0.1,         group="Trade Visualization 📊", tooltip="Extra pips added beyond the spike wick to place the stop loss for Sweep trades.\nPips aggiuntivi oltre la wick della spike per posizionare lo stop loss sui trade Sweep.")
+sweepRRRatio       = input.float(3.0, "Sweep Risk:Reward Ratio",          minval=0.1, step=0.1,          group="Trade Visualization 📊", tooltip="Multiplier applied to the SL distance to calculate the take profit level for Sweep trades.\nMoltiplicatore applicato alla distanza dello SL per calcolare il take profit sui trade Sweep.")
+enableBE_SW        = input.bool(false,"Enable Breakeven — Sweep 🔒",                                     group="Trade Visualization 📊", tooltip="When enabled, the stop loss of a Sweep trade moves to breakeven once price reaches the specified RR multiple.\nQuando attivo, lo stop loss del trade Sweep si sposta al breakeven quando il prezzo raggiunge il multiplo RR specificato.")
+beRatio_SW         = input.float(2.0, "Breakeven at RR — Sweep",         minval=0.1, step=0.1,          group="Trade Visualization 📊", tooltip="The RR multiple at which the Sweep trade stop loss is moved to breakeven.\nIl multiplo RR al quale lo stop loss del trade Sweep viene spostato al breakeven.")
+overlapSWTrades    = input.bool(false,"Overlap Sweep Trades 🔀",                                         group="Trade Visualization 📊", tooltip="When enabled, multiple Sweep trades can be open at the same time.\nQuando attivo, più trade Sweep possono essere aperti contemporaneamente.")
+showPipLabels      = input.bool(false,"Show TP/SL Pip Labels",                                            group="Trade Visualization 📊", tooltip="Show or hide the TP and SL pip labels on trade visualizations.\nMostra o nasconde le etichette dei pips di TP e SL sulle visualizzazioni dei trade.")
+showTable          = input.bool(true,"Show Win Rate Table",                                              group="Trade Visualization 📊", tooltip="Show or hide the win rate statistics table.\nMostra o nasconde la tabella delle statistiche win rate.")
+
+// ─── SESSION INPUTS ───────────────────────────────────────────────────────────
+utcOffset         = input.int(1,     "UTC Offset (hours)",                           minval=-12, maxval=14, group="Sessions 🕐", tooltip="Set your timezone offset from UTC. E.g. 1 = UTC+1 (Italy).\nImposta il tuo offset dal UTC. Es. 1 = UTC+1 (Italia).")
+useSessionFilter  = input.bool(true,"Enable Session Filter (exclude trades outside sessions)",             group="Sessions 🕐", tooltip="When enabled, trades are only opened during the selected active sessions.\nQuando attivo, i trade vengono aperti solo durante le sessioni selezionate.")
+showSessionStats  = input.bool(false,"Show Session Stats in Table",                                         group="Sessions 🕐", tooltip="Expands the stats table to show win rate broken down per trading session.\nEspande la tabella con il win rate suddiviso per sessione di trading.")
+bestByPips        = input.bool(true, "Best Session: rank by Pips (instead of Win Rate)",                    group="Sessions 🕐", tooltip="When enabled, the best session highlight is based on the highest net pips (wins - losses) instead of the highest win rate.\nQuando attivo, la sessione migliore viene evidenziata in base ai pips netti più alti (vincite - perdite) invece che al win rate.")
+useAsia           = input.bool(true, "Include Asia Session",                                                group="Sessions 🕐", tooltip="Include the Asia session in the session filter and stats tracking. Default range: 00:00–08:00 UTC.\nIncludi la sessione Asia nel filtro e nel tracking delle statistiche. Range predefinito: 00:00–08:00 UTC.")
+asiaSession       = input.session("0000-0800","Asia Session Range",                                         group="Sessions 🕐", tooltip="Define the start and end time for the Asia session. Uses the UTC offset set above.\nDefinisci l'orario di inizio e fine della sessione Asia. Usa l'offset UTC impostato sopra.")
+useLondon         = input.bool(true, "Include London Session",                                              group="Sessions 🕐", tooltip="Include the London session in the session filter and stats tracking. Default range: 07:00–16:00 UTC.\nIncludi la sessione London nel filtro e nel tracking delle statistiche. Range predefinito: 07:00–16:00 UTC.")
+londonSession     = input.session("0700-1600","London Session Range",                                       group="Sessions 🕐", tooltip="Define the start and end time for the London session. Uses the UTC offset set above.\nDefinisci l'orario di inizio e fine della sessione London. Usa l'offset UTC impostato sopra.")
+useNewYork        = input.bool(true, "Include New York Session",                                            group="Sessions 🕐", tooltip="Include the New York session in the session filter and stats tracking. Default range: 13:00–22:00 UTC.\nIncludi la sessione New York nel filtro e nel tracking delle statistiche. Range predefinito: 13:00–22:00 UTC.")
+nySession         = input.session("1300-2200","New York Session Range",                                     group="Sessions 🕐", tooltip="Define the start and end time for the New York session. Uses the UTC offset set above.\nDefinisci l'orario di inizio e fine della sessione New York. Usa l'offset UTC impostato sopra.")
+useCustom         = input.bool(false,"Enable Custom Exclusion Window",                                      group="Sessions 🕐", tooltip="Blocks trades during the specified time window. Useful to exclude overnight or low-liquidity hours.\nBlocca i trade durante la finestra temporale specificata. Utile per escludere le ore notturne o a bassa liquidità.")
+customExclSession = input.session("2200-0700","Exclusion Window Range",                                     group="Sessions 🕐", tooltip="Define the time window during which trades are blocked when the exclusion is enabled.\nDefinisci la finestra temporale in cui i trade sono bloccati quando l'esclusione è attiva.")
+showAsiaBg        = input.bool(false, "Show Asia Session Background",                                        group="Sessions 🕐", tooltip="Highlight the Asia session with a background color on the chart.\nEvidenzia la sessione Asia con un colore di sfondo sul grafico.")
+asiaBgColor       = input.color(color.new(#8e21f3, 97),"Asia Background Color",                             group="Sessions 🕐", tooltip="Color used for the Asia session background highlight.\nColore usato per lo sfondo della sessione Asia.")
+showLondonBg      = input.bool(false, "Show London Session Background",                                      group="Sessions 🕐", tooltip="Highlight the London session with a background color on the chart.\nEvidenzia la sessione London con un colore di sfondo sul grafico.")
+londonBgColor     = input.color(color.new(#003bfd, 97),"London Background Color",                           group="Sessions 🕐", tooltip="Color used for the London session background highlight.\nColore usato per lo sfondo della sessione London.")
+showNYBg          = input.bool(false, "Show New York Session Background",                                     group="Sessions 🕐", tooltip="Highlight the New York session with a background color on the chart.\nEvidenzia la sessione New York con un colore di sfondo sul grafico.")
+nyBgColor         = input.color(color.new(#fffb00, 97),"New York Background Color",                         group="Sessions 🕐", tooltip="Color used for the New York session background highlight.\nColore usato per lo sfondo della sessione New York.")
+
+// ─── HTF OB INPUTS ────────────────────────────────────────────────────────────
+showOB_M5  = input.bool(false,"M5 Order Blocks",  group="Higher Timeframe OBs 🔭", tooltip="Show order blocks detected on the M5 timeframe. Each box is labeled 'M5' at its center.\nMostra gli order block rilevati sul timeframe M5. Ogni box è etichettato 'M5' al centro.")
+obWick_M5  = input.bool(false,"(Include Wicks)",  group="Higher Timeframe OBs 🔭", tooltip="When enabled, the M5 OB box uses the full candle range (high to low). When disabled, only the body (open to close) is used.\nQuando attivo, il box OB M5 usa l'intera candela (high-low). Quando disattivo, usa solo il corpo (open-close).")
+showOB_M15 = input.bool(false,"M15 Order Blocks", group="Higher Timeframe OBs 🔭", tooltip="Show order blocks detected on the M15 timeframe. Each box is labeled 'M15' at its center.\nMostra gli order block rilevati sul timeframe M15. Ogni box è etichettato 'M15' al centro.")
+obWick_M15 = input.bool(false,"(Include Wicks)",  group="Higher Timeframe OBs 🔭", tooltip="When enabled, the M15 OB box uses the full candle range (high to low). When disabled, only the body (open to close) is used.\nQuando attivo, il box OB M15 usa l'intera candela (high-low). Quando disattivo, usa solo il corpo (open-close).")
+showOB_M30 = input.bool(false,"M30 Order Blocks", group="Higher Timeframe OBs 🔭", tooltip="Show order blocks detected on the M30 timeframe. Each box is labeled 'M30' at its center.\nMostra gli order block rilevati sul timeframe M30. Ogni box è etichettato 'M30' al centro.")
+obWick_M30 = input.bool(false,"(Include Wicks)",  group="Higher Timeframe OBs 🔭", tooltip="When enabled, the M30 OB box uses the full candle range (high to low). When disabled, only the body (open to close) is used.\nQuando attivo, il box OB M30 usa l'intera candela (high-low). Quando disattivo, usa solo il corpo (open-close).")
+showOB_H1  = input.bool(false,"H1 Order Blocks",  group="Higher Timeframe OBs 🔭", tooltip="Show order blocks detected on the H1 timeframe. Each box is labeled 'H1' at its center.\nMostra gli order block rilevati sul timeframe H1. Ogni box è etichettato 'H1' al centro.")
+obWick_H1  = input.bool(false,"(Include Wicks)",  group="Higher Timeframe OBs 🔭", tooltip="When enabled, the H1 OB box uses the full candle range (high to low). When disabled, only the body (open to close) is used.\nQuando attivo, il box OB H1 usa l'intera candela (high-low). Quando disattivo, usa solo il corpo (open-close).")
+showOB_H4  = input.bool(false,"H4 Order Blocks",  group="Higher Timeframe OBs 🔭", tooltip="Show order blocks detected on the H4 timeframe. Each box is labeled 'H4' at its center.\nMostra gli order block rilevati sul timeframe H4. Ogni box è etichettato 'H4' al centro.")
+obWick_H4  = input.bool(false,"(Include Wicks)",  group="Higher Timeframe OBs 🔭", tooltip="When enabled, the H4 OB box uses the full candle range (high to low). When disabled, only the body (open to close) is used.\nQuando attivo, il box OB H4 usa l'intera candela (high-low). Quando disattivo, usa solo il corpo (open-close).")
+showOB_D1  = input.bool(false,"D1 Order Blocks",  group="Higher Timeframe OBs 🔭", tooltip="Show order blocks detected on the D1 timeframe. Each box is labeled 'D1' at its center.\nMostra gli order block rilevati sul timeframe D1. Ogni box è etichettato 'D1' al centro.")
+obWick_D1  = input.bool(false,"(Include Wicks)",  group="Higher Timeframe OBs 🔭", tooltip="When enabled, the D1 OB box uses the full candle range (high to low). When disabled, only the body (open to close) is used.\nQuando attivo, il box OB D1 usa l'intera candela (high-low). Quando disattivo, usa solo il corpo (open-close).")
+
+// ─── ALERT TOGGLES ────────────────────────────────────────────────────────────
+enableBullDomAlert   = input.bool(true,  "Enable Bullish Dominance Alert 📈",  group="Alerts 🔊", tooltip="Fires when a candle body closes above the last swing high, signaling a bullish dominance shift.\nSi attiva quando il corpo di una candela chiude sopra l'ultimo swing high, segnalando un cambio di dominance rialzista.")
+enableBearDomAlert   = input.bool(true,  "Enable Bearish Dominance Alert 📉",  group="Alerts 🔊", tooltip="Fires when a candle body closes below the last swing low, signaling a bearish dominance shift.\nSi attiva quando il corpo di una candela chiude sotto l'ultimo swing low, segnalando un cambio di dominance ribassista.")
+enableBullSweepAlert = input.bool(true,  "Enable Bullish Sweep Alert 🔵",      group="Alerts 🔊", tooltip="Fires when price spikes below a swing low to grab liquidity but then recovers above it.\nSi attiva quando il prezzo scende sotto uno swing low per prendere liquidità ma poi risale.")
+enableBearSweepAlert = input.bool(true,  "Enable Bearish Sweep Alert 🟠",      group="Alerts 🔊", tooltip="Fires when price spikes above a swing high to grab liquidity but then rejects back below it.\nSi attiva quando il prezzo sale sopra uno swing high per prendere liquidità ma poi viene respinto.")
+enableBullOBAlert    = input.bool(true,  "Enable Bullish OB Touch Alert 🔺",   group="Alerts 🔊", tooltip="Fires when a candle wick touches the bullish order block zone without the body entering it.\nSi attiva quando la wick di una candela tocca la zona di order block rialzista senza che il corpo vi entri.")
+enableBearOBAlert    = input.bool(true,  "Enable Bearish OB Touch Alert 🔻",   group="Alerts 🔊", tooltip="Fires when a candle wick touches the bearish order block zone without the body entering it.\nSi attiva quando la wick di una candela tocca la zona di order block ribassista senza che il corpo vi entri.")
+enableEntryAlert     = input.bool(true, "Enable Trade Entry Alert 🚀",        group="Alerts 🔊", tooltip="Fires when a new OB Touch or Sweep trade is opened, showing entry price, SL and TP levels.\nSi attiva quando viene aperto un nuovo trade OB Touch o Sweep, mostrando prezzo di entrata, SL e TP.")
+enableTPSLAlert      = input.bool(true, "Enable TP/SL Alert 🎯",              group="Alerts 🔊", tooltip="Fires when an active trade hits Take Profit or Stop Loss.\nSi attiva quando un trade attivo raggiunge il Take Profit o lo Stop Loss.")
+
+// ─── COLORI ───────────────────────────────────────────────────────────────────
+bullColor      = color.new(#00bcd4, 10)
+bearColor      = color.new(#dd326b, 10)
+bullLabelColor = color.new(#00bcd4, 50)
+bearLabelColor = color.new(#dd326b, 50)
+sweepBullC     = color.new(#00bcd4, 0)
+sweepBearC     = color.new(#ff9800, 0)
+obBullC        = color.new(#00bcd4, 85)
+obBearC        = color.new(#dd326b, 85)
+obBullBorder   = color.new(#00bcd4, 90)
+obBearBorder   = color.new(#dd326b, 90)
+
+// ─── PIP SIZE ─────────────────────────────────────────────────────────────────
+pipSize = syminfo.mintick * (syminfo.type == "forex" ? 10 : 1)
+
+// ─── SESSION HELPERS ──────────────────────────────────────────────────────────
+getTZ() =>
+    "UTC" + (utcOffset >= 0 ? "+" + str.tostring(utcOffset) : str.tostring(utcOffset))
+
+inAsia       = useAsia    and not na(time(timeframe.period, asiaSession,       getTZ()))
+inLondon     = useLondon  and not na(time(timeframe.period, londonSession,     getTZ()))
+inNewYork    = useNewYork and not na(time(timeframe.period, nySession,         getTZ()))
+inCustomExcl = useCustom  and not na(time(timeframe.period, customExclSession, getTZ()))
+
+inAnySession   = inAsia or inLondon or inNewYork
+sessionAllowed = not inCustomExcl and (not useSessionFilter or inAnySession)
+
+sessionTag(bool inA, bool inL, bool inNY) =>
+    inNY and inL ? "LN+NY" : inL ? "London" : inNY ? "NY" : inA ? "Asia" : "Off-Session"
+
+curSession = sessionTag(inAsia, inLondon, inNewYork)
+
+// ─── EMA ──────────────────────────────────────────────────────────────────────
+ema           = ta.ema(close, emaLen)
+priceAboveEMA = close > ema
+emaDynColor   = priceAboveEMA ? color.new(#00bcd4, 10) : color.new(#dd326b, 10)
+plot(showEma ? ema : na, "EMA Filter", color=emaDynColor, linewidth=1)
+
+// ─── ATR BANDS ────────────────────────────────────────────────────────────────
+smoothATR  = ta.ema(ta.tr, 750)
+upperBand  = ema + atrMult * smoothATR
+lowerBand  = ema - atrMult * smoothATR
+
+upperBandPlot     = plot(showATRBandLines ? upperBand : na, "Upper ATR Band",            color=upperBandCol,               linewidth=1)
+upperBandFillPlot = plot(enableATRFill    ? upperBand : na, "Upper Band (fill ref)",     color=color.new(color.white,100), linewidth=1)
+emaRefPlot        = plot(ema,                               "EMA (bands ref)",           color=color.new(color.white,100), linewidth=1)
+lowerBandFillPlot = plot(enableATRFill    ? lowerBand : na, "Lower Band (fill ref)",     color=color.new(color.white,100), linewidth=1)
+lowerBandPlot     = plot(showATRBandLines ? lowerBand : na, "Lower ATR Band",            color=lowerBandCol,               linewidth=1)
+fill(emaRefPlot, upperBandFillPlot, color=enableATRFill ? upperFillCol : color.new(color.white,100), title="Upper ATR Fill")
+fill(emaRefPlot, lowerBandFillPlot, color=enableATRFill ? lowerFillCol : color.new(color.white,100), title="Lower ATR Fill")
+
+// ─── SWING DETECTION ──────────────────────────────────────────────────────────
+swingHigh = ta.pivothigh(high, swingLen, swingLen)
+swingLow  = ta.pivotlow (low,  swingLen, swingLen)
+
+var float lastSwingHigh    = na
+var float lastSwingLow     = na
+var int   lastSwingHighBar = na
+var int   lastSwingLowBar  = na
+
+if not na(swingHigh)
+    lastSwingHigh    := swingHigh
+    lastSwingHighBar := bar_index - swingLen
+if not na(swingLow)
+    lastSwingLow    := swingLow
+    lastSwingLowBar := bar_index - swingLen
+
+swingHighOB = ta.pivothigh(high, swingLenOB, swingLenOB)
+swingLowOB  = ta.pivotlow (low,  swingLenOB, swingLenOB)
+
+var float lastSwingHighOB    = na
+var float lastSwingLowOB     = na
+var int   lastSwingHighBarOB = na
+var int   lastSwingLowBarOB  = na
+
+if not na(swingHighOB)
+    lastSwingHighOB    := swingHighOB
+    lastSwingHighBarOB := bar_index - swingLenOB
+if not na(swingLowOB)
+    lastSwingLowOB    := swingLowOB
+    lastSwingLowBarOB := bar_index - swingLenOB
+
+swingHighSW = ta.pivothigh(high, swingLenSweep, swingLenSweep)
+swingLowSW  = ta.pivotlow (low,  swingLenSweep, swingLenSweep)
+
+var float lastSwingHighSW    = na
+var float lastSwingLowSW     = na
+var int   lastSwingHighBarSW = na
+var int   lastSwingLowBarSW  = na
+
+if not na(swingHighSW)
+    lastSwingHighSW    := swingHighSW
+    lastSwingHighBarSW := bar_index - swingLenSweep
+if not na(swingLowSW)
+    lastSwingLowSW    := swingLowSW
+    lastSwingLowBarSW := bar_index - swingLenSweep
+
+// ─── DOMINANCE STATE ──────────────────────────────────────────────────────────
+var int dominance     = 0
+var int prevDominance = 0
+
+prevDominance := dominance
+
+bearBreak = not na(lastSwingLow)  and close < lastSwingLow  and open > lastSwingLow  and (not useEma or close < ema)
+bullBreak = not na(lastSwingHigh) and close > lastSwingHigh and open < lastSwingHigh and (not useEma or close > ema)
+
+if bullBreak
+    dominance := 1
+if bearBreak
+    dominance := -1
+
+dominanceChanged = bullBreak or bearBreak
+
+// ─── DOMINANCE LABELS & LINES ─────────────────────────────────────────────────
+plotshape(showDominance and dominanceChanged and dominance == 1,  title="Bullish Dominance", style=shape.labelup,   location=location.belowbar, color=bullLabelColor, text="B", textcolor=color.white, size=size.small)
+plotshape(showDominance and dominanceChanged and dominance == -1, title="Bearish Dominance", style=shape.labeldown, location=location.abovebar, color=bearLabelColor, text="S", textcolor=color.white, size=size.small)
+
+if showDominanceLines and dominanceChanged and dominance == -1 and not na(lastSwingLow)
+    line.new(lastSwingLowBar,  lastSwingLow,  bar_index + 20, lastSwingLow,  color=bearColor, width=1, style=line.style_dashed)
+if showDominanceLines and dominanceChanged and dominance == 1 and not na(lastSwingHigh)
+    line.new(lastSwingHighBar, lastSwingHigh, bar_index + 20, lastSwingHigh, color=bullColor, width=1, style=line.style_dashed)
+
+// ─── LIQUIDITY SWEEP ──────────────────────────────────────────────────────────
+atrCondBull = not enableATRFilter or close <= upperBand
+atrCondBear = not enableATRFilter or close >= lowerBand
+
+bearSweep1 = not na(lastSwingHighSW) and high > lastSwingHighSW and close < lastSwingHighSW
+bullSweep1 = not na(lastSwingLowSW)  and low  < lastSwingLowSW  and close > lastSwingLowSW
+
+bearSweep2 = false
+bullSweep2 = false
+if not na(lastSwingHighSW)
+    for i = 1 to sweepLookback
+        if close[i] > lastSwingHighSW and close < lastSwingHighSW
+            bearSweep2 := true
+            break
+if not na(lastSwingLowSW)
+    for i = 1 to sweepLookback
+        if close[i] < lastSwingLowSW and close > lastSwingLowSW
+            bullSweep2 := true
+            break
+
+bearSweep = (bearSweep1 or bearSweep2) and not dominanceChanged and (not emaFilterSweep or not priceAboveEMA) and atrCondBear
+bullSweep = (bullSweep1 or bullSweep2) and not dominanceChanged and (not emaFilterSweep or priceAboveEMA) and atrCondBull
+
+plotshape(showSweep and bullSweep, title="Bullish Sweep", style=shape.xcross, location=location.belowbar, color=sweepBullC, size=size.tiny)
+plotshape(showSweep and bearSweep, title="Bearish Sweep", style=shape.xcross, location=location.abovebar, color=sweepBearC, size=size.tiny)
+if showSweepLines and bearSweep and not na(lastSwingHighSW)
+    line.new(lastSwingHighBarSW, lastSwingHighSW, bar_index + 15, lastSwingHighSW, color=sweepBearC, width=1, style=line.style_dotted)
+if showSweepLines and bullSweep and not na(lastSwingLowSW)
+    line.new(lastSwingLowBarSW, lastSwingLowSW, bar_index + 15, lastSwingLowSW, color=sweepBullC, width=1, style=line.style_dotted)
+
+// ─── ORDER BLOCK (current TF) ─────────────────────────────────────────────────
+var box[]   bullOBBoxes  = array.new<box>()
+var box[]   bearOBBoxes  = array.new<box>()
+var float[] bullOBTop    = array.new<float>()
+var float[] bullOBBottom = array.new<float>()
+var float[] bearOBTop    = array.new<float>()
+var float[] bearOBBottom = array.new<float>()
+
+if dominanceChanged
+    if dominance == 1
+        obBar = -1
+        for i = 1 to math.min(bar_index - lastSwingLowBarOB + 1, 50)
+            if close[i] < open[i]
+                obBar := i
+                break
+        if obBar != -1
+            obH      = obUseFullCandle ? high[obBar] : open[obBar]
+            obL      = obUseFullCandle ? low[obBar]  : close[obBar]
+            bBorder  = showOB ? obBullBorder : color.new(color.white, 100)
+            bBg      = showOB ? obBullC      : color.new(color.white, 100)
+            b        = box.new(bar_index - obBar, obH, bar_index + 500, obL, border_color=bBorder, border_width=1, bgcolor=bBg)
+            array.push(bullOBBoxes,  b)
+            array.push(bullOBTop,    obH)
+            array.push(bullOBBottom, obL)
+    if dominance == -1
+        obBar = -1
+        for i = 1 to math.min(bar_index - lastSwingHighBarOB + 1, 50)
+            if close[i] > open[i]
+                obBar := i
+                break
+        if obBar != -1
+            obH      = obUseFullCandle ? high[obBar] : close[obBar]
+            obL      = obUseFullCandle ? low[obBar]  : open[obBar]
+            bBorder  = showOB ? obBearBorder : color.new(color.white, 100)
+            bBg      = showOB ? obBearC      : color.new(color.white, 100)
+            b        = box.new(bar_index - obBar, obH, bar_index + 500, obL, border_color=bBorder, border_width=1, bgcolor=bBg)
+            array.push(bearOBBoxes,  b)
+            array.push(bearOBTop,    obH)
+            array.push(bearOBBottom, obL)
+
+// ─── OB TOUCH & INVALIDATION ──────────────────────────────────────────────────
+bullOBWickTouch      = false
+bearOBWickTouch      = false
+var float bullTouchSpikeLow  = na
+var float bearTouchSpikeHigh = na
+
+if array.size(bullOBBoxes) > 0
+    for i = array.size(bullOBBoxes) - 1 to 0
+        b      = array.get(bullOBBoxes, i)
+        bTop   = box.get_top(b)
+        bBot   = box.get_bottom(b)
+        wickIn = low <= bTop and low >= bBot
+        bodyIn = math.min(open, close) <= bTop
+        if wickIn and not bodyIn
+            bullOBWickTouch   := true
+            bullTouchSpikeLow := low
+        if math.min(open, close) < bBot
+            box.set_right(b, bar_index)
+            array.remove(bullOBBoxes,  i)
+            array.remove(bullOBTop,    i)
+            array.remove(bullOBBottom, i)
+
+if array.size(bearOBBoxes) > 0
+    for i = array.size(bearOBBoxes) - 1 to 0
+        b      = array.get(bearOBBoxes, i)
+        bTop   = box.get_top(b)
+        bBot   = box.get_bottom(b)
+        wickIn = high >= bBot and high <= bTop
+        bodyIn = math.max(open, close) >= bBot
+        if wickIn and not bodyIn
+            bearOBWickTouch    := true
+            bearTouchSpikeHigh := high
+        if math.max(open, close) > bTop
+            box.set_right(b, bar_index)
+            array.remove(bearOBBoxes,  i)
+            array.remove(bearOBTop,    i)
+            array.remove(bearOBBottom, i)
+
+bullOBTouchFiltered = bullOBWickTouch and (not emaFilterOBTouch or priceAboveEMA) and atrCondBull
+bearOBTouchFiltered = bearOBWickTouch and (not emaFilterOBTouch or not priceAboveEMA) and atrCondBear
+
+plotshape(showOBTouch and bullOBTouchFiltered, title="Bullish OB Touch", style=shape.triangleup,   location=location.belowbar, color=bullColor, size=size.tiny)
+plotshape(showOBTouch and bearOBTouchFiltered, title="Bearish OB Touch", style=shape.triangledown, location=location.abovebar, color=bearColor, size=size.tiny)
+
+// ─── HTF DATA ─────────────────────────────────────────────────────────────────
+[htfO_M5,  htfH_M5,  htfL_M5,  htfC_M5]  = request.security(syminfo.tickerid, "5",   [open, high, low, close], lookahead=barmerge.lookahead_off)
+[htfO_M15, htfH_M15, htfL_M15, htfC_M15] = request.security(syminfo.tickerid, "15",  [open, high, low, close], lookahead=barmerge.lookahead_off)
+[htfO_M30, htfH_M30, htfL_M30, htfC_M30] = request.security(syminfo.tickerid, "30",  [open, high, low, close], lookahead=barmerge.lookahead_off)
+[htfO_H1,  htfH_H1,  htfL_H1,  htfC_H1]  = request.security(syminfo.tickerid, "60",  [open, high, low, close], lookahead=barmerge.lookahead_off)
+[htfO_H4,  htfH_H4,  htfL_H4,  htfC_H4]  = request.security(syminfo.tickerid, "240", [open, high, low, close], lookahead=barmerge.lookahead_off)
+[htfO_D1,  htfH_D1,  htfL_D1,  htfC_D1]  = request.security(syminfo.tickerid, "D",   [open, high, low, close], lookahead=barmerge.lookahead_off)
+
+// ─── HTF SWING ────────────────────────────────────────────────────────────────
+htfSH_M5  = ta.pivothigh(htfH_M5,  swingLen, swingLen)
+htfSL_M5  = ta.pivotlow (htfL_M5,  swingLen, swingLen)
+htfSH_M15 = ta.pivothigh(htfH_M15, swingLen, swingLen)
+htfSL_M15 = ta.pivotlow (htfL_M15, swingLen, swingLen)
+htfSH_M30 = ta.pivothigh(htfH_M30, swingLen, swingLen)
+htfSL_M30 = ta.pivotlow (htfL_M30, swingLen, swingLen)
+htfSH_H1  = ta.pivothigh(htfH_H1,  swingLen, swingLen)
+htfSL_H1  = ta.pivotlow (htfL_H1,  swingLen, swingLen)
+htfSH_H4  = ta.pivothigh(htfH_H4,  swingLen, swingLen)
+htfSL_H4  = ta.pivotlow (htfL_H4,  swingLen, swingLen)
+htfSH_D1  = ta.pivothigh(htfH_D1,  swingLen, swingLen)
+htfSL_D1  = ta.pivotlow (htfL_D1,  swingLen, swingLen)
+
+// ─── HTF LAST SWING VARS ──────────────────────────────────────────────────────
+var float lSH_M5   = na
+var float lSL_M5   = na
+var int   lSHB_M5  = na
+var int   lSLB_M5  = na
+var float lSH_M15  = na
+var float lSL_M15  = na
+var int   lSHB_M15 = na
+var int   lSLB_M15 = na
+var float lSH_M30  = na
+var float lSL_M30  = na
+var int   lSHB_M30 = na
+var int   lSLB_M30 = na
+var float lSH_H1   = na
+var float lSL_H1   = na
+var int   lSHB_H1  = na
+var int   lSLB_H1  = na
+var float lSH_H4   = na
+var float lSL_H4   = na
+var int   lSHB_H4  = na
+var int   lSLB_H4  = na
+var float lSH_D1   = na
+var float lSL_D1   = na
+var int   lSHB_D1  = na
+var int   lSLB_D1  = na
+
+if not na(htfSH_M5)
+    lSH_M5  := htfSH_M5
+    lSHB_M5 := bar_index - swingLen
+if not na(htfSL_M5)
+    lSL_M5  := htfSL_M5
+    lSLB_M5 := bar_index - swingLen
+if not na(htfSH_M15)
+    lSH_M15  := htfSH_M15
+    lSHB_M15 := bar_index - swingLen
+if not na(htfSL_M15)
+    lSL_M15  := htfSL_M15
+    lSLB_M15 := bar_index - swingLen
+if not na(htfSH_M30)
+    lSH_M30  := htfSH_M30
+    lSHB_M30 := bar_index - swingLen
+if not na(htfSL_M30)
+    lSL_M30  := htfSL_M30
+    lSLB_M30 := bar_index - swingLen
+if not na(htfSH_H1)
+    lSH_H1  := htfSH_H1
+    lSHB_H1 := bar_index - swingLen
+if not na(htfSL_H1)
+    lSL_H1  := htfSL_H1
+    lSLB_H1 := bar_index - swingLen
+if not na(htfSH_H4)
+    lSH_H4  := htfSH_H4
+    lSHB_H4 := bar_index - swingLen
+if not na(htfSL_H4)
+    lSL_H4  := htfSL_H4
+    lSLB_H4 := bar_index - swingLen
+if not na(htfSH_D1)
+    lSH_D1  := htfSH_D1
+    lSHB_D1 := bar_index - swingLen
+if not na(htfSL_D1)
+    lSL_D1  := htfSL_D1
+    lSLB_D1 := bar_index - swingLen
+
+// ─── HTF DOMINANCE ────────────────────────────────────────────────────────────
+var int dom_M5  = 0
+var int dom_M15 = 0
+var int dom_M30 = 0
+var int dom_H1  = 0
+var int dom_H4  = 0
+var int dom_D1  = 0
+
+bullBreak_M5  = not na(lSH_M5)  and htfC_M5  > lSH_M5  and htfO_M5  < lSH_M5  and ta.change(htfC_M5)  != 0
+bearBreak_M5  = not na(lSL_M5)  and htfC_M5  < lSL_M5  and htfO_M5  > lSL_M5  and ta.change(htfC_M5)  != 0
+bullBreak_M15 = not na(lSH_M15) and htfC_M15 > lSH_M15 and htfO_M15 < lSH_M15 and ta.change(htfC_M15) != 0
+bearBreak_M15 = not na(lSL_M15) and htfC_M15 < lSL_M15 and htfO_M15 > lSL_M15 and ta.change(htfC_M15) != 0
+bullBreak_M30 = not na(lSH_M30) and htfC_M30 > lSH_M30 and htfO_M30 < lSH_M30 and ta.change(htfC_M30) != 0
+bearBreak_M30 = not na(lSL_M30) and htfC_M30 < lSL_M30 and htfO_M30 > lSL_M30 and ta.change(htfC_M30) != 0
+bullBreak_H1  = not na(lSH_H1)  and htfC_H1  > lSH_H1  and htfO_H1  < lSH_H1  and ta.change(htfC_H1)  != 0
+bearBreak_H1  = not na(lSL_H1)  and htfC_H1  < lSL_H1  and htfO_H1  > lSL_H1  and ta.change(htfC_H1)  != 0
+bullBreak_H4  = not na(lSH_H4)  and htfC_H4  > lSH_H4  and htfO_H4  < lSH_H4  and ta.change(htfC_H4)  != 0
+bearBreak_H4  = not na(lSL_H4)  and htfC_H4  < lSL_H4  and htfO_H4  > lSL_H4  and ta.change(htfC_H4)  != 0
+bullBreak_D1  = not na(lSH_D1)  and htfC_D1  > lSH_D1  and htfO_D1  < lSH_D1  and ta.change(htfC_D1)  != 0
+bearBreak_D1  = not na(lSL_D1)  and htfC_D1  < lSL_D1  and htfO_D1  > lSL_D1  and ta.change(htfC_D1)  != 0
+
+domChange_M5  = bullBreak_M5  or bearBreak_M5
+domChange_M15 = bullBreak_M15 or bearBreak_M15
+domChange_M30 = bullBreak_M30 or bearBreak_M30
+domChange_H1  = bullBreak_H1  or bearBreak_H1
+domChange_H4  = bullBreak_H4  or bearBreak_H4
+domChange_D1  = bullBreak_D1  or bearBreak_D1
+
+if bullBreak_M5
+    dom_M5 := 1
+if bearBreak_M5
+    dom_M5 := -1
+if bullBreak_M15
+    dom_M15 := 1
+if bearBreak_M15
+    dom_M15 := -1
+if bullBreak_M30
+    dom_M30 := 1
+if bearBreak_M30
+    dom_M30 := -1
+if bullBreak_H1
+    dom_H1 := 1
+if bearBreak_H1
+    dom_H1 := -1
+if bullBreak_H4
+    dom_H4 := 1
+if bearBreak_H4
+    dom_H4 := -1
+if bullBreak_D1
+    dom_D1 := 1
+if bearBreak_D1
+    dom_D1 := -1
+
+// ─── HTF OB ARRAYS ────────────────────────────────────────────────────────────
+var box[]   htfBullBoxes_M5   = array.new<box>()
+var box[]   htfBearBoxes_M5   = array.new<box>()
+var label[] htfBullLabels_M5  = array.new<label>()
+var label[] htfBearLabels_M5  = array.new<label>()
+var box[]   htfBullBoxes_M15  = array.new<box>()
+var box[]   htfBearBoxes_M15  = array.new<box>()
+var label[] htfBullLabels_M15 = array.new<label>()
+var label[] htfBearLabels_M15 = array.new<label>()
+var box[]   htfBullBoxes_M30  = array.new<box>()
+var box[]   htfBearBoxes_M30  = array.new<box>()
+var label[] htfBullLabels_M30 = array.new<label>()
+var label[] htfBearLabels_M30 = array.new<label>()
+var box[]   htfBullBoxes_H1   = array.new<box>()
+var box[]   htfBearBoxes_H1   = array.new<box>()
+var label[] htfBullLabels_H1  = array.new<label>()
+var label[] htfBearLabels_H1  = array.new<label>()
+var box[]   htfBullBoxes_H4   = array.new<box>()
+var box[]   htfBearBoxes_H4   = array.new<box>()
+var label[] htfBullLabels_H4  = array.new<label>()
+var label[] htfBearLabels_H4  = array.new<label>()
+var box[]   htfBullBoxes_D1   = array.new<box>()
+var box[]   htfBearBoxes_D1   = array.new<box>()
+var label[] htfBullLabels_D1  = array.new<label>()
+var label[] htfBearLabels_D1  = array.new<label>()
+
+// ─── HTF OB DRAW FUNCTION ─────────────────────────────────────────────────────
+htfPlotOB(bool show, bool domChg, int domDir, bool useWick,
+          series float htfO, series float htfH, series float htfL, series float htfC,
+          int lSHB, int lSLB, string tfLbl,
+          box[] bullBoxes, box[] bearBoxes, label[] bullLabels, label[] bearLabels) =>
+    if show and domChg
+        if domDir == 1
+            obBar   = -1
+            maxLook = math.min(bar_index - lSLB + 1, 50)
+            for i = 1 to maxLook
+                if htfC[i] < htfO[i]
+                    obBar := i
+                    break
+            if obBar != -1
+                obH = useWick ? htfH[obBar] : htfO[obBar]
+                obL = useWick ? htfL[obBar] : htfC[obBar]
+                b   = box.new(bar_index - obBar, obH, bar_index + 500, obL, border_color=color.new(#00bcd4, 60), border_width=1, bgcolor=obBullC)
+                lbl = label.new(bar_index, (obH + obL) / 2, tfLbl, style=label.style_none, textcolor=color.white, size=size.small)
+                array.push(bullBoxes,  b)
+                array.push(bullLabels, lbl)
+        if domDir == -1
+            obBar   = -1
+            maxLook = math.min(bar_index - lSHB + 1, 50)
+            for i = 1 to maxLook
+                if htfC[i] > htfO[i]
+                    obBar := i
+                    break
+            if obBar != -1
+                obH = useWick ? htfH[obBar] : htfC[obBar]
+                obL = useWick ? htfL[obBar] : htfO[obBar]
+                b   = box.new(bar_index - obBar, obH, bar_index + 500, obL, border_color=color.new(#dd326b, 60), border_width=1, bgcolor=obBearC)
+                lbl = label.new(bar_index, (obH + obL) / 2, tfLbl, style=label.style_none, textcolor=color.white, size=size.small)
+                array.push(bearBoxes,  b)
+                array.push(bearLabels, lbl)
+
+htfPlotOB(showOB_M5,  domChange_M5,  dom_M5,  obWick_M5,  htfO_M5,  htfH_M5,  htfL_M5,  htfC_M5,  lSHB_M5,  lSLB_M5,  "M5",  htfBullBoxes_M5,  htfBearBoxes_M5,  htfBullLabels_M5,  htfBearLabels_M5)
+htfPlotOB(showOB_M15, domChange_M15, dom_M15, obWick_M15, htfO_M15, htfH_M15, htfL_M15, htfC_M15, lSHB_M15, lSLB_M15, "M15", htfBullBoxes_M15, htfBearBoxes_M15, htfBullLabels_M15, htfBearLabels_M15)
+htfPlotOB(showOB_M30, domChange_M30, dom_M30, obWick_M30, htfO_M30, htfH_M30, htfL_M30, htfC_M30, lSHB_M30, lSLB_M30, "M30", htfBullBoxes_M30, htfBearBoxes_M30, htfBullLabels_M30, htfBearLabels_M30)
+htfPlotOB(showOB_H1,  domChange_H1,  dom_H1,  obWick_H1,  htfO_H1,  htfH_H1,  htfL_H1,  htfC_H1,  lSHB_H1,  lSLB_H1,  "H1",  htfBullBoxes_H1,  htfBearBoxes_H1,  htfBullLabels_H1,  htfBearLabels_H1)
+htfPlotOB(showOB_H4,  domChange_H4,  dom_H4,  obWick_H4,  htfO_H4,  htfH_H4,  htfL_H4,  htfC_H4,  lSHB_H4,  lSLB_H4,  "H4",  htfBullBoxes_H4,  htfBearBoxes_H4,  htfBullLabels_H4,  htfBearLabels_H4)
+htfPlotOB(showOB_D1,  domChange_D1,  dom_D1,  obWick_D1,  htfO_D1,  htfH_D1,  htfL_D1,  htfC_D1,  lSHB_D1,  lSLB_D1,  "D1",  htfBullBoxes_D1,  htfBearBoxes_D1,  htfBullLabels_D1,  htfBearLabels_D1)
+
+// ─── HTF OB INVALIDATION ──────────────────────────────────────────────────────
+htfInvalidate(box[] bullBoxes, box[] bearBoxes, label[] bullLabels, label[] bearLabels) =>
+    if array.size(bullBoxes) > 0
+        for i = array.size(bullBoxes) - 1 to 0
+            b      = array.get(bullBoxes, i)
+            bLeft  = box.get_left(b)
+            bRight = bar_index + 500
+            bBot   = box.get_bottom(b)
+            midX   = int(bLeft + (bRight - bLeft) / 2)
+            lbl    = array.get(bullLabels, i)
+            label.set_x(lbl, midX)
+            if math.min(open, close) < bBot
+                box.set_right(b, bar_index)
+                label.set_x(lbl, int(box.get_left(b) + (bar_index - box.get_left(b)) / 2))
+                array.remove(bullBoxes,  i)
+                array.remove(bullLabels, i)
+                box.set_right(b, bar_index)
+            else
+                box.set_right(b, bRight)
+    if array.size(bearBoxes) > 0
+        for i = array.size(bearBoxes) - 1 to 0
+            b      = array.get(bearBoxes, i)
+            bLeft  = box.get_left(b)
+            bRight = bar_index + 500
+            bTop   = box.get_top(b)
+            midX   = int(bLeft + (bRight - bLeft) / 2)
+            lbl    = array.get(bearLabels, i)
+            label.set_x(lbl, midX)
+            if math.max(open, close) > bTop
+                box.set_right(b, bar_index)
+                label.set_x(lbl, int(box.get_left(b) + (bar_index - box.get_left(b)) / 2))
+                array.remove(bearBoxes,  i)
+                array.remove(bearLabels, i)
+                box.set_right(b, bar_index)
+            else
+                box.set_right(b, bRight)
+
+htfInvalidate(htfBullBoxes_M5,  htfBearBoxes_M5,  htfBullLabels_M5,  htfBearLabels_M5)
+htfInvalidate(htfBullBoxes_M15, htfBearBoxes_M15, htfBullLabels_M15, htfBearLabels_M15)
+htfInvalidate(htfBullBoxes_M30, htfBearBoxes_M30, htfBullLabels_M30, htfBearLabels_M30)
+htfInvalidate(htfBullBoxes_H1,  htfBearBoxes_H1,  htfBullLabels_H1,  htfBearLabels_H1)
+htfInvalidate(htfBullBoxes_H4,  htfBearBoxes_H4,  htfBullLabels_H4,  htfBearLabels_H4)
+htfInvalidate(htfBullBoxes_D1,  htfBearBoxes_D1,  htfBullLabels_D1,  htfBearLabels_D1)
+
+// ─── RR TRADE TYPE ────────────────────────────────────────────────────────────
+type RRTrade
+    box    slBox
+    box    tpBox
+    label  tpLabel
+    label  slLabel
+    float  slLevel
+    float  tpLevel
+    float  entryPrice
+    float  originalSL
+    bool   isBull
+    bool   isOB
+    bool   beTriggered
+    string session
+
+var array<RRTrade> activeOBTrades = array.new<RRTrade>()
+var array<RRTrade> activeSWTrades = array.new<RRTrade>()
+
+// ─── WIN RATE TRACKING (global) ───────────────────────────────────────────────
+var int   obTrades   = 0
+var int   obWins     = 0
+var float obWinPips  = 0.0
+var float obLossPips = 0.0
+var int   swTrades   = 0
+var int   swWins     = 0
+var float swWinPips  = 0.0
+var float swLossPips = 0.0
+
+// ─── WIN RATE TRACKING (per sessione) ─────────────────────────────────────────
+var int   ob_asia_t  = 0
+var int   ob_asia_w  = 0
+var float ob_asia_wp = 0.0
+var float ob_asia_lp = 0.0
+var int   sw_asia_t  = 0
+var int   sw_asia_w  = 0
+var float sw_asia_wp = 0.0
+var float sw_asia_lp = 0.0
+var int   ob_lon_t   = 0
+var int   ob_lon_w   = 0
+var float ob_lon_wp  = 0.0
+var float ob_lon_lp  = 0.0
+var int   sw_lon_t   = 0
+var int   sw_lon_w   = 0
+var float sw_lon_wp  = 0.0
+var float sw_lon_lp  = 0.0
+var int   ob_ny_t    = 0
+var int   ob_ny_w    = 0
+var float ob_ny_wp   = 0.0
+var float ob_ny_lp   = 0.0
+var int   sw_ny_t    = 0
+var int   sw_ny_w    = 0
+var float sw_ny_wp   = 0.0
+var float sw_ny_lp   = 0.0
+var int   ob_off_t   = 0
+var int   ob_off_w   = 0
+var float ob_off_wp  = 0.0
+var float ob_off_lp  = 0.0
+var int   sw_off_t   = 0
+var int   sw_off_w   = 0
+var float sw_off_wp  = 0.0
+var float sw_off_lp  = 0.0
+
+// ─── FORCE CLOSE TRADES OUTSIDE SESSION ──────────────────────────────────────
+if not sessionAllowed
+    if array.size(activeOBTrades) > 0
+        for i = array.size(activeOBTrades) - 1 to 0
+            t = array.get(activeOBTrades, i)
+            box.delete(t.slBox)
+            box.delete(t.tpBox)
+            label.delete(t.tpLabel)
+            label.delete(t.slLabel)
+            array.remove(activeOBTrades, i)
+    if array.size(activeSWTrades) > 0
+        for i = array.size(activeSWTrades) - 1 to 0
+            t = array.get(activeSWTrades, i)
+            box.delete(t.slBox)
+            box.delete(t.tpBox)
+            label.delete(t.tpLabel)
+            label.delete(t.slLabel)
+            array.remove(activeSWTrades, i)
+
+// ─── UPDATE OB TRADES ─────────────────────────────────────────────────────────
+if array.size(activeOBTrades) > 0
+    for i = array.size(activeOBTrades) - 1 to 0
+        t = array.get(activeOBTrades, i)
+
+        if enableBE_OB and not t.beTriggered
+            slDist  = math.abs(t.entryPrice - t.originalSL)
+            beLevel = t.isBull ? t.entryPrice + slDist * beRatio_OB : t.entryPrice - slDist * beRatio_OB
+            if (t.isBull ? high >= beLevel : low <= beLevel)
+                t.slLevel     := t.entryPrice
+                t.beTriggered := true
+                box.set_top   (t.slBox, t.isBull ? t.entryPrice : t.originalSL)
+                box.set_bottom(t.slBox, t.isBull ? t.originalSL : t.entryPrice)
+                box.set_bgcolor(t.slBox, color.new(#888888, 85))
+                label.set_y(t.slLabel, t.slLevel)
+                label.set_text(t.slLabel, showPipLabels ? "BE 🔒" : "")
+
+        slHit = t.isBull ? low  <= t.slLevel : high >= t.slLevel
+        tpHit = t.isBull ? high >= t.tpLevel : low  <= t.tpLevel
+        if slHit or tpHit
+            box.set_right(t.slBox, bar_index)
+            box.set_right(t.tpBox, bar_index)
+            pips = math.abs(tpHit ? t.tpLevel - t.entryPrice : t.originalSL - t.entryPrice) / pipSize
+            if tpHit
+                label.set_x(t.tpLabel, bar_index)
+                label.set_text(t.tpLabel, showPipLabels ? "+" + str.tostring(pips, "#.#") + " pips" : "")
+                label.set_color(t.tpLabel, showPipLabels ? color.new(#00e676, 50) : color.new(#00e676, 100))
+                box.set_bgcolor(t.slBox, color.new(#888888, 85))
+                box.set_border_color(t.slBox, color.new(#888888, 100))
+                label.delete(t.slLabel)
+                obWins    += 1
+                obWinPips += pips
+                if t.session == "Asia"
+                    ob_asia_t  += 1
+                    ob_asia_w  += 1
+                    ob_asia_wp += pips
+                else if t.session == "London" or t.session == "LN+NY"
+                    ob_lon_t  += 1
+                    ob_lon_w  += 1
+                    ob_lon_wp += pips
+                else if t.session == "NY"
+                    ob_ny_t  += 1
+                    ob_ny_w  += 1
+                    ob_ny_wp += pips
+                else
+                    ob_off_t  += 1
+                    ob_off_w  += 1
+                    ob_off_wp += pips
+                if enableTPSLAlert
+                    alert("OB Touch TP HIT ✅ +" + str.tostring(pips, "#.#") + " pips at " + str.tostring(close), alert.freq_once_per_bar)
+            else
+                // ── SL HIT: solo il box TP diventa grigio, SL rimane rosso ──
+                box.set_bgcolor(t.tpBox, color.new(#888888, 85))
+                box.set_border_color(t.tpBox, color.new(#888888, 100))
+                label.set_x(t.slLabel, bar_index)
+                label.set_text(t.slLabel, showPipLabels ? "-" + str.tostring(pips, "#.#") + " pips" : "")
+                label.set_color(t.slLabel, showPipLabels ? color.new(#ff1744, 50) : color.new(#ff1744, 100))
+                label.delete(t.tpLabel)
+                pipsDelta = t.beTriggered ? 0.0 : pips
+                obLossPips += pipsDelta
+                label.set_text(t.slLabel, showPipLabels ? (t.beTriggered ? "0 pips (BE)" : "-" + str.tostring(pips, "#.#") + " pips") : "")
+                if t.session == "Asia"
+                    ob_asia_t  += 1
+                    ob_asia_lp += pipsDelta
+                else if t.session == "London" or t.session == "LN+NY"
+                    ob_lon_t  += 1
+                    ob_lon_lp += pipsDelta
+                else if t.session == "NY"
+                    ob_ny_t  += 1
+                    ob_ny_lp += pipsDelta
+                else
+                    ob_off_t  += 1
+                    ob_off_lp += pipsDelta
+                if enableTPSLAlert
+                    alert("OB Touch SL HIT ❌ -" + str.tostring(pips, "#.#") + " pips at " + str.tostring(close), alert.freq_once_per_bar)
+            obTrades += 1
+            array.remove(activeOBTrades, i)
+        else
+            box.set_right(t.slBox, bar_index + 1)
+            box.set_right(t.tpBox, bar_index + 1)
+
+// ─── UPDATE SWEEP TRADES ──────────────────────────────────────────────────────
+if array.size(activeSWTrades) > 0
+    for i = array.size(activeSWTrades) - 1 to 0
+        t = array.get(activeSWTrades, i)
+
+        if enableBE_SW and not t.beTriggered
+            slDist  = math.abs(t.entryPrice - t.originalSL)
+            beLevel = t.isBull ? t.entryPrice + slDist * beRatio_SW : t.entryPrice - slDist * beRatio_SW
+            if (t.isBull ? high >= beLevel : low <= beLevel)
+                t.slLevel     := t.entryPrice
+                t.beTriggered := true
+                box.set_top   (t.slBox, t.isBull ? t.entryPrice : t.originalSL)
+                box.set_bottom(t.slBox, t.isBull ? t.originalSL : t.entryPrice)
+                box.set_bgcolor(t.slBox, color.new(#888888, 85))
+                label.set_y(t.slLabel, t.slLevel)
+                label.set_text(t.slLabel, showPipLabels ? "BE 🔒" : "")
+
+        slHit = t.isBull ? low  <= t.slLevel : high >= t.slLevel
+        tpHit = t.isBull ? high >= t.tpLevel : low  <= t.tpLevel
+        if slHit or tpHit
+            box.set_right(t.slBox, bar_index)
+            box.set_right(t.tpBox, bar_index)
+            pips = math.abs(tpHit ? t.tpLevel - t.entryPrice : t.originalSL - t.entryPrice) / pipSize
+            if tpHit
+                label.set_x(t.tpLabel, bar_index)
+                label.set_text(t.tpLabel, showPipLabels ? "+" + str.tostring(pips, "#.#") + " pips" : "")
+                label.set_color(t.tpLabel, showPipLabels ? color.new(#00e676, 50) : color.new(#00e676, 100))
+                box.set_bgcolor(t.slBox, color.new(#888888, 85))
+                box.set_border_color(t.slBox, color.new(#888888, 100))
+                label.delete(t.slLabel)
+                swWins    += 1
+                swWinPips += pips
+                if t.session == "Asia"
+                    sw_asia_t  += 1
+                    sw_asia_w  += 1
+                    sw_asia_wp += pips
+                else if t.session == "London" or t.session == "LN+NY"
+                    sw_lon_t  += 1
+                    sw_lon_w  += 1
+                    sw_lon_wp += pips
+                else if t.session == "NY"
+                    sw_ny_t  += 1
+                    sw_ny_w  += 1
+                    sw_ny_wp += pips
+                else
+                    sw_off_t  += 1
+                    sw_off_w  += 1
+                    sw_off_wp += pips
+                if enableTPSLAlert
+                    alert("Sweep TP HIT ✅ +" + str.tostring(pips, "#.#") + " pips at " + str.tostring(close), alert.freq_once_per_bar)
+            else
+                // ── SL HIT: solo il box TP diventa grigio, SL rimane rosso ──
+                box.set_bgcolor(t.tpBox, color.new(#888888, 85))
+                box.set_border_color(t.tpBox, color.new(#888888, 100))
+                label.set_x(t.slLabel, bar_index)
+                label.set_text(t.slLabel, showPipLabels ? "-" + str.tostring(pips, "#.#") + " pips" : "")
+                label.set_color(t.slLabel, showPipLabels ? color.new(#ff1744, 50) : color.new(#ff1744, 100))
+                label.delete(t.tpLabel)
+                pipsDelta = t.beTriggered ? 0.0 : pips
+                swLossPips += pipsDelta
+                label.set_text(t.slLabel, showPipLabels ? (t.beTriggered ? "0 pips (BE)" : "-" + str.tostring(pips, "#.#") + " pips") : "")
+                if t.session == "Asia"
+                    sw_asia_t  += 1
+                    sw_asia_lp += pipsDelta
+                else if t.session == "London" or t.session == "LN+NY"
+                    sw_lon_t  += 1
+                    sw_lon_lp += pipsDelta
+                else if t.session == "NY"
+                    sw_ny_t  += 1
+                    sw_ny_lp += pipsDelta
+                else
+                    sw_off_t  += 1
+                    sw_off_lp += pipsDelta
+                if enableTPSLAlert
+                    alert("Sweep SL HIT ❌ -" + str.tostring(pips, "#.#") + " pips at " + str.tostring(close), alert.freq_once_per_bar)
+            swTrades += 1
+            array.remove(activeSWTrades, i)
+        else
+            box.set_right(t.slBox, bar_index + 1)
+            box.set_right(t.tpBox, bar_index + 1)
+
+// ─── OPEN TRADE FUNCTION ──────────────────────────────────────────────────────
+openTrade(array<RRTrade> trades, bool isBull, float slDist, float sl, float tp, float entry, string sess, bool isOBsignal) =>
+    slB_bull = box.new(bar_index, entry, bar_index + 1, sl,    bgcolor=color.new(#ff1744, 85), border_color=color.new(#ff1744, 100), border_width=0)
+    slB_bear = box.new(bar_index, sl,    bar_index + 1, entry, bgcolor=color.new(#ff1744, 85), border_color=color.new(#ff1744, 100), border_width=0)
+    tpB_bull = box.new(bar_index, tp,    bar_index + 1, entry, bgcolor=color.new(#00e676, 85), border_color=color.new(#00e676, 100), border_width=0)
+    tpB_bear = box.new(bar_index, entry, bar_index + 1, tp,    bgcolor=color.new(#00e676, 85), border_color=color.new(#00e676, 100), border_width=0)
+    slB  = isBull ? slB_bull : slB_bear
+    tpB  = isBull ? tpB_bull : tpB_bear
+    box.delete(isBull ? slB_bear : slB_bull)
+    box.delete(isBull ? tpB_bear : tpB_bull)
+    tpPips = math.abs(tp - entry) / pipSize
+    slPips = slDist / pipSize
+    tpTxt  = showPipLabels ? "+" + str.tostring(tpPips, "#.#") + " pips" : ""
+    slTxt  = showPipLabels ? "-" + str.tostring(slPips, "#.#") + " pips" : ""
+    tpLbl_bull = label.new(bar_index + 1, tp, tpTxt, style=label.style_label_left, textcolor=color.white, color=showPipLabels ? color.new(#00e676, 50) : color.new(#00e676, 100), size=size.small)
+    tpLbl_bear = label.new(bar_index + 1, tp, tpTxt, style=label.style_label_left, textcolor=color.white, color=showPipLabels ? color.new(#00e676, 50) : color.new(#00e676, 100), size=size.small)
+    slLbl_bull = label.new(bar_index + 1, sl, slTxt, style=label.style_label_left, textcolor=color.white, color=showPipLabels ? color.new(#ff1744, 50) : color.new(#ff1744, 100), size=size.small)
+    slLbl_bear = label.new(bar_index + 1, sl, slTxt, style=label.style_label_left, textcolor=color.white, color=showPipLabels ? color.new(#ff1744, 50) : color.new(#ff1744, 100), size=size.small)
+    tpLbl = isBull ? tpLbl_bull : tpLbl_bear
+    slLbl = isBull ? slLbl_bull : slLbl_bear
+    label.delete(isBull ? tpLbl_bear : tpLbl_bull)
+    label.delete(isBull ? slLbl_bear : slLbl_bull)
+    array.push(trades, RRTrade.new(slB, tpB, tpLbl, slLbl, sl, tp, entry, sl, isBull, false, false, sess))
+    if enableEntryAlert
+        sigName = isOBsignal ? "OB Touch" : "Sweep"
+        dir     = isBull ? "🟢 LONG" : "🔴 SHORT"
+        alert(dir + " ENTRY — " + sigName + " | Entry: " + str.tostring(entry) +
+              " | SL: " + str.tostring(sl) + " | TP: " + str.tostring(tp) +
+              " | Session: " + sess, alert.freq_once_per_bar_close)
+
+// ─── OPEN TRADES ON SIGNAL ────────────────────────────────────────────────────
+noActiveOBTrade = overlapOBTrades or array.size(activeOBTrades) == 0
+noActiveSWTrade = overlapSWTrades or array.size(activeSWTrades) == 0
+
+if showRR and bullOBTouchFiltered and noActiveOBTrade and sessionAllowed
+    entry  = close
+    slDist = (entry - bullTouchSpikeLow) + rrSlPips * pipSize
+    openTrade(activeOBTrades, true,  slDist, entry - slDist, entry + slDist * rrRatio, entry, curSession, true)
+if showRR and bearOBTouchFiltered and noActiveOBTrade and sessionAllowed
+    entry  = close
+    slDist = (bearTouchSpikeHigh - entry) + rrSlPips * pipSize
+    openTrade(activeOBTrades, false, slDist, entry + slDist, entry - slDist * rrRatio, entry, curSession, true)
+if showSweepRR and bullSweep and noActiveSWTrade and sessionAllowed
+    entry  = close
+    slDist = (entry - low) + sweepRRSlPips * pipSize
+    openTrade(activeSWTrades, true,  slDist, entry - slDist, entry + slDist * sweepRRRatio, entry, curSession, false)
+if showSweepRR and bearSweep and noActiveSWTrade and sessionAllowed
+    entry  = close
+    slDist = (high - entry) + sweepRRSlPips * pipSize
+    openTrade(activeSWTrades, false, slDist, entry + slDist, entry - slDist * sweepRRRatio, entry, curSession, false)
+
+// ─── HELPER: formatta cella WR ────────────────────────────────────────────────
+wrStr(int wins, int tot) =>
+    tot > 0 ? str.tostring(math.round((wins / tot) * 100, 1), "#.#") + "%" : "—"
+
+wrColor(int wins, int tot) =>
+    tot == 0 ? color.rgb(150, 150, 150) : (wins / tot) >= 0.5 ? color.rgb(0, 230, 118) : color.rgb(255, 70, 70)
+
+diffStr(float wp, float lp) =>
+    d = wp - lp
+    d >= 0 ? "+" + str.tostring(d, "#.#") : str.tostring(d, "#.#")
+
+diffColor(float wp, float lp) =>
+    (wp - lp) >= 0 ? color.rgb(0, 230, 118) : color.rgb(255, 70, 70)
+
+// ─── BEST SESSION LOGIC ───────────────────────────────────────────────────────
+bestObSession() =>
+    scores = bestByPips ?
+      array.from(
+        ob_asia_t > 0 ? ob_asia_wp - ob_asia_lp : -999999.0,
+        ob_lon_t  > 0 ? ob_lon_wp  - ob_lon_lp  : -999999.0,
+        ob_ny_t   > 0 ? ob_ny_wp   - ob_ny_lp   : -999999.0,
+        ob_off_t  > 0 ? ob_off_wp  - ob_off_lp  : -999999.0) :
+      array.from(
+        ob_asia_t > 0 ? ob_asia_w / ob_asia_t : -1.0,
+        ob_lon_t  > 0 ? ob_lon_w  / ob_lon_t  : -1.0,
+        ob_ny_t   > 0 ? ob_ny_w   / ob_ny_t   : -1.0,
+        ob_off_t  > 0 ? ob_off_w  / ob_off_t  : -1.0)
+    best = array.indexof(scores, array.max(scores))
+    best == 0 ? "Asia" : best == 1 ? "London" : best == 2 ? "NY" : "Off-Session"
+
+bestSwSession() =>
+    scores = bestByPips ?
+      array.from(
+        sw_asia_t > 0 ? sw_asia_wp - sw_asia_lp : -999999.0,
+        sw_lon_t  > 0 ? sw_lon_wp  - sw_lon_lp  : -999999.0,
+        sw_ny_t   > 0 ? sw_ny_wp   - sw_ny_lp   : -999999.0,
+        sw_off_t  > 0 ? sw_off_wp  - sw_off_lp  : -999999.0) :
+      array.from(
+        sw_asia_t > 0 ? sw_asia_w / sw_asia_t : -1.0,
+        sw_lon_t  > 0 ? sw_lon_w  / sw_lon_t  : -1.0,
+        sw_ny_t   > 0 ? sw_ny_w   / sw_ny_t   : -1.0,
+        sw_off_t  > 0 ? sw_off_w  / sw_off_t  : -1.0)
+    best = array.indexof(scores, array.max(scores))
+    best == 0 ? "Asia" : best == 1 ? "London" : best == 2 ? "NY" : "Off-Session"
+
+// ─── WIN RATE TABLE ───────────────────────────────────────────────────────────
+nRows = showSessionStats ? 15 : 7
+var table statsTable = table.new(position.bottom_right, 7, nRows,
+  border_width=1, border_color=color.rgb(255,255,255,70),
+  frame_width=1,  frame_color=color.rgb(255,255,255,40))
+
+if barstate.islast and showTable
+    obWR   = obTrades > 0 ? (obWins / obTrades) * 100 : 0.0
+    swWR   = swTrades > 0 ? (swWins / swTrades) * 100 : 0.0
+    obDiff = obWinPips - obLossPips
+    swDiff = swWinPips - swLossPips
+    bOB    = bestObSession()
+    bSW    = bestSwSession()
+
+    hdr  = #121212
+    dark = #1a1a1a
+    mid  = #222222
+    gold = color.rgb(255, 215, 0)
+    wht  = color.white
+    grey = color.rgb(180, 180, 180)
+
+    titleTxt = showSessionStats ? "OB Touch & Liquidity Sweep — Sessions Stats 📊" : "OB Touch / Liquidity Sweep Stats 📊"
+    table.cell(statsTable, 0, 0, titleTxt, text_color=wht, text_size=size.normal, bgcolor=hdr)
+    table.merge_cells(statsTable, 0, 0, 6, 0)
+
+    paramTxt = "SwingLen: " + str.tostring(swingLen) + "  |  EMA: " + str.tostring(emaLen) +
+               "  |  Sweep LB: " + str.tostring(sweepLookback) +
+               "  |  OB RR: " + str.tostring(rrRatio, "#.#") + "  |  Sweep RR: " + str.tostring(sweepRRRatio, "#.#")
+    table.cell(statsTable, 0, 1, "⚙️  " + paramTxt, text_color=color.rgb(180,220,255), text_size=size.small, bgcolor=#1a2a3a)
+    table.merge_cells(statsTable, 0, 1, 6, 1)
+
+    beOBtxt     = enableBE_OB ? "BE ON @" + str.tostring(beRatio_OB, "#.#") + "R" : "BE OFF"
+    beSWtxt     = enableBE_SW ? "BE ON @" + str.tostring(beRatio_SW, "#.#") + "R" : "BE OFF"
+    ovlOBtxt    = overlapOBTrades ? "Overlap ON" : "Overlap OFF"
+    ovlSWtxt    = overlapSWTrades ? "Overlap ON" : "Overlap OFF"
+    beOBcolor   = enableBE_OB    ? color.rgb(0, 230, 118) : color.rgb(255, 70, 70)
+    beSWcolor   = enableBE_SW    ? color.rgb(0, 230, 118) : color.rgb(255, 70, 70)
+    ovlOBcolor  = overlapOBTrades ? color.rgb(255, 200, 0) : color.rgb(180, 180, 180)
+    ovlSWcolor  = overlapSWTrades ? color.rgb(255, 200, 0) : color.rgb(180, 180, 180)
+    modeBg      = #1a2a3a
+
+    table.cell(statsTable, 0, 2, "Mode",       text_color=color.rgb(180,220,255), text_size=size.small, bgcolor=modeBg)
+    table.cell(statsTable, 1, 2, "🔼 OB",      text_color=color.new(#00bcd4, 0),  text_size=size.small, bgcolor=modeBg)
+    table.cell(statsTable, 2, 2, beOBtxt,      text_color=beOBcolor,              text_size=size.small, bgcolor=modeBg)
+    table.cell(statsTable, 3, 2, ovlOBtxt,     text_color=ovlOBcolor,             text_size=size.small, bgcolor=modeBg)
+    table.cell(statsTable, 4, 2, "❌ Sweep",   text_color=color.new(#ff9800, 0),  text_size=size.small, bgcolor=modeBg)
+    table.cell(statsTable, 5, 2, beSWtxt,      text_color=beSWcolor,              text_size=size.small, bgcolor=modeBg)
+    table.cell(statsTable, 6, 2, ovlSWtxt,     text_color=ovlSWcolor,             text_size=size.small, bgcolor=modeBg)
+
+    colBg = #2a2a2a
+    table.cell(statsTable, 0, 3, "Session",   text_color=grey, text_size=size.small, bgcolor=colBg)
+    table.cell(statsTable, 1, 3, "Signal",    text_color=grey, text_size=size.small, bgcolor=colBg)
+    table.cell(statsTable, 2, 3, "Trades",    text_color=grey, text_size=size.small, bgcolor=colBg)
+    table.cell(statsTable, 3, 3, "Win Rate",  text_color=grey, text_size=size.small, bgcolor=colBg)
+    table.cell(statsTable, 4, 3, "Win Pips",  text_color=grey, text_size=size.small, bgcolor=colBg)
+    table.cell(statsTable, 5, 3, "Loss Pips", text_color=grey, text_size=size.small, bgcolor=colBg)
+    table.cell(statsTable, 6, 3, "Diff",      text_color=grey, text_size=size.small, bgcolor=colBg)
+
+    sessions   = array.from("Asia",    "Asia",    "London",  "London",  "NY",     "NY",     "Off-Session", "Off-Session")
+    signals    = array.from("🔼 OB",  "❌ Sw",   "🔼 OB",  "❌ Sw",   "🔼 OB", "❌ Sw",  "🔼 OB",       "❌ Sw")
+    trades_arr = array.from(ob_asia_t, sw_asia_t, ob_lon_t,  sw_lon_t,  ob_ny_t,  sw_ny_t,  ob_off_t,      sw_off_t)
+    wins_arr   = array.from(ob_asia_w, sw_asia_w, ob_lon_w,  sw_lon_w,  ob_ny_w,  sw_ny_w,  ob_off_w,      sw_off_w)
+    wp_arr     = array.from(ob_asia_wp,sw_asia_wp,ob_lon_wp, sw_lon_wp, ob_ny_wp, sw_ny_wp, ob_off_wp,     sw_off_wp)
+    lp_arr     = array.from(ob_asia_lp,sw_asia_lp,ob_lon_lp, sw_lon_lp, ob_ny_lp, sw_ny_lp, ob_off_lp,    sw_off_lp)
+    isBestOB   = array.from(true,      false,      true,      false,     true,     false,    true,          false)
+
+    if showSessionStats
+        for r = 0 to 7
+            sess    = array.get(sessions,   r)
+            sig     = array.get(signals,    r)
+            tot     = array.get(trades_arr, r)
+            wins    = array.get(wins_arr,   r)
+            wp      = array.get(wp_arr,     r)
+            lp      = array.get(lp_arr,     r)
+            isOBrow = array.get(isBestOB,   r)
+            bestS   = isOBrow ? bOB : bSW
+            highlightActive = isOBrow ? showRR : showSweepRR
+            rowBg   = highlightActive and sess == bestS ? #2a2200 : #1a1a1a
+            txtC    = highlightActive and sess == bestS ? color.rgb(255, 215, 0) : color.rgb(200, 200, 200)
+
+            table.cell(statsTable, 0, r + 4, sess,              text_color=txtC,               text_size=size.small, bgcolor=rowBg)
+            table.cell(statsTable, 1, r + 4, sig,               text_color=txtC,               text_size=size.small, bgcolor=rowBg)
+            table.cell(statsTable, 2, r + 4, str.tostring(tot), text_color=wht,                text_size=size.small, bgcolor=rowBg)
+            table.cell(statsTable, 3, r + 4, wrStr(wins, tot),  text_color=wrColor(wins, tot), text_size=size.small, bgcolor=rowBg)
+            table.cell(statsTable, 4, r + 4, tot > 0 ? str.tostring(wp, "#.#") : "—", text_color=color.rgb(0,230,118),  text_size=size.small, bgcolor=rowBg)
+            table.cell(statsTable, 5, r + 4, tot > 0 ? str.tostring(lp, "#.#") : "—", text_color=color.rgb(255,70,70),  text_size=size.small, bgcolor=rowBg)
+            table.cell(statsTable, 6, r + 4, tot > 0 ? diffStr(wp, lp) : "—",         text_color=tot > 0 ? diffColor(wp, lp) : grey, text_size=size.small, bgcolor=rowBg)
+
+        bestTxt = (showRR ? "⭐ Best OB Session: " + bOB : "") +
+                  (showRR and showSweepRR ? "   |   " : "") +
+                  (showSweepRR ? "⭐ Best Sweep Session: " + bSW : "")
+        table.cell(statsTable, 0, 12, bestTxt, text_color=gold, text_size=size.small, bgcolor=#1a1a00)
+        table.merge_cells(statsTable, 0, 12, 6, 12)
+
+    totRow = showSessionStats ? 13 : 4
+
+    table.cell(statsTable, 0, totRow,     "TOTAL",  text_color=gold, text_size=size.small, bgcolor=dark)
+    table.cell(statsTable, 1, totRow,     "🔼 OB",  text_color=color.new(#00bcd4, 0), text_size=size.small, bgcolor=dark)
+    table.cell(statsTable, 2, totRow,     str.tostring(obTrades), text_color=wht, text_size=size.small, bgcolor=dark)
+    table.cell(statsTable, 3, totRow,     str.tostring(obWR, "#.##") + "%", text_color=obWR >= 50 ? color.rgb(0,230,118) : color.rgb(255,70,70), text_size=size.small, bgcolor=dark)
+    table.cell(statsTable, 4, totRow,     str.tostring(obWinPips,  "#.#"), text_color=color.rgb(0,230,118),  text_size=size.small, bgcolor=dark)
+    table.cell(statsTable, 5, totRow,     str.tostring(obLossPips, "#.#"), text_color=color.rgb(255,70,70),  text_size=size.small, bgcolor=dark)
+    table.cell(statsTable, 6, totRow,     str.tostring(obDiff, "#.#"), text_color=obDiff >= 0 ? color.rgb(0,230,118) : color.rgb(255,70,70), text_size=size.small, bgcolor=dark)
+
+    table.cell(statsTable, 0, totRow + 1, "TOTAL",    text_color=gold, text_size=size.small, bgcolor=mid)
+    table.cell(statsTable, 1, totRow + 1, "❌ Sweep", text_color=color.new(#ff9800, 0), text_size=size.small, bgcolor=mid)
+    table.cell(statsTable, 2, totRow + 1, str.tostring(swTrades), text_color=wht, text_size=size.small, bgcolor=mid)
+    table.cell(statsTable, 3, totRow + 1, str.tostring(swWR, "#.##") + "%", text_color=swWR >= 50 ? color.rgb(0,230,118) : color.rgb(255,70,70), text_size=size.small, bgcolor=mid)
+    table.cell(statsTable, 4, totRow + 1, str.tostring(swWinPips,  "#.#"), text_color=color.rgb(0,230,118),  text_size=size.small, bgcolor=mid)
+    table.cell(statsTable, 5, totRow + 1, str.tostring(swLossPips, "#.#"), text_color=color.rgb(255,70,70),  text_size=size.small, bgcolor=mid)
+    table.cell(statsTable, 6, totRow + 1, str.tostring(swDiff, "#.#"), text_color=swDiff >= 0 ? color.rgb(0,230,118) : color.rgb(255,70,70), text_size=size.small, bgcolor=mid)
+
+// ─── SESSION BACKGROUNDS ──────────────────────────────────────────────────────
+bgcolor(showAsiaBg   and inAsia    ? asiaBgColor   : na, title="Asia Session Background")
+bgcolor(showLondonBg and inLondon  ? londonBgColor : na, title="London Session Background")
+bgcolor(showNYBg     and inNewYork ? nyBgColor     : na, title="New York Session Background")
+
+// ─── ALERTS ───────────────────────────────────────────────────────────────────
+alertcondition(dominanceChanged and dominance == 1  and enableBullDomAlert  and sessionAllowed, title="Bullish Dominance 📈",  message="📈 BULLISH DOMINANCE — Swing High broken")
+alertcondition(dominanceChanged and dominance == -1 and enableBearDomAlert  and sessionAllowed, title="Bearish Dominance 📉",  message="📉 BEARISH DOMINANCE — Swing Low broken")
+alertcondition(bullSweep        and enableBullSweepAlert                    and sessionAllowed, title="Bullish Sweep 🔵",      message="🔵 BULLISH LIQUIDITY SWEEP — Low swept, price recovered")
+alertcondition(bearSweep        and enableBearSweepAlert                    and sessionAllowed, title="Bearish Sweep 🟠",      message="🟠 BEARISH LIQUIDITY SWEEP — High swept, price rejected")
+alertcondition(bullOBTouchFiltered and enableBullOBAlert                    and sessionAllowed, title="Bullish OB Touch 🔺",   message="🔺 BULLISH ORDER BLOCK TOUCH — Spike into bull OB")
+alertcondition(bearOBTouchFiltered and enableBearOBAlert                    and sessionAllowed, title="Bearish OB Touch 🔻",   message="🔻 BEARISH ORDER BLOCK TOUCH — Spike into bear OB")
+
+if dominanceChanged and dominance == 1  and enableBullDomAlert  and sessionAllowed
+    alert("📈 BULLISH DOMINANCE — Swing High broken at " + str.tostring(close), alert.freq_once_per_bar_close)
+if dominanceChanged and dominance == -1 and enableBearDomAlert  and sessionAllowed
+    alert("📉 BEARISH DOMINANCE — Swing Low broken at "  + str.tostring(close), alert.freq_once_per_bar_close)
+if bullSweep and enableBullSweepAlert and sessionAllowed
+    alert("🔵 BULLISH LIQUIDITY SWEEP at " + str.tostring(close), alert.freq_once_per_bar_close)
+if bearSweep and enableBearSweepAlert and sessionAllowed
+    alert("🟠 BEARISH LIQUIDITY SWEEP at " + str.tostring(close), alert.freq_once_per_bar_close)
+if bullOBTouchFiltered and enableBullOBAlert and sessionAllowed
+    alert("🔺 BULLISH ORDER BLOCK TOUCH at " + str.tostring(close), alert.freq_once_per_bar_close)
+if bearOBTouchFiltered and enableBearOBAlert and sessionAllowed
+    alert("🔻 BEARISH ORDER BLOCK TOUCH at " + str.tostring(close), alert.freq_once_per_bar_close)
