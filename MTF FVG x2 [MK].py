@@ -29,6 +29,9 @@ class FVGBox:
     bottom: float
     label: Optional[str] = None
     label_time: Optional[pd.Timestamp] = None
+    # Bar timestamp on which this FVG was created (always set; independent of
+    # the Pine `show_timeonlabels` UI flag which only controls label text).
+    created_time: Optional[pd.Timestamp] = None
     mitigated: bool = False
     intrusion: bool = False
     entered: bool = False
@@ -151,6 +154,42 @@ def _tf_to_rule(tf: str) -> str:
     if tf == "M":
         return "1M"
     raise ValueError(f"Unsupported timeframe: {tf}")
+
+
+def _resample_ohlc_left(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Resample with left-anchored labels so that ffill to LTF resolves to the
+    HTF bar CONTAINING the LTF timestamp. This mirrors Pine's
+    `request.security(..., lookahead_on)` semantics where the current HTF bar
+    is visible during the bars that compose it.
+    """
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last"}
+    if "volume" in df.columns:
+        agg["volume"] = "sum"
+    # "MS" (month-start) is inherently left-labeled; "1D" default already is.
+    if rule in {"1D", "MS"}:
+        return df.resample(rule).agg(agg).dropna()
+    return df.resample(rule, label="left", closed="left").agg(agg).dropna()
+
+
+def _htf_shifted(
+    df: pd.DataFrame, tf: str, shift_n: int, column: str
+) -> pd.Series:
+    """Return Pine-equivalent `<column>[shift_n]` as evaluated inside
+    `request.security(symbol, tf, <column>[shift_n], lookahead_on)`.
+
+    Shifting is performed on the RAW HTF series so `shift_n` advances in units
+    of HTF bars (not LTF bars). The resulting HTF-shifted series is then
+    re-indexed to the LTF using forward-fill. The helper uses a left-labeled
+    resample (`_resample_ohlc_left`) so that on every LTF bar within an HTF
+    period the aligned value matches Pine's `lookahead_on` behaviour.
+    """
+    rule = _tf_to_rule(tf)
+    # Map monthly to month-start for consistent left-labelled bars.
+    if rule == "1M":
+        rule = "MS"
+    htf = _resample_ohlc_left(df, rule)
+    shifted = htf[column] if shift_n == 0 else htf[column].shift(shift_n)
+    return shifted.reindex(df.index, method="ffill")
 
 
 def _timeframe_label(tf: str) -> str:
@@ -310,12 +349,14 @@ def compute_mtf_fvg_x2(
 
     tf_data: Dict[str, Dict[str, pd.Series]] = {}
     for tf in enabled_tfs:
-        aligned = _align_htf(df, tf)
+        # Pine passes `high[1], high[3], low[1], low[3], close[2], open[2]` into
+        # request.security with `lookahead_on` — these are HTF-N-bars-back values.
+        # Shift the RAW HTF series before aligning to LTF so N advances in HTF units.
         tf_data[tf] = {
-            "high": aligned["high"].shift(1),
-            "high2": aligned["high"].shift(3),
-            "low": aligned["low"].shift(1),
-            "low2": aligned["low"].shift(3),
+            "high":  _htf_shifted(df, tf, 1, "high"),   # Pine high[1]
+            "high2": _htf_shifted(df, tf, 3, "high"),   # Pine high[3]
+            "low":   _htf_shifted(df, tf, 1, "low"),    # Pine low[1]
+            "low2":  _htf_shifted(df, tf, 3, "low"),    # Pine low[3]
         }
 
     bull_boxes: Dict[str, List[FVGBox]] = {tf: [] for tf in enabled_tfs}
@@ -372,6 +413,7 @@ def compute_mtf_fvg_x2(
                             bottom=h2,
                             label=_timeframe_label(tf) if mtf_settings.show_labels else None,
                             label_time=ts if mtf_settings.show_time_on_labels else None,
+                            created_time=ts,
                         )
                     )
                     alerts.append(f"Bull FVG Creation {tf}")
@@ -393,6 +435,7 @@ def compute_mtf_fvg_x2(
                             bottom=h,
                             label=_timeframe_label(tf) if mtf_settings.show_labels else None,
                             label_time=ts if mtf_settings.show_time_on_labels else None,
+                            created_time=ts,
                         )
                     )
                     alerts.append(f"Bear FVG Creation {tf}")
@@ -489,7 +532,8 @@ def compute_mtf_fvg_x2(
     htf_anchor = df.index.floor(htf_rule)
     new_htf_bar = htf_anchor.to_series().diff().ne(pd.Timedelta(0)).fillna(False)
 
-    # Closer to request.security(ta.atr()) by computing ATR on raw HTF then ffill to chart bars.
+    # Pine's `ta.atr(length)` uses Wilder's RMA (not SMA). Mirror that here by
+    # seeding with the first `length` TR average then applying the RMA recurrence.
     prev_close_htf = htf_raw["close"].shift(1)
     tr_raw = pd.concat(
         [
@@ -499,11 +543,19 @@ def compute_mtf_fvg_x2(
         ],
         axis=1,
     ).max(axis=1)
-    atr_raw = tr_raw.rolling(overlay_settings.atrlength).mean()
+    atr_len = max(1, int(overlay_settings.atrlength))
+    atr_raw = tr_raw.ewm(alpha=1.0 / atr_len, adjust=False, min_periods=atr_len).mean()
     atr = atr_raw.reindex(df.index, method="ffill")
 
-    now_tz = df.index.tz if hasattr(df.index, "tz") else None
-    last_bar_date = pd.Timestamp.now(tz=now_tz)
+    # Pine uses `timenow` (realtime clock) to bound the lookback window. For
+    # historical/post-hoc runs the `timenow` anchor effectively becomes the
+    # last bar in `df`, so use `df.index[-1]` as the reference — this keeps the
+    # overlay boxes stable across reruns of the same dataset.
+    if len(df) > 0:
+        last_bar_date = df.index[-1]
+    else:
+        now_tz = df.index.tz if hasattr(df.index, "tz") else None
+        last_bar_date = pd.Timestamp.now(tz=now_tz)
     days_left = np.abs(np.floor((last_bar_date - df.index).total_seconds() / (24 * 60 * 60)))
     in_range = days_left < overlay_settings.days_back if overlay_settings.lookback else np.ones(len(df), dtype=bool)
 

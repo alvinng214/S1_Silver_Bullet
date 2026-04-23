@@ -331,7 +331,10 @@ def _build_trend_output(
 ) -> TrendOutputs:
     trend_bool = series.trend.astype(bool)
     bos_bool = series.bos.astype(bool)
-    trend_change = trend_bool.ne(trend_bool.shift(1)).fillna(False)
+    # Mirror Pine's ta.change() on the first bar: it returns 0 (false), not NaN.
+    # Seed shift(1) with the first bar's own value so bar-0 diff collapses to False.
+    first_trend = bool(trend_bool.iloc[0]) if len(trend_bool) else False
+    trend_change = trend_bool.ne(trend_bool.shift(1, fill_value=first_trend))
     bos_edge = bos_bool & ~bos_bool.shift(1, fill_value=False)
     color = _trend_color_series(trend_bool, bos_bool, trend_change, choch_bull, choch_bear, bos_bull, bos_bear)
     bullish_choch = trend_change & trend_bool
