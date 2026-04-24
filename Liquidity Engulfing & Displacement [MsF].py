@@ -129,7 +129,7 @@ def calculate_displacement(
     else:
         candle_range = df["high"] - df["low"]
 
-    std_threshold = candle_range.rolling(std_len).std() * std_x
+    std_threshold = candle_range.rolling(std_len).std(ddof=0) * std_x
 
     prior_bull = df["close"].shift(1) > df["open"].shift(1)
     fvg = np.where(prior_bull, df["high"].shift(2) < df["low"], df["low"].shift(2) > df["high"])
