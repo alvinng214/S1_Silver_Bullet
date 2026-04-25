@@ -136,23 +136,29 @@ class OverlaySettings:
 
 
 def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    # label="left", closed="left" so that the weekly/monthly bars are timestamped
+    # at the open of the period — matching how TradingView labels HTF bars.
     return (
-        df.resample(rule)
+        df.resample(rule, label="left", closed="left")
         .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
         .dropna()
     )
 
 
 def _tf_to_rule(tf: str) -> str:
-    # Pine `request.security` accepts arbitrary minute strings for intraday timeframes.
+    # Pine `request.security` aggregates by exchange calendar (week = Mon→Fri,
+    # month = 1st→last). Map to pandas' calendar-aware rules; fixed-width minute
+    # bins (e.g. "10080min" for weekly) drift out of phase as history grows.
     if tf.isdigit():
         return f"{int(tf)}min"
     if tf == "D":
         return "1D"
     if tf == "W":
-        return "1W"
+        # Monday-anchored weekly bins (with left/closed-left in `_resample_ohlc*`)
+        # produces bars labelled at the Monday open, matching TV.
+        return "W-MON"
     if tf == "M":
-        return "1M"
+        return "MS"
     raise ValueError(f"Unsupported timeframe: {tf}")
 
 

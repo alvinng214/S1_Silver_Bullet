@@ -60,7 +60,10 @@ def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     aggregations = {"open": "first", "high": "max", "low": "min", "close": "last"}
     if "volume" in df.columns:
         aggregations["volume"] = "sum"
-    return df.resample(rule).agg(aggregations).dropna()
+    # label="left", closed="left" matches TradingView bar labeling: a weekly
+    # bar timestamped at Monday open contains [Mon, next Mon). Pandas' default
+    # for W-* is right-anchored, which would shift HTF bars by one full week.
+    return df.resample(rule, label="left", closed="left").agg(aggregations).dropna()
 
 
 def _resolve_timeframe_rule(df: pd.DataFrame, timeframe: str) -> Optional[str]:
@@ -76,9 +79,13 @@ def _resolve_timeframe_rule(df: pd.DataFrame, timeframe: str) -> Optional[str]:
     if normalized in {"1D", "D"}:
         return "1D"
     if normalized in {"1W", "W"}:
-        return "1W"
+        # Calendar-aware Monday-anchored weekly bins, matching TradingView weekly bars.
+        return "W-MON"
     if normalized in {"1M", "M"}:
-        return "1ME"
+        # Month-start anchor — TV monthly bars are timestamped at the first session of each month.
+        return "MS"
+    if normalized in {"3M", "Q"}:
+        return "QS"
     return normalized
 
 

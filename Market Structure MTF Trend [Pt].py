@@ -124,6 +124,37 @@ def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     )
 
 
+def _resample_rule_for_minutes(tf_minutes: int) -> str:
+    """Map an HTF minute count to a *calendar-aware* pandas resample rule.
+
+    Pine's ``request.security`` aggregates by the exchange calendar
+    (a week = Mon→Fri, a month = 1st→last), not by fixed-width minute
+    bins anchored to the data's first timestamp. Using ``f"{tf_minutes}min"``
+    for weekly/monthly drifts out of phase by up to ±N days as the data
+    history grows, which manifests as wrong CHoCH / pivot dates against
+    TradingView. The mappings below match TV's bar labels:
+
+      * 1D  (1440 min)   → ``"1D"``     — daily bars
+      * 1W  (10080 min)  → ``"W-MON"``  — week starts Mon, label = Mon open
+      * 1M  (43200 min)  → ``"MS"``     — month-start, label = 1st of month
+      * 3M  (129600 min) → ``"QS"``     — quarter-start
+      * intraday minutes → ``f"{tf_minutes}min"`` (no calendar phase issue)
+
+    Other multi-day buckets (2D / 3D / 5D / 2W) fall through to the
+    minute-string form because they don't align to a single canonical
+    exchange-calendar rule.
+    """
+    if tf_minutes == 60 * 24:                # 1D
+        return "1D"
+    if tf_minutes == 60 * 24 * 7:            # 1W
+        return "W-MON"
+    if tf_minutes == 60 * 24 * 30:           # 1M (the alias ict_structure emits)
+        return "MS"
+    if tf_minutes == 60 * 24 * 30 * 3:       # 3M
+        return "QS"
+    return f"{tf_minutes}min"
+
+
 def _align_series(series: pd.Series, target_index: pd.Index, lookahead_on: bool) -> pd.Series:
     if series.dtype == object:
         series = series.infer_objects(copy=False)
@@ -408,10 +439,10 @@ def _market_structure_for_timeframe(
         if lower_tf_data is None or lower_tf_data.empty:
             return calculate_market_structure_trend(df, pivot_len)
         lower_series = calculate_market_structure_trend(lower_tf_data, pivot_len)
-        base_rule = f"{base_minutes}min"
+        base_rule = _resample_rule_for_minutes(base_minutes)
         return _align_lower_tf_series(lower_series, df.index, base_rule, lookahead_on)
 
-    rule = f"{tf_minutes}min"
+    rule = _resample_rule_for_minutes(tf_minutes)
     htf = _resample_ohlc(df, rule)
     htf_series = calculate_market_structure_trend(htf, pivot_len)
 
