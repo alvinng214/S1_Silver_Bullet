@@ -1,0 +1,123 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © pmk07
+
+//@version=5
+indicator("MTF FVG", overlay=true, max_boxes_count = 500)
+
+changelvl = input.bool(true, "Move box levels with price touch", group='General')
+changecolor = input.bool(true, "Change box color with price touch", group='General')
+extend_r = input.bool(true, "Extend boxes to the right", group='General')
+plotLabel = input.bool(defval=false, title='Plot OB Label', inline='FVG label', group='Style')
+LabelColor = input.color(defval=color.gray, title='Color', inline='FVG label', group='Style')
+LabelSize = input.string(defval=size.tiny, title="Size", options=[size.huge, size.large, size.small, size.tiny, size.auto, size.normal], inline='FVG label', group='Style')
+BullColor = input.color(defval=color.new(color.green, 90), title='Bullish FVG Color', inline='Set Custom Color', group='Style')
+BearColor = input.color(defval=color.new(color.red, 90), title='Bearish FVG Color', inline='Set Custom Color', group='Style')
+BullColorTested = input.color(defval=color.new(color.gray, 90), title='Tested Bullish FVG Color', inline='Set Custom Color', group='Style')
+BearColorTested = input.color(defval=color.new(color.gray, 90), title='Tested Bearish FVG Color', inline='Set Custom Color', group='Style')
+
+var box[] bull_box  = array.new_box()
+var box[] bear_box  = array.new_box()
+
+tf1 = input.bool(false, "1", group='Timeframe')
+tf2 = input.bool(false, "3", group='Timeframe')
+tf3 = input.bool(false, "5", group='Timeframe')
+tf4 = input.bool(true, "15", group='Timeframe')
+tf5 = input.bool(false, "30", group='Timeframe')
+tf6 = input.bool(false, "45", group='Timeframe')
+tf7 = input.bool(true, "60", group='Timeframe')
+tf8 = input.bool(false, "120", group='Timeframe')
+tf9 = input.bool(false, "180", group='Timeframe')
+tf10 = input.bool(true, "240", group='Timeframe')
+tf11 = input.bool(true, "D", group='Timeframe')
+tf12 = input.bool(true, "W", group='Timeframe')
+
+find_box(t) =>
+    var int x = na
+    var float _top = na
+    var float _bottom = na
+    var int _time = na
+    if barstate.isconfirmed
+        x := low[2] >= high ? -1 : low >= high[2] ? 1 : 0
+        _top := x > 0 ? low : x < 0 ? low[2] : 0
+        _bottom := x > 0 ? high[2] : x < 0 ? high : 0
+        _time := time - t * 60000 * 2
+    [_time, _top, _bottom, x]
+
+create_box(_time, _top, _bottom, x, TF) =>
+    _col = x > 0 ? BullColor : BearColor
+    _extend = extend_r ? extend.right : extend.none
+    _text = plotLabel ? TF : na
+    box boxOB = na
+    if x != 0
+        boxOB := box.new(left=_time, top=_top, right=time, extend=_extend , bottom=_bottom, bgcolor=_col, border_color = na, text=_text, text_halign=text.align_right, text_size=LabelSize, text_color=LabelColor, xloc = xloc.bar_time)
+    if x > 0
+        array.push(bull_box, boxOB)
+    if x < 0
+        array.push(bear_box, boxOB)
+
+control_box(_boxes, bearbull) => 
+    if array.size(_boxes) > 0
+        for i = array.size(_boxes) - 1 to 0 by 1
+            _box = array.get(_boxes, i)
+            _boxLow = box.get_bottom(_box)
+            _boxHigh = box.get_top(_box)
+            if (bearbull > 0 and low < _boxLow) or (bearbull < 0 and high > _boxHigh)
+                box.delete(_box)
+                array.set(_boxes, i, na)
+            else 
+                if bearbull > 0 and low < _boxHigh
+                    if changelvl
+                        box.set_top(_box, low)
+                    if changecolor
+                        box.set_bgcolor(_box, BullColorTested)    
+                if bearbull < 0 and high > _boxLow
+                    if changelvl
+                        box.set_bottom(_box, high)
+                    if changecolor
+                        box.set_bgcolor(_box, BearColorTested)
+                box.set_right(_box, time)
+    if array.size(_boxes) > 0 
+        for i = array.size(_boxes) - 1 to 0 by 1
+            if na(array.get(_boxes, i))
+                array.remove(_boxes, i)
+        
+[_time1, _top1, _bottom1, xtf1]  = request.security(syminfo.tickerid, "1", find_box(1))
+[_time2, _top2, _bottom2, xtf2]  = request.security(syminfo.tickerid, "3", find_box(3))
+[_time3, _top3, _bottom3, xtf3]  = request.security(syminfo.tickerid, "5", find_box(5))
+[_time4, _top4, _bottom4, xtf4]  = request.security(syminfo.tickerid, "15", find_box(15))
+[_time5, _top5, _bottom5, xtf5]  = request.security(syminfo.tickerid, "30", find_box(30))
+[_time6, _top6, _bottom6, xtf6]  = request.security(syminfo.tickerid, "45", find_box(45))
+[_time7, _top7, _bottom7, xtf7]  = request.security(syminfo.tickerid, "60", find_box(60))
+[_time8, _top8, _bottom8, xtf8]  = request.security(syminfo.tickerid, "120", find_box(120))
+[_time9, _top9, _bottom9, xtf9]  = request.security(syminfo.tickerid, "180", find_box(180))
+[_time10, _top10, _bottom10, xtf10]  = request.security(syminfo.tickerid, "240", find_box(240))
+[_time11, _top11, _bottom11, xtf11]  = request.security(syminfo.tickerid, "D", find_box(1440))
+[_time12, _top12, _bottom12, xtf12]  = request.security(syminfo.tickerid, "W", find_box(10080))
+
+if tf1 and timeframe.change("1")
+    create_box(_time1, _top1, _bottom1, xtf1, "1")
+if tf2 and timeframe.change("3")
+    create_box(_time2, _top2, _bottom2, xtf2, "3")
+if tf3 and timeframe.change("5")
+    create_box(_time3, _top3, _bottom3, xtf3, "5")
+if tf4 and timeframe.change("15")
+    create_box(_time4, _top4, _bottom4, xtf4, "15")
+if tf5 and timeframe.change("30")
+    create_box(_time5, _top5, _bottom5, xtf5, "30")
+if tf6 and timeframe.change("45")
+    create_box(_time6, _top6, _bottom6, xtf6, "45")
+if tf7 and timeframe.change("60")
+    create_box(_time7, _top7, _bottom7, xtf7, "60")
+if tf8 and timeframe.change("120")
+    create_box(_time8, _top8, _bottom8, xtf8, "120")
+if tf9 and timeframe.change("180")
+    create_box(_time9, _top9, _bottom9, xtf9, "180")
+if tf10 and timeframe.change("240")
+    create_box(_time10, _top10, _bottom10, xtf10, "240")
+if tf11 and timeframe.change("D")
+    create_box(_time11, _top11, _bottom11, xtf11, "D")
+if tf12 and timeframe.change("W")
+    create_box(_time12, _top12, _bottom12, xtf12, "W")
+
+control_box(bull_box, 1)
+control_box(bear_box, -1)
