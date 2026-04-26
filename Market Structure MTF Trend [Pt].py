@@ -115,17 +115,47 @@ def _infer_base_minutes(df: pd.DataFrame) -> int:
 
 
 def _resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
-    """Resample OHLC data to a higher timeframe.
+    """Resample OHLC data to a higher timeframe with TV-style bar labels.
 
-    Uses label="left", closed="left" to match TradingView bar labeling:
-    - A 15M bar labeled "21:45" contains ticks from 21:45:00 to 21:59:59
+    TradingView labels each HTF bar at the FIRST TRADING DAY in the bin,
+    not the calendar period start. When a Monday is a holiday (MLK Day,
+    Presidents Day), TV's weekly bar is labeled with that Tuesday's open;
+    pandas' default ``W-MON`` keeps the calendar Monday label, which
+    shifts pivot windows and causes CHoCH / BOS divergence around holiday
+    weeks (e.g. 2020-01-20 → TV labels 2020-01-21).
+
+    The fix: do the standard left-anchored resample to define the bins,
+    then re-label each bin with its FIRST actual daily-bar timestamp.
     """
-    return (
+    if rule in ("1D",) or rule.endswith("min"):
+        # No re-anchoring needed for intraday or daily — bin == bar.
+        return (
+            df[["open", "high", "low", "close"]]
+            .resample(rule, label="left", closed="left")
+            .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
+            .dropna()
+        )
+
+    binned = (
         df[["open", "high", "low", "close"]]
         .resample(rule, label="left", closed="left")
         .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
         .dropna()
     )
+    # For each bin, find the first daily-bar timestamp inside it. That's
+    # TV's bar label.
+    bin_starts = binned.index
+    daily_idx = df.index
+    new_labels = []
+    for i, bin_start in enumerate(bin_starts):
+        bin_end = bin_starts[i + 1] if i + 1 < len(bin_starts) else daily_idx[-1] + pd.Timedelta(days=1)
+        first_in_bin = daily_idx[(daily_idx >= bin_start) & (daily_idx < bin_end)]
+        if len(first_in_bin) > 0:
+            new_labels.append(first_in_bin[0])
+        else:
+            new_labels.append(bin_start)
+    binned.index = pd.DatetimeIndex(new_labels, name=daily_idx.name)
+    return binned
 
 
 def _resample_rule_for_minutes(tf_minutes: int) -> str:
