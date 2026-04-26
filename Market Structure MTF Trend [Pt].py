@@ -73,17 +73,21 @@ def _parse_timeframe_to_minutes(timeframe: str) -> Optional[int]:
     if timeframe.isdigit():
         return int(timeframe)
 
-    suffix = timeframe[-1].lower()
+    # Pine convention: uppercase 'M' = month, lowercase 'm' / no-suffix = minute.
+    # Do NOT lowercase the suffix — '1M' (month) and '1m' (minute) are different.
+    suffix = timeframe[-1]
     value = timeframe[:-1]
     if not value:
         return None
 
-    if suffix == "h":
+    if suffix in ("h", "H"):
         return int(value) * 60
-    if suffix == "d":
+    if suffix in ("d", "D"):
         return int(value) * 60 * 24
-    if suffix == "w":
+    if suffix in ("w", "W"):
         return int(value) * 60 * 24 * 7
+    if suffix == "M":  # month — must come BEFORE 'm' to avoid case collision
+        return int(value) * 60 * 24 * 30
     if suffix == "m":
         return int(value)
 
