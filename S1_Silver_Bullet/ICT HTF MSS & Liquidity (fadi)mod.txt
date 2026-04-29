@@ -1,0 +1,466 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © fadizeidan — Modified
+//
+
+//@version=6
+indicator('ICT HTF MSS & Liquidity (fadi) - Modified', 'MSS+Liq Mod', overlay = true, max_bars_back = 5000, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500)
+
+//+------------------------------------------------------------------------------------------------------------+//
+//+--- Types                                                                                                ---+//
+//+------------------------------------------------------------------------------------------------------------+//
+type Settings
+	string level
+	string liquidity_open_style
+	string liquidity_claimed_style
+	color liquidity_open_color
+	color liquidity_claimed_color
+	int liquidity_open_size
+	int liquidity_claimed_size
+	int max_lines
+	int extend
+	// MSS settings
+	string mss_scope               // 'Current TF' or 'HTF'
+	int mss_window                 // bars allowed between reclaim and BOS+FVG completion
+	bool mss_handle_eq             // accept equal-highs/lows in BOS check
+	bool mss_invalidate_older      // when a new pivot reclaims, invalidate older same-side claimed pivots
+	color mss_bull_color
+	color mss_bear_color
+	string mss_line_style
+	int mss_line_width
+	bool mss_show_label
+
+type Pivot
+	int time = 0
+	float price = 0
+	int time_last = 0
+	int claimed_index = 0
+	bool claimed = false
+	bool reclaimed = false
+	bool isHigh = false
+	bool isLow = false
+	string lbl_text = ''
+	line ln = na
+
+type Setup
+	int time = 0
+	int index = 0
+	float price = 0
+	bool hasBOS = false
+	bool hasFVG = false
+	float BOS_level = 0
+	int BOS_index = 0
+	float FVG_open = 0
+	float FVG_close = 0
+	int FVG_index = 0
+	bool isHigh = false
+	bool isLow = false
+	bool active = false
+	bool drawn = false
+	box FVG_box = na
+	line FVG_line = na
+	line BOS_line = na
+	label MSS_label = na
+	Pivot pivot = na
+
+type MarketStructure
+	string name
+	array<Pivot> ST
+	array<Pivot> IT
+	array<Pivot> LT
+	array<Pivot> STH
+	array<Pivot> ITH
+	array<Pivot> STL
+	array<Pivot> ITL
+	Settings settings
+
+type Helper
+	string name = 'Helper'
+
+//+------------------------------------------------------------------------------------------------------------+//
+//+--- Settings                                                                                             ---+//
+//+------------------------------------------------------------------------------------------------------------+//
+int MAX_BUFFER = 500 // internal maximum node count limit for performance
+
+settings_liquidity = 'Liquidity'
+settings_liquidity_style = 'Liquidity Style'
+settings_mss = 'MSS'
+
+Settings Trend_Settings = Settings.new()
+
+HTF = input.timeframe('15', 'Higher Timeframe', group = settings_liquidity)
+Trend_Settings.level := input.string('Short Term', 'Use', options = ['Short Term', 'Intermediate Term', 'Long Term'], group = settings_liquidity)
+Trend_Settings.liquidity_open_style := input.string('⎯⎯⎯', 'Open            ', options = ['⎯⎯⎯', '----', '····'], group = settings_liquidity_style, inline = 'open')
+Trend_Settings.liquidity_open_size := input.int(1, '', options = [1, 2, 3, 4], group = settings_liquidity_style, inline = 'open')
+Trend_Settings.liquidity_open_color := input.color(color.new(color.purple, 50), '', group = settings_liquidity_style, inline = 'open')
+Trend_Settings.liquidity_claimed_style := input.string('····', 'Claimed          ', options = ['⎯⎯⎯', '----', '····'], group = settings_liquidity_style, inline = 'claimed')
+Trend_Settings.liquidity_claimed_size := input.int(1, '', options = [1, 2, 3, 4], group = settings_liquidity_style, inline = 'claimed')
+Trend_Settings.liquidity_claimed_color := input.color(color.new(color.black, 50), '', group = settings_liquidity_style, inline = 'claimed')
+Trend_Settings.extend := input.int(10, title = 'Extend', minval = 1, group = settings_liquidity_style)
+Trend_Settings.max_lines := input.int(50, 'Number of lines', minval = 1, maxval = 250, group = settings_liquidity_style)
+
+// MSS inputs
+Trend_Settings.mss_scope := input.string('Current TF', 'BOS+FVG Scope', options = ['Current TF', 'HTF'], group = settings_mss, tooltip = 'Run BOS + FVG detection on the chart timeframe (LTF entry trigger) or on the same HTF used for liquidity.')
+Trend_Settings.mss_window := input.int(10, 'Reclaim → MSS window (bars)', minval = 1, maxval = 200, group = settings_mss, tooltip = 'Maximum bars allowed between liquidity reclaim and BOS+FVG completion.')
+Trend_Settings.mss_handle_eq := input.bool(true, 'Allow equal highs/lows in BOS', group = settings_mss)
+Trend_Settings.mss_invalidate_older := input.bool(true, 'Invalidate older same-side claimed pivots on new reclaim', group = settings_mss)
+Trend_Settings.mss_bull_color := input.color(color.new(color.green, 0), 'Bullish MSS', group = settings_mss, inline = 'mss_color')
+Trend_Settings.mss_bear_color := input.color(color.new(color.red, 0), 'Bearish MSS', group = settings_mss, inline = 'mss_color')
+Trend_Settings.mss_line_style := input.string('⎯⎯⎯', 'MSS Style', options = ['⎯⎯⎯', '----', '····'], group = settings_mss, inline = 'mss_line')
+Trend_Settings.mss_line_width := input.int(2, '', options = [1, 2, 3, 4], group = settings_mss, inline = 'mss_line')
+Trend_Settings.mss_show_label := input.bool(true, 'Show MSS Label', group = settings_mss)
+
+//+------------------------------------------------------------------------------------------------------------+//
+//+--- Variables                                                                                            ---+//
+//+------------------------------------------------------------------------------------------------------------+//
+color color_transparent = #ffffff00
+
+Helper helper = Helper.new()
+
+var MarketStructure Term = MarketStructure.new('Term')
+var array<Pivot> ST_array = array.new<Pivot>()
+var array<Pivot> IT_array = array.new<Pivot>()
+var array<Pivot> LT_array = array.new<Pivot>()
+var array<Pivot> STH_array = array.new<Pivot>()
+var array<Pivot> ITH_array = array.new<Pivot>()
+var array<Pivot> STL_array = array.new<Pivot>()
+var array<Pivot> ITL_array = array.new<Pivot>()
+Term.ST := ST_array
+Term.IT := IT_array
+Term.LT := LT_array
+Term.STH := STH_array
+Term.ITH := ITH_array
+Term.STL := STL_array
+Term.ITL := ITL_array
+Term.settings := Trend_Settings
+
+var array<float> highs = array.new_float()
+var array<float> lows = array.new_float()
+var array<int> times = array.new_int()
+var array<line> lines = array.new_line()
+
+
+var Setup setup = Setup.new()
+
+// HTF OHLC pulled with security() — used when MSS scope == 'HTF'
+htf_high  = request.security(syminfo.tickerid, HTF, high,  lookahead = barmerge.lookahead_on)
+htf_low   = request.security(syminfo.tickerid, HTF, low,   lookahead = barmerge.lookahead_on)
+htf_close = request.security(syminfo.tickerid, HTF, close, lookahead = barmerge.lookahead_on)
+
+//+------------------------------------------------------------------------------------------------------------+//
+//+--- Methods                                                                                              ---+//
+//+------------------------------------------------------------------------------------------------------------+//
+
+method Validtimeframe(Helper helper, tf) =>
+    helper.name := tf
+    n1 = timeframe.in_seconds()
+    n2 = timeframe.in_seconds(tf)
+
+    n1 < n2
+
+method LineStyle(Helper helper, string style) =>
+    helper.name := style
+
+    out = switch style
+        '----' => line.style_dashed
+        '····' => line.style_dotted
+        => line.style_solid
+
+    out
+
+// SkipEQHigh returns the first bar_index of before the equal highs
+method SkipEQHigh(Helper helper, int idx) =>
+    helper.name := 'Skip EQ Highs'
+    i = idx
+    while highs.get(i) == highs.get(i - 1) and i < 5
+        i := i + 1
+        i
+    i
+method SkipEQLow(Helper helper, int idx) =>
+    helper.name := 'Skip EQ Lows'
+    i = idx
+    while lows.get(i) == lows.get(i - 1) and i < 5
+        i := i + 1
+        i
+    i
+
+// Pivot-array equal-skip
+method SkipEQPivot(array<Pivot> p, int idx) =>
+    i = idx
+    while p.get(i).price == p.get(i - 1).price and p.get(i).lbl_text == p.get(i - 1).lbl_text and p.size() < i
+        i := i + 1
+        i
+    i
+
+//+------------------------------------------------------------------------------------------------------------+//
+//+--- ICT Market Structure Methods                                                                         ---+//
+//+------------------------------------------------------------------------------------------------------------+//
+
+// CheckSetup runs every bar after a pivot has been reclaimed.
+// Forward state machine — receives OHLC values from caller (chart bars OR HTF bars
+// depending on Trend_Settings.mss_scope) and looks for BOS + FVG within the configured window.
+//   - bullish setup (pivot.isLow,  reclaimed STL/ITL/LTL):
+//       BOS = close above a 3-bar swing high formed after reclaim
+//       FVG = bullish gap (low > high[2])
+//   - bearish setup (pivot.isHigh, reclaimed STH/ITH/LTH):
+//       BOS = close below a 3-bar swing low formed after reclaim
+//       FVG = bearish gap (high < low[2])
+method CheckSetup(Setup setup, float h0, float h1, float h2, float l0, float l1, float l2, float c0, int idx) =>
+    if not setup.drawn and setup.index > 0
+        // BOS detection: 3-bar swing on the chosen TF, broken by close, beyond pivot price
+        if not setup.hasBOS and idx > setup.index
+            if setup.isHigh
+                bool swing_low = Trend_Settings.mss_handle_eq ? (l1 <= l2 and l1 <= l0) : (l1 < l2 and l1 < l0)
+                if swing_low and l1 < setup.price and c0 < l1
+                    setup.hasBOS := true
+                    setup.BOS_level := l1
+                    setup.BOS_index := idx - 1
+            if setup.isLow
+                bool swing_high = Trend_Settings.mss_handle_eq ? (h1 >= h2 and h1 >= h0) : (h1 > h2 and h1 > h0)
+                if swing_high and h1 > setup.price and c0 > h1
+                    setup.hasBOS := true
+                    setup.BOS_level := h1
+                    setup.BOS_index := idx - 1
+        // FVG detection: 3-bar imbalance on the chosen TF
+        if not setup.hasFVG
+            if setup.isHigh and h0 < l2
+                setup.hasFVG := true
+                setup.FVG_open := l2
+                setup.FVG_close := h0
+                setup.FVG_index := idx - 2
+            if setup.isLow and l0 > h2
+                setup.hasFVG := true
+                setup.FVG_open := h2
+                setup.FVG_close := l0
+                setup.FVG_index := idx - 2
+
+        // Activation: explicit precedence — direction-first confirmation, then in-window check
+        bool confirmed = setup.isHigh ? c0 < setup.BOS_level : c0 > setup.BOS_level
+        bool in_window = (idx - setup.pivot.claimed_index) <= Trend_Settings.mss_window
+        setup.active := setup.hasBOS and setup.hasFVG and confirmed and in_window
+
+        if setup.active and not setup.drawn
+            setup.drawn := true
+            color mss_col = setup.isHigh ? Trend_Settings.mss_bear_color : Trend_Settings.mss_bull_color
+            mss_style = helper.LineStyle(Trend_Settings.mss_line_style)
+            setup.BOS_line := line.new(setup.BOS_index, setup.BOS_level, idx, setup.BOS_level, color = mss_col, style = mss_style, width = Trend_Settings.mss_line_width)
+            setup.FVG_box := box.new(setup.FVG_index, setup.FVG_open, idx, setup.FVG_close, border_color = color.new(mss_col, 70), bgcolor = color.new(mss_col, 85))
+            if Trend_Settings.mss_show_label
+                string txt = setup.isHigh ? 'MSS ↓' : 'MSS ↑'
+                setup.MSS_label := label.new(idx, setup.BOS_level, txt, color = color_transparent, textcolor = mss_col, style = setup.isHigh ? label.style_label_up : label.style_label_down, size = size.small)
+
+        // Window expired without activation → release the slot for the next reclaim
+        if not setup.active and (idx - setup.pivot.claimed_index) > Trend_Settings.mss_window
+            setup.index := 0
+
+    setup
+
+// AddLiquidity adds the liquidity lines
+method AddLiquidity(MarketStructure MS, Pivot pivot) =>
+    if MS.settings.level == 'Short Term' and str.startswith(pivot.lbl_text, 'ST') or MS.settings.level == 'Intermediate Term' and str.startswith(pivot.lbl_text, 'IT') or MS.settings.level == 'Long Term' and str.startswith(pivot.lbl_text, 'LT')
+        if na(pivot.ln)
+            pivot.ln := line.new(pivot.time, pivot.price, time + (time - time[1]) * MS.settings.extend, pivot.price, xloc = xloc.bar_time, style = helper.LineStyle(MS.settings.liquidity_open_style), color = MS.settings.liquidity_open_color, width = MS.settings.liquidity_open_size)
+            lines.unshift(pivot.ln)
+            if lines.size() > MS.settings.max_lines
+                line l = lines.pop()
+                line.delete(l)
+        else
+            line.set_color(pivot.ln, pivot.claimed ? MS.settings.liquidity_claimed_color : MS.settings.liquidity_open_color)
+            line.set_width(pivot.ln, pivot.claimed ? MS.settings.liquidity_claimed_size : MS.settings.liquidity_open_size)
+            line.set_x2(pivot.ln, pivot.claimed ? pivot.time_last : time + (time - time[1]) * MS.settings.extend)
+            line.set_style(pivot.ln, helper.LineStyle(pivot.claimed ? MS.settings.liquidity_claimed_style : MS.settings.liquidity_open_style))
+    MS
+
+method FindIT(MarketStructure MS) =>
+    if MS.STH.size() > 2
+        h1 = MS.STH.first()
+        h2 = MS.STH.get(1)
+        h3 = MS.STH.get(MS.STH.SkipEQPivot(2))
+
+        if h2.price > h3.price and h2.price > h1.price and h2.lbl_text == 'STH'
+
+            h2.lbl_text := 'ITH'
+            MS.ITH.unshift(h2)
+            MS.AddLiquidity(h2)
+
+    if MS.STL.size() > 2
+        l1 = MS.STL.first()
+        l2 = MS.STL.get(1)
+        l3 = MS.STL.get(MS.STL.SkipEQPivot(2))
+
+        if l2.price < l3.price and l2.price < l1.price and l2.lbl_text == 'STL'
+            l2.lbl_text := 'ITL'
+            MS.ITL.unshift(l2)
+            MS.AddLiquidity(l2)
+
+    MS
+
+method FindLT(MarketStructure MS) =>
+    if MS.ITH.size() > 2
+
+        h1 = MS.ITH.first()
+        h2 = MS.ITH.get(1)
+        h3 = MS.ITH.get(MS.ITH.SkipEQPivot(2))
+
+        if h2.price > h3.price and h2.price > h1.price and h2.lbl_text == 'ITH'
+            h2.lbl_text := 'LTH'
+            MS.LT.unshift(h2)
+            MS.AddLiquidity(h2)
+
+    if MS.ITL.size() > 2
+        l1 = MS.ITL.first()
+        l2 = MS.ITL.get(1)
+        l3 = MS.ITL.get(MS.ITL.SkipEQPivot(2))
+
+        if l2.price < l3.price and l2.price < l1.price and l2.lbl_text == 'ITL'
+            l2.lbl_text := 'LTL'
+            MS.LT.unshift(l2)
+            MS.AddLiquidity(l2)
+    MS
+
+method Add(MarketStructure MS, float p_price, int p_time, bool isHigh, bool isLow, string lbl) =>
+    bool isNew = true
+
+    if MS.ST.size() > 0
+        Pivot previous = MS.ST.first()
+        isNew := previous.time < p_time
+        isNew
+
+    if isNew
+        Pivot pivot = Pivot.new()
+        pivot.price := p_price
+        pivot.time := p_time
+        pivot.isHigh := isHigh
+        pivot.isLow := isLow
+        pivot.lbl_text := lbl
+
+
+        MS.ST.unshift(pivot)
+        if isHigh
+            MS.STH.unshift(pivot)
+        else
+            MS.STL.unshift(pivot)
+
+        MS.AddLiquidity(pivot).FindIT().FindLT()
+
+        if MS.ST.size() > MAX_BUFFER
+            Pivot temp = MS.ST.pop()
+            line.delete(temp.ln)
+    MS
+
+
+method findST(MarketStructure MS, array<float> h, array<float> l, array<int> t) =>
+    _h = h.get(1) > h.get(helper.SkipEQHigh(2)) and h.get(1) > h.first()
+    _l = l.get(1) < l.get(helper.SkipEQLow(2)) and l.get(1) < l.first()
+
+    if _h
+        MS.Add(h.get(1), t.get(1), true, false, 'STH')
+    if _l
+        MS.Add(l.get(1), t.get(1), false, true, 'STL')
+
+    MS
+
+// CheckClaimed checks if liquidity has been swept; on reclaim it arms a fresh setup
+method CheckClaimed(MarketStructure MS) =>
+    if MS.ST.size() > 0
+        for i = 0 to MS.ST.size() - 1 by 1
+            pivot = MS.ST.get(i)
+            if not na(pivot.ln)
+                if not pivot.claimed
+                    if pivot.isHigh
+                        pivot.claimed := close > pivot.price
+                        pivot.claimed
+                    if pivot.isLow
+                        pivot.claimed := close < pivot.price
+                        pivot.claimed
+
+                    if pivot.claimed
+                        pivot.time_last := time
+                        pivot.claimed_index := bar_index
+                        pivot.claimed := true
+
+                        line.set_color(pivot.ln, pivot.claimed ? MS.settings.liquidity_claimed_color : MS.settings.liquidity_open_color)
+                        line.set_width(pivot.ln, pivot.claimed ? MS.settings.liquidity_claimed_size : MS.settings.liquidity_open_size)
+                        line.set_x2(pivot.ln, pivot.claimed ? pivot.time_last : time + (time - time[1]) * MS.settings.extend)
+                        line.set_style(pivot.ln, helper.LineStyle(pivot.claimed ? MS.settings.liquidity_claimed_style : MS.settings.liquidity_open_style))
+
+                    else
+                        line.set_x2(pivot.ln, time + (time - time[1]) * MS.settings.extend)
+                if pivot.claimed and not pivot.reclaimed
+                    if pivot.isHigh
+                        pivot.reclaimed := close < pivot.price
+                        pivot.reclaimed
+                    if pivot.isLow
+                        pivot.reclaimed := close > pivot.price
+                        pivot.reclaimed
+
+                    if pivot.reclaimed
+                        line.set_color(pivot.ln, color.red)
+                        // arm a fresh setup on this reclaim — overwrites any in-flight setup that hasn't drawn yet
+                        setup.time := time
+                        setup.index := bar_index
+                        setup.price := pivot.price
+                        setup.hasBOS := false
+                        setup.hasFVG := false
+                        setup.FVG_open := 0
+                        setup.FVG_close := 0
+                        setup.BOS_level := 0
+                        setup.BOS_index := 0
+                        setup.isHigh := pivot.isHigh
+                        setup.isLow := pivot.isLow
+                        setup.active := false
+                        setup.drawn := false
+                        setup.pivot := pivot
+
+                        // Invalidate older same-side claimed pivots — they are stale once a newer one resolves
+                        if MS.settings.mss_invalidate_older
+                            for j = 0 to MS.ST.size() - 1 by 1
+                                Pivot p = MS.ST.get(j)
+                                if p.time != pivot.time and (pivot.isHigh and p.isHigh or pivot.isLow and p.isLow) and p.claimed and not p.reclaimed
+                                    p.reclaimed := true
+
+    MS
+
+//+------------------------------------------------------------------------------------------------------------+//
+//+--- Main call to start the process                                                                       ---+//
+//+------------------------------------------------------------------------------------------------------------+//
+
+if helper.Validtimeframe(HTF)
+
+    var int last_t = 0
+    if bool(ta.change(time(HTF)))
+        [h, h1, h2, h3, h4, h5, l, l1, l2, l3, l4, l5, t, t1, b, b1] = request.security(syminfo.tickerid, HTF, [high[1], high[2], high[3], high[4], high[5], high[6], low[1], low[2], low[3], low[4], low[5], low[6], time[1], time[2], bar_index, bar_index[1]], lookahead = barmerge.lookahead_on)
+        last_t := last_t == 0 ? t1 : 0
+        last_t := t
+        array.clear(highs)
+        array.clear(lows)
+        array.unshift(highs, h5)
+        array.unshift(highs, h4)
+        array.unshift(highs, h3)
+        array.unshift(highs, h2)
+        array.unshift(highs, h1)
+        array.unshift(highs, h)
+        array.unshift(lows, l5)
+        array.unshift(lows, l4)
+        array.unshift(lows, l3)
+        array.unshift(lows, l2)
+        array.unshift(lows, l1)
+        array.unshift(lows, l)
+        array.unshift(times, t1)
+        array.unshift(times, t)
+
+        Term.findST(highs, lows, times)
+
+    Term.CheckClaimed()
+
+    // MSS scan: pick OHLC source by user toggle, then run forward state machine
+    bool run_on_htf_bar = bool(ta.change(time(HTF)))
+    bool should_scan = Trend_Settings.mss_scope == 'Current TF' or run_on_htf_bar
+    if should_scan and setup.index > 0
+        float _h0 = Trend_Settings.mss_scope == 'HTF' ? htf_high     : high
+        float _h1 = Trend_Settings.mss_scope == 'HTF' ? htf_high[1]  : high[1]
+        float _h2 = Trend_Settings.mss_scope == 'HTF' ? htf_high[2]  : high[2]
+        float _l0 = Trend_Settings.mss_scope == 'HTF' ? htf_low      : low
+        float _l1 = Trend_Settings.mss_scope == 'HTF' ? htf_low[1]   : low[1]
+        float _l2 = Trend_Settings.mss_scope == 'HTF' ? htf_low[2]   : low[2]
+        float _c0 = Trend_Settings.mss_scope == 'HTF' ? htf_close    : close
+        setup.CheckSetup(_h0, _h1, _h2, _l0, _l1, _l2, _c0, bar_index)
