@@ -204,7 +204,18 @@ def _is_pivot_high(highs: np.ndarray, idx: int, pivot_len: int) -> bool:
     if left < 0 or right >= len(highs):
         return False
     pivot = highs[idx]
-    return pivot == np.max(highs[left : right + 1]) and np.sum(highs[left : right + 1] == pivot) == 1
+    # Pine ta.pivothigh tie-handling: left bars must be strictly less than the
+    # pivot (>= rejects); right bars only need to be <= pivot (only > rejects,
+    # ties on the right are allowed). This asymmetry makes a real difference
+    # on flat-topped consolidations and was the root cause of the 1530.HK
+    # phantom bear-CHoCH on 2026-04-23 -- TV's Pt indicator picks up an extra
+    # tie-right pivot low that lowers `lastPivotLow` enough that the dump
+    # never crosses it.
+    if (highs[left:idx] >= pivot).any():
+        return False
+    if (highs[idx + 1 : right + 1] > pivot).any():
+        return False
+    return True
 
 
 def _is_pivot_low(lows: np.ndarray, idx: int, pivot_len: int) -> bool:
@@ -213,7 +224,14 @@ def _is_pivot_low(lows: np.ndarray, idx: int, pivot_len: int) -> bool:
     if left < 0 or right >= len(lows):
         return False
     pivot = lows[idx]
-    return pivot == np.min(lows[left : right + 1]) and np.sum(lows[left : right + 1] == pivot) == 1
+    # Pine ta.pivotlow tie-handling: left bars must be strictly greater than
+    # the pivot (<= rejects); right bars only need to be >= pivot (only <
+    # rejects, ties on the right are allowed).
+    if (lows[left:idx] <= pivot).any():
+        return False
+    if (lows[idx + 1 : right + 1] < pivot).any():
+        return False
+    return True
 
 
 def calculate_market_structure_trend(df: pd.DataFrame, pivot_len: int) -> MarketStructureSeries:

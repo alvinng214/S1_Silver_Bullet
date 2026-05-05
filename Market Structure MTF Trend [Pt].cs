@@ -647,11 +647,17 @@ namespace cAlgo
                 return false;
 
             var pivot = bars.HighPrices[idx];
-            for (var i = left; i <= right; i++)
+            // Pine ta.pivothigh tie-handling: left bars must be strictly less
+            // than the pivot (>= rejects); right bars only need to be <= pivot
+            // (only > rejects, ties on the right are allowed).
+            for (var i = left; i < idx; i++)
             {
-                if (i == idx)
-                    continue;
                 if (bars.HighPrices[i] >= pivot)
+                    return false;
+            }
+            for (var i = idx + 1; i <= right; i++)
+            {
+                if (bars.HighPrices[i] > pivot)
                     return false;
             }
 
@@ -666,11 +672,17 @@ namespace cAlgo
                 return false;
 
             var pivot = bars.LowPrices[idx];
-            for (var i = left; i <= right; i++)
+            // Pine ta.pivotlow tie-handling: left bars must be strictly greater
+            // than the pivot (<= rejects); right bars only need to be >= pivot
+            // (only < rejects, ties on the right are allowed).
+            for (var i = left; i < idx; i++)
             {
-                if (i == idx)
-                    continue;
                 if (bars.LowPrices[i] <= pivot)
+                    return false;
+            }
+            for (var i = idx + 1; i <= right; i++)
+            {
+                if (bars.LowPrices[i] < pivot)
                     return false;
             }
 
