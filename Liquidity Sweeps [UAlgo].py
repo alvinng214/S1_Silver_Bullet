@@ -103,17 +103,41 @@ def _is_strict_pivot_low(series: pd.Series, centre_idx: int, window: int) -> boo
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+SWEEP_MODES = ("wick_reject", "wick", "close")
+
+
 def compute_liquidity_sweeps(
     df: pd.DataFrame,
     *,
     pivot_period: int = 20,
     max_lines: int = 3,
+    sweep_mode: str = "wick_reject",
 ) -> LiquiditySweepsResult:
     """Run `Liquidity Sweeps [UAlgo]` on an OHLC DataFrame.
 
     Parameters mirror the Pine inputs:
         ``pivot_period`` ⇄ ``pivotPeriod`` (default 20)
         ``max_lines``    ⇄ ``maxLine``     (default 3)
+
+    ``sweep_mode`` selects HOW a pivot level is registered as a liquidity
+    sweep (Discord 1515691177976922162, 2026-06-14 — user-authorized
+    "Unlock and go on for the code change of Sweep tool"):
+
+      - ``"wick_reject"`` (DEFAULT, = original UAlgo behavior): the bar's
+        WICK takes the level AND the bar CLOSES back inside it
+        (resistance: ``high>piv and close<piv``; support:
+        ``low<piv and close>piv``). A clean close-through is a
+        breakout/breakdown, NOT a sweep. Byte-stable vs all prior output.
+      - ``"wick"`` (wick-only): the wick takes the level, close irrelevant
+        (resistance: ``high>piv``; support: ``low<piv``). Any pierce = sweep;
+        no separate breakout/breakdown event is emitted.
+      - ``"close"`` (bar-close): a sweep fires ONLY when the bar CLOSES
+        beyond the level (resistance: ``close>piv``; support: ``close<piv``).
+        A pierce that closes back inside leaves the level live.
+
+    The emitted ``kind`` stays ``buy_liquidity_sweep`` / ``sell_liquidity_sweep``
+    across all modes so downstream consumers are mode-agnostic; only the
+    detection condition + ``event_price`` differ.
 
     Input
     -----
@@ -125,6 +149,9 @@ def compute_liquidity_sweeps(
         raise ValueError("pivot_period must be >= 1")
     if max_lines < 1:
         raise ValueError("max_lines must be >= 1")
+    if sweep_mode not in SWEEP_MODES:
+        raise ValueError(
+            f"sweep_mode must be one of {SWEEP_MODES}, got {sweep_mode!r}")
     required = {"high", "low", "close"}
     missing = required - set(df.columns)
     if missing:
@@ -186,7 +213,14 @@ def compute_liquidity_sweeps(
         for k in range(len(resistance) - 1, -1, -1):
             lvl = resistance[k]
             price = lvl.pivot_price
-            if high_i > price and close_i < price:
+            # Mode-dependent buy-side liquidity sweep on a resistance pivot.
+            if sweep_mode == "wick_reject":
+                is_sweep = high_i > price and close_i < price
+            elif sweep_mode == "wick":
+                is_sweep = high_i > price
+            else:  # "close"
+                is_sweep = close_i > price
+            if is_sweep:
                 events.append(
                     SweepEvent(
                         kind="buy_liquidity_sweep",
@@ -194,11 +228,12 @@ def compute_liquidity_sweeps(
                         pivot_time=lvl.pivot_time,
                         pivot_price=price,
                         event_time=t_i,
-                        event_price=high_i,
+                        event_price=(close_i if sweep_mode == "close" else high_i),
                     )
                 )
                 resistance.pop(k)
-            elif close_i > price:
+            elif sweep_mode == "wick_reject" and close_i > price:
+                # Clean close-through (no wick-reject) = breakout, level removed.
                 events.append(
                     SweepEvent(
                         kind="breakout_up",
@@ -215,7 +250,14 @@ def compute_liquidity_sweeps(
         for k in range(len(support) - 1, -1, -1):
             lvl = support[k]
             price = lvl.pivot_price
-            if low_i < price and close_i > price:
+            # Mode-dependent sell-side liquidity sweep on a support pivot.
+            if sweep_mode == "wick_reject":
+                is_sweep = low_i < price and close_i > price
+            elif sweep_mode == "wick":
+                is_sweep = low_i < price
+            else:  # "close"
+                is_sweep = close_i < price
+            if is_sweep:
                 events.append(
                     SweepEvent(
                         kind="sell_liquidity_sweep",
@@ -223,11 +265,12 @@ def compute_liquidity_sweeps(
                         pivot_time=lvl.pivot_time,
                         pivot_price=price,
                         event_time=t_i,
-                        event_price=low_i,
+                        event_price=(close_i if sweep_mode == "close" else low_i),
                     )
                 )
                 support.pop(k)
-            elif close_i < price:
+            elif sweep_mode == "wick_reject" and close_i < price:
+                # Clean close-through (no wick-reject) = breakdown, level removed.
                 events.append(
                     SweepEvent(
                         kind="breakdown",
