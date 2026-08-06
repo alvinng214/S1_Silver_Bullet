@@ -35,6 +35,13 @@ class OBZone:
     border_style: str = "none"
     text_color: str = "white"
     text_alpha: int = 100
+    # Bar timestamp at which this zone was mitigated (None while unmitigated).
+    # `mitigated` alone records THAT a zone was touched but not WHEN, and the
+    # HOB retest gate needs the when: tools/_hob_retest.py's engine-authoritative
+    # branch reads it via ict_order_blocks.py's `mitigated_date`, which was
+    # emitting None for every OB because nothing ever set this. Defaulted and
+    # placed among the defaults so the two keyword constructors are unchanged.
+    mitigated_time: Optional[pd.Timestamp] = None
 
 
 @dataclass
@@ -228,6 +235,7 @@ def build_order_blocks(df: pd.DataFrame, settings: OBSettings) -> List[OBZone]:
                         touch = row["low"] if settings.mitigation_type == "Wick" else row["close"]
                         if touch <= zone.top and not zone.mitigated:
                             zone.mitigated = True
+                            zone.mitigated_time = ts
                             zone.label = "Mitigated"
                             if not settings.use_smart_view:
                                 _toggle_zone(zone, True)
@@ -238,6 +246,7 @@ def build_order_blocks(df: pd.DataFrame, settings: OBSettings) -> List[OBZone]:
                         touch = row["high"] if settings.mitigation_type == "Wick" else row["close"]
                         if touch >= zone.bottom and not zone.mitigated:
                             zone.mitigated = True
+                            zone.mitigated_time = ts
                             zone.label = "Mitigated"
                             if not settings.use_smart_view:
                                 _toggle_zone(zone, True)
